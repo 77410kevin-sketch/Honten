@@ -23,7 +23,8 @@ async def seed_users():
         {"username": "prodmgr01",  "display_name": "張產線主管",  "role": Role.PROD_MGR,  "bu": None},
         {"username": "buhead",     "display_name": "陳BU主管",    "role": Role.BU,        "bu": BU.ENERGY},
         {"username": "engmgr",     "display_name": "林工程主管",  "role": Role.ENG_MGR,   "bu": None},
-        {"username": "purchase01", "display_name": "黃採購",      "role": Role.PURCHASE,  "bu": None},
+        {"username": "pc01",       "display_name": "黃採購",      "role": Role.PURCHASE,  "bu": None},
+        {"username": "wh01",       "display_name": "趙倉管",      "role": Role.WAREHOUSE, "bu": None},
         {"username": "asst01",     "display_name": "周業助",      "role": Role.ASSISTANT, "bu": None},
         {"username": "sales01",    "display_name": "吳業務",      "role": Role.SALES,     "bu": BU.ENERGY},
         {"username": "hr01",       "display_name": "鄭人事",      "role": Role.HR,        "bu": None},
@@ -51,6 +52,8 @@ async def run_migrations():
         "ALTER TABLE pcn_approvals ADD COLUMN reject_target VARCHAR(50)",
         # ECN 設計變更庫存盤點
         "ALTER TABLE pcn_forms ADD COLUMN inventory_data TEXT",
+        # 新增採購帳號 pc01（若舊 purchase01 存在則改名）
+        "UPDATE users SET username='pc01' WHERE username='purchase01'",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

@@ -13,6 +13,7 @@ class PCNType(str, enum.Enum):
 class PCNFormStatus(str, enum.Enum):
     DRAFT               = "DRAFT"
     # ECN 技術類分支（製程/設計/供應商變更）
+    ECN_PENDING_WAREHOUSE = "ECN_PENDING_WAREHOUSE" # ECN 設計變更：待倉管盤點
     ECN_PENDING_ENG     = "ECN_PENDING_ENG"   # ECN 待工程確認
     ECN_PENDING_QC      = "ECN_PENDING_QC"    # ECN 待品保確認
     # PCN 標準路線

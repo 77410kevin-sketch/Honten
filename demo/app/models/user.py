@@ -14,6 +14,7 @@ class Role(str, enum.Enum):
     ASSISTANT = "assistant"  # 業助
     SALES     = "sales"      # 業務
     HR        = "hr"         # 人事
+    WAREHOUSE = "warehouse"  # 倉管
 
 
 class BU(str, enum.Enum):

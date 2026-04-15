@@ -122,6 +122,9 @@ async def list_pcn_forms(
             PCNForm.status == PCNFormStatus.PENDING_QC,
             PCNForm.status == PCNFormStatus.ECN_PENDING_QC,
         ))
+    elif current_user.role == Role.WAREHOUSE:
+        # 倉管看待庫存盤點的單
+        q = q.where(PCNForm.status == PCNFormStatus.ECN_PENDING_WAREHOUSE)
     elif current_user.role == Role.PROD_MGR:
         q = q.where(PCNForm.status == PCNFormStatus.PENDING_PRODUCTION)
     else:
@@ -264,10 +267,24 @@ async def get_pcn_form(
     # 解析 ECN 變更類型
     change_types_list = _parse_change_types(form.change_types)
     ecn_tech_review   = _ecn_needs_tech_review(form)
+    ecn_needs_warehouse = (
+        form.type == PCNType.ECN
+        and "設計變更" in set(change_types_list)
+        and bool(form.inventory_data)
+    )
+    # 解析庫存盤點資料
+    inventory_rows = []
+    if form.inventory_data:
+        try:
+            inventory_rows = json.loads(form.inventory_data)
+        except Exception:
+            inventory_rows = []
 
     transition_combo = {
         "DRAFT→PENDING_QC":                      ("送審品保",    "primary"),
+        "DRAFT→ECN_PENDING_WAREHOUSE":           ("ECN送審(倉管盤點)", "primary"),
         "DRAFT→ECN_PENDING_ENG":                 ("ECN送審",     "primary"),
+        "ECN_PENDING_WAREHOUSE→ECN_PENDING_ENG": ("倉管盤點完成", "info"),
         "DRAFT→PENDING_BU_APPROVAL":             ("ECN直送BU",   "warning"),
         "ECN_PENDING_ENG→ECN_PENDING_QC":        ("工程確認",    "info"),
         "ECN_PENDING_QC→PENDING_BU_APPROVAL":    ("品保確認",    "success"),
@@ -284,6 +301,8 @@ async def get_pcn_form(
         "PCNFormStatus": PCNFormStatus,
         "change_types_list": change_types_list,
         "ecn_tech_review": ecn_tech_review,
+        "ecn_needs_warehouse": ecn_needs_warehouse,
+        "inventory_rows": inventory_rows,
     })
 
 
@@ -395,9 +414,14 @@ async def submit_pcn_form(
     old = form.status
 
     # 依表單類型與變更類型決定下一站
+    change_types = set(_parse_change_types(form.change_types))
     if form.type == PCNType.ECN:
         if _ecn_needs_tech_review(form):
-            next_status = PCNFormStatus.ECN_PENDING_ENG   # 技術類 → 工程確認
+            # 設計變更且有庫存盤點資料 → 先走倉管
+            if "設計變更" in change_types and form.inventory_data:
+                next_status = PCNFormStatus.ECN_PENDING_WAREHOUSE
+            else:
+                next_status = PCNFormStatus.ECN_PENDING_ENG
         else:
             next_status = PCNFormStatus.PENDING_BU_APPROVAL  # 商業類 → 直接 BU
     else:
@@ -416,6 +440,39 @@ async def submit_pcn_form(
     return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
 
 
+# ── ECN 倉管庫存盤點確認 ─────────────────────────
+
+@router.post("/{form_id}/warehouse-confirm")
+async def warehouse_confirm(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    inventory_data: str = Form(""),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != PCNFormStatus.ECN_PENDING_WAREHOUSE:
+        raise HTTPException(status_code=400, detail="目前狀態非待倉管盤點")
+    if current_user.role not in (Role.WAREHOUSE, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="只有倉管可執行此步驟")
+
+    old = form.status
+    # 更新庫存盤點數量
+    if inventory_data:
+        form.inventory_data = inventory_data
+    form.status     = PCNFormStatus.ECN_PENDING_ENG
+    form.updated_at = datetime.utcnow()
+    db.add(form)
+    db.add(PCNApproval(
+        form_id_fk=form.id, approver_id=current_user.id, action="WH_CONFIRM",
+        comment=comment or None, from_status=old.value,
+        to_status=PCNFormStatus.ECN_PENDING_ENG.value,
+    ))
+    await db.commit()
+    await notif.notify_ecn_warehouse_done(db, form)
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
 # ── ECN 工程確認 ─────────────────────────────────
 
 @router.post("/{form_id}/ecn-eng-confirm")
@@ -424,6 +481,7 @@ async def ecn_eng_confirm(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     comment: str = Form(""),
+    inventory_data: str = Form(""),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != PCNFormStatus.ECN_PENDING_ENG:
@@ -432,6 +490,9 @@ async def ecn_eng_confirm(
         raise HTTPException(status_code=403, detail="只有工程師可執行此步驟")
 
     old = form.status
+    # 若有庫存盤點，更新處理方式與備註
+    if inventory_data:
+        form.inventory_data = inventory_data
     form.status     = PCNFormStatus.ECN_PENDING_QC
     form.updated_at = datetime.utcnow()
     db.add(form)

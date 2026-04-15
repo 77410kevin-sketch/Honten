@@ -58,3 +58,9 @@ async def notify_ecn_approved_cost(db, form):
         f"\n📱 [LINE通知-CC] 【✅ ECN成本變更核准】{form.form_id} - {form.product_name}\n"
         f"   CC 通知：提出單位（{form.department or '—'}）、採購、人事、業務\n"
     )
+
+
+async def notify_ecn_warehouse_done(db, form):
+    """ECN 設計變更：倉管盤點完成 → 通知工程師"""
+    logger.info(f"[LINE通知-Demo] ECN倉管盤點完成 | {form.form_id} | 待工程確認")
+    print(f"\n📱 [LINE通知] 【📦 庫存盤點完成】{form.form_id} - {form.product_name}，請工程師確認並判定處理方式\n")
