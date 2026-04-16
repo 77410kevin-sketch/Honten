@@ -366,6 +366,7 @@ async def update_pcn_form(
     change_reason:      str = Form(""),
     effective_date:     str = Form(""),
     change_types:       str = Form(""),
+    supplement_comment: str = Form(""),
     attach_files:       List[UploadFile] = File(default=[]),
     attach_categories:  List[str] = Form(default=[]),
 ):
@@ -379,6 +380,12 @@ async def update_pcn_form(
     is_wh_ret    = (current_user.role == Role.WAREHOUSE and ret and form.reject_to == "倉管")
     if not is_creator and not is_qc_ret and not is_prod_ret and not is_wh_ret:
         raise HTTPException(status_code=403)
+
+    # 限縮角色儲存調整說明
+    if is_qc_ret and supplement_comment:
+        form.qc_comment = supplement_comment
+    if (is_prod_ret or is_wh_ret) and supplement_comment:
+        form.prod_comment = supplement_comment
 
     # 限縮角色只能上傳附件，不修改主表單欄位
     if is_creator:

@@ -819,13 +819,23 @@
                 {% if cat == '包裝SOP' %}<span class="text-danger">*</span>{% endif %}
               </div>
               {% for doc in docs_by_cat[cat] %}
+              {% set doc_ext = doc.original_name.rsplit('.', 1)[-1].lower() if '.' in doc.original_name else '' %}
+              {% set is_previewable = doc_ext in ['png','jpg','jpeg','gif','webp','bmp','pdf'] %}
               <div class="d-flex align-items-center gap-1 mb-1">
-                <a href="/pcn-forms/doc/preview/{{ doc.id }}" target="_blank"
-                   class="text-decoration-none text-truncate small flex-grow-1"
-                   title="{{ doc.original_name }}">
-                  {{ doc.original_name }}
-                </a>
+                <span class="text-truncate small flex-grow-1 text-muted">{{ doc.original_name }}</span>
                 <small class="text-muted text-nowrap">{{ doc.uploaded_at.strftime('%m/%d') }}</small>
+                {% if is_previewable %}
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 flex-shrink-0"
+                        style="font-size:0.75rem"
+                        onclick="previewDoc({{ doc.id }}, '{{ doc.original_name | e }}', '{{ doc_ext }}')">
+                  <i class="bi bi-eye"></i>
+                </button>
+                {% endif %}
+                <a href="/pcn-forms/doc/preview/{{ doc.id }}" target="_blank"
+                   class="btn btn-sm btn-outline-secondary py-0 px-1 flex-shrink-0"
+                   style="font-size:0.75rem" title="下載">
+                  <i class="bi bi-download"></i>
+                </a>
               </div>
               {% endfor %}
             </div>
@@ -1125,6 +1135,38 @@ function collectEngInventory() {
   const hidden = document.getElementById('engInvDataHidden');
   if (hidden) hidden.value = JSON.stringify(original);
 }
+
+// ── 附件預覽 Modal ───────────────────────────────
+function previewDoc(docId, filename, ext) {
+  const url = `/pcn-forms/doc/preview/${docId}`;
+  const imgExts = ['png','jpg','jpeg','gif','webp','bmp'];
+  const body = document.getElementById('previewModalBody');
+  const title = document.getElementById('previewModalTitle');
+  title.textContent = filename;
+  if (imgExts.includes(ext)) {
+    body.innerHTML = `<div class="p-2"><img src="${url}" class="img-fluid rounded" style="max-height:80vh;object-fit:contain"></div>`;
+  } else if (ext === 'pdf') {
+    body.innerHTML = `<iframe src="${url}" style="width:100%;height:80vh;border:none"></iframe>`;
+  }
+  bootstrap.Modal.getOrCreate(document.getElementById('previewModal')).show();
+}
 </script>
+
+{# ── 附件預覽 Modal ── #}
+<div class="modal fade" id="previewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2 px-3">
+        <span class="fw-semibold small text-truncate" id="previewModalTitle"></span>
+        <div class="d-flex gap-2 ms-auto">
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+      </div>
+      <div class="modal-body p-0 text-center bg-dark bg-opacity-10" id="previewModalBody"
+           style="min-height:200px;overflow:auto">
+      </div>
+    </div>
+  </div>
+</div>
 
 {% endblock %}

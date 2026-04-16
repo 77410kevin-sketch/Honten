@@ -201,13 +201,19 @@
                 (is_prod_edit and doc.category == '作業SOP') or
                 (is_wh_edit   and doc.category == '包裝SOP')
             ) %}
+            {% set doc_ext2 = doc.original_name.rsplit('.', 1)[-1].lower() if '.' in doc.original_name else '' %}
             <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mb-1 bg-light">
-              <div>
-                <i class="bi bi-file-earmark me-1 text-secondary"></i>
-                <a href="/pcn-forms/doc/preview/{{ doc.id }}" target="_blank" class="text-decoration-none">
-                  {{ doc.original_name }}
-                </a>
-                <small class="text-muted ms-2">{{ doc.uploaded_at.strftime('%m/%d %H:%M') }}</small>
+              <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+                <i class="bi bi-file-earmark text-secondary flex-shrink-0"></i>
+                <span class="text-truncate small">{{ doc.original_name }}</span>
+                <small class="text-muted text-nowrap">{{ doc.uploaded_at.strftime('%m/%d %H:%M') }}</small>
+                {% if doc_ext2 in ['png','jpg','jpeg','gif','webp','bmp','pdf'] %}
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 flex-shrink-0"
+                        style="font-size:.75rem"
+                        onclick="editPreviewDoc({{ doc.id }}, '{{ doc.original_name | e }}', '{{ doc_ext2 }}')">
+                  <i class="bi bi-eye"></i>
+                </button>
+                {% endif %}
               </div>
               {% if can_delete %}
               <button type="button" class="btn btn-sm btn-outline-danger"
@@ -228,7 +234,15 @@
         <h6 class="fw-bold text-secondary border-bottom pb-1 mb-3">補充上傳附件</h6>
 
         {% if is_qc_edit %}
-        {# 品保：只補 SIP 檢表 #}
+        {# 品保：調整說明 + SIP 檢表 #}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-pencil-square me-1 text-info"></i>調整說明
+            <span class="text-danger">*</span>
+          </label>
+          <textarea name="supplement_comment" class="form-control" rows="3"
+            placeholder="請說明本次 SIP 補件的調整內容與原因...">{{ form.qc_comment or '' }}</textarea>
+        </div>
         <div class="mb-3 p-3 border rounded" style="background:#f0f8ff;border-color:#0dcaf0!important">
           <label class="form-label fw-semibold">
             <i class="bi bi-clipboard-check me-1 text-info"></i>補充 SIP 檢表
@@ -240,7 +254,14 @@
         </div>
 
         {% elif is_prod_edit %}
-        {# 產線主管：只補 作業SOP #}
+        {# 產線主管：調整說明 + 作業SOP #}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-pencil-square me-1 text-success"></i>調整說明
+          </label>
+          <textarea name="supplement_comment" class="form-control" rows="3"
+            placeholder="請說明作業 SOP 的調整內容...">{{ form.prod_comment or '' }}</textarea>
+        </div>
         <div class="mb-3 p-3 border rounded" style="background:#f0fff4;border-color:#198754!important">
           <label class="form-label fw-semibold">
             <i class="bi bi-file-earmark-text me-1 text-success"></i>補充作業 SOP
@@ -252,7 +273,14 @@
         </div>
 
         {% elif is_wh_edit %}
-        {# 倉管：只補 包裝SOP #}
+        {# 倉管：調整說明 + 包裝SOP #}
+        <div class="mb-3">
+          <label class="form-label fw-semibold">
+            <i class="bi bi-pencil-square me-1" style="color:#fd7e14"></i>調整說明
+          </label>
+          <textarea name="supplement_comment" class="form-control" rows="3"
+            placeholder="請說明包裝 SOP 的調整內容...">{{ form.prod_comment or '' }}</textarea>
+        </div>
         <div class="mb-3 p-3 border rounded" style="background:#fff8e6;border-color:#fd7e14!important">
           <label class="form-label fw-semibold">
             <i class="bi bi-box-seam me-1 text-warning"></i>補充包裝 SOP
@@ -347,6 +375,21 @@
 }
 </style>
 <script>
+// ── 附件預覽（edit 頁） ──────────────────────────
+function editPreviewDoc(docId, filename, ext) {
+  const url = `/pcn-forms/doc/preview/${docId}`;
+  const imgExts = ['png','jpg','jpeg','gif','webp','bmp'];
+  const body = document.getElementById('editPreviewBody');
+  const title = document.getElementById('editPreviewTitle');
+  title.textContent = filename;
+  if (imgExts.includes(ext)) {
+    body.innerHTML = `<div class="p-2"><img src="${url}" class="img-fluid rounded" style="max-height:80vh;object-fit:contain"></div>`;
+  } else if (ext === 'pdf') {
+    body.innerHTML = `<iframe src="${url}" style="width:100%;height:80vh;border:none"></iframe>`;
+  }
+  bootstrap.Modal.getOrCreate(document.getElementById('editPreviewModal')).show();
+}
+
 // ── 刪除附件（fetch，避免巢狀 form 破壞主表單結構）──
 async function deletePcnDoc(docId, formId, btn) {
   if (!confirm('確定刪除此附件？')) return;
@@ -595,4 +638,20 @@ document.querySelector('form[action*="/edit"]').addEventListener('submit', async
   }
 });
 </script>
+
+{# ── 附件預覽 Modal (edit) ── #}
+<div class="modal fade" id="editPreviewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2 px-3">
+        <span class="fw-semibold small text-truncate" id="editPreviewTitle"></span>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 text-center bg-dark bg-opacity-10" id="editPreviewBody"
+           style="min-height:200px;overflow:auto">
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
