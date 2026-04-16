@@ -537,47 +537,50 @@ function addOtherRow() {
   zone.appendChild(row);
 }
 
-// ── 表單送出攔截 ─────────────────────────────────
+// ── 表單送出攔截（fetch 方式，相容 Safari）──────────
 const IS_RESTRICTED = {{ 'true' if is_restricted else 'false' }};
-document.querySelector('form[action*="/edit"]').addEventListener('submit', function(e) {
+document.querySelector('form[action*="/edit"]').addEventListener('submit', async function(e) {
+  e.preventDefault();
+
   // 限縮模式不需驗證料號（已有 hidden input）
   if (!IS_RESTRICTED) {
     const partInputs = document.querySelectorAll('#part-number-zone .part-number-input');
     const partValues = [...partInputs].map(i => i.value.trim()).filter(Boolean);
     if (partValues.length === 0) {
       showAlert('請輸入至少一筆廠內產品料號');
-      e.preventDefault();
       return;
     }
+    // 先更新 hidden input，再讓 FormData 讀取
     document.getElementById('productNameHidden').value = partValues.join('\n');
   }
 
-  // 注入圖面貼上的圖片
-  const validDraw = drawPastedFiles.filter(Boolean);
-  if (validDraw.length > 0) {
-    const dt = new DataTransfer();
-    validDraw.forEach(f => dt.items.add(f));
-    const fi = document.createElement('input');
-    fi.type = 'file'; fi.name = 'attach_files'; fi.style.display = 'none';
-    Object.defineProperty(fi, 'files', { value: dt.files });
-    this.appendChild(fi);
-    const ci = document.createElement('input');
-    ci.type = 'hidden'; ci.name = 'attach_categories'; ci.value = '圖面/報價單';
-    this.appendChild(ci);
-  }
+  // 用 FormData 從表單收集所有欄位（含一般 file input）
+  const fd = new FormData(this);
 
-  // 注入 BOM 途程貼上的圖片
-  const validBom = bomPastedFiles.filter(Boolean);
-  if (validBom.length > 0) {
-    const dt2 = new DataTransfer();
-    validBom.forEach(f => dt2.items.add(f));
-    const fi2 = document.createElement('input');
-    fi2.type = 'file'; fi2.name = 'attach_files'; fi2.style.display = 'none';
-    Object.defineProperty(fi2, 'files', { value: dt2.files });
-    this.appendChild(fi2);
-    const ci2 = document.createElement('input');
-    ci2.type = 'hidden'; ci2.name = 'attach_categories'; ci2.value = '料號BOM途程';
-    this.appendChild(ci2);
+  // 直接 append 貼上的圖面圖片（不需 Object.defineProperty）
+  drawPastedFiles.filter(Boolean).forEach(f => {
+    fd.append('attach_files', f, f.name);
+    fd.append('attach_categories', '圖面/報價單');
+  });
+
+  // 直接 append 貼上的 BOM 途程圖片
+  bomPastedFiles.filter(Boolean).forEach(f => {
+    fd.append('attach_files', f, f.name);
+    fd.append('attach_categories', '料號BOM途程');
+  });
+
+  // 按鈕 loading 狀態
+  const btn = this.querySelector('button[type="submit"]');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>儲存中...'; }
+
+  try {
+    const res = await fetch(this.action, { method: 'POST', body: fd, redirect: 'follow' });
+    // fetch 跟隨 303 redirect，res.url 即最終 URL
+    window.location.href = res.url || this.action.replace('/edit', '');
+  } catch (err) {
+    showAlert('儲存失敗：' + err.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
   }
 });
 </script>
