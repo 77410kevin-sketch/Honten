@@ -1,4 +1,5 @@
 import os, uuid, json, mimetypes
+from urllib.parse import quote as urlquote
 from datetime import datetime
 from typing import List
 
@@ -258,13 +259,17 @@ async def preview_pcn_doc(
         raise HTTPException(status_code=404, detail="檔案不存在")
     mime, _ = mimetypes.guess_type(doc.original_name)
     mime = mime or "application/octet-stream"
+    encoded_name = urlquote(doc.original_name, encoding="utf-8")
     # 圖片與 PDF → 瀏覽器直接預覽；其餘 → 下載
     if mime.startswith("image/") or mime == "application/pdf":
         return FileResponse(
             filepath, media_type=mime,
-            headers={"Content-Disposition": f'inline; filename="{doc.original_name}"'},
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_name}"},
         )
-    return FileResponse(filepath, filename=doc.original_name)
+    return FileResponse(
+        filepath, media_type=mime,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
+    )
 
 
 # ── 詳細頁 ───────────────────────────────────────

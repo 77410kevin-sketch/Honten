@@ -1,4 +1,7 @@
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
@@ -9,7 +12,7 @@ from app.database import engine, Base, AsyncSessionLocal
 from app.models.user import User, Role, BU
 from app.models.pcn_form import PCNForm, PCNDocument, PCNApproval
 from app.services.auth import hash_password
-from app.routes import auth, pcn_forms
+from app.routes import auth, pcn_forms, drawing_checker
 
 
 # ── Seed 初始資料 ────────────────────────────────
@@ -78,6 +81,8 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     # 植入測試資料
     await seed_users()
+    # 初始化圖面量測檢表 DB
+    drawing_checker.init()
     yield
 
 
@@ -101,6 +106,7 @@ async def db_session_middleware(request: Request, call_next):
 
 app.include_router(auth.router)
 app.include_router(pcn_forms.router)
+app.include_router(drawing_checker.router)
 
 
 @app.get("/")

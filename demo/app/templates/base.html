@@ -38,6 +38,11 @@
     <a href="/pcn-forms/new" class="nav-link {% if request.url.path == '/pcn-forms/new' %}active{% endif %}">
       <i class="bi bi-plus-circle me-2"></i>{% if user.role.value in ('engineer', 'admin') %}新建 PCN/ECN{% else %}新建 ECN{% endif %}
     </a>
+    {% if user.role.value in ('qc', 'admin') %}
+    <a href="/drawing-checker/" class="nav-link {% if '/drawing-checker' in request.url.path %}active{% endif %}">
+      <i class="bi bi-rulers me-2"></i>圖面辨識量測表
+    </a>
+    {% endif %}
   </nav>
 
   <div class="px-3 mt-auto">
