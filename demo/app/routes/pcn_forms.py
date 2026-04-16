@@ -111,12 +111,12 @@ async def list_pcn_forms(
     if current_user.role in (Role.ADMIN, Role.BU):
         pass  # 看全部
     elif current_user.role == Role.ENGINEER:
-        # 自建 + 待工程確認 + 退回給工程師
+        # 自建 + 待工程確認 + 退回給工程師（含 QC 退回）
         q = q.where(or_(
             PCNForm.created_by == current_user.id,
             PCNForm.status == PCNFormStatus.ECN_PENDING_ENG,
             and_(PCNForm.status == PCNFormStatus.RETURNED,
-                 PCNForm.reject_to == "工程師"),
+                 PCNForm.reject_to.in_(["工程師", "工程師_QC"])),
         ))
     elif current_user.role == Role.QC:
         # PCN 待品保 + ECN 待品保確認 + 退回給品保
@@ -127,10 +127,19 @@ async def list_pcn_forms(
                  PCNForm.reject_to == "品保"),
         ))
     elif current_user.role == Role.WAREHOUSE:
-        # 倉管看待庫存盤點的單
-        q = q.where(PCNForm.status == PCNFormStatus.ECN_PENDING_WAREHOUSE)
+        # 倉管看：ECN 庫存盤點 + PCN 包裝SOP + 退回倉管
+        q = q.where(or_(
+            PCNForm.status == PCNFormStatus.ECN_PENDING_WAREHOUSE,
+            PCNForm.status == PCNFormStatus.PENDING_WAREHOUSE_SOP,
+            and_(PCNForm.status == PCNFormStatus.RETURNED,
+                 PCNForm.reject_to == "倉管"),
+        ))
     elif current_user.role == Role.PROD_MGR:
-        q = q.where(PCNForm.status == PCNFormStatus.PENDING_PRODUCTION)
+        q = q.where(or_(
+            PCNForm.status == PCNFormStatus.PENDING_PRODUCTION,
+            and_(PCNForm.status == PCNFormStatus.RETURNED,
+                 PCNForm.reject_to == "產線主管"),
+        ))
     else:
         # 其他角色（業務等）只看自建
         q = q.where(PCNForm.created_by == current_user.id)
@@ -321,12 +330,13 @@ async def edit_pcn_form_page(
     form = await _get_form_or_404(form_id, db)
     if form.status not in (PCNFormStatus.DRAFT, PCNFormStatus.RETURNED):
         raise HTTPException(status_code=403, detail="只有草稿或退回可編輯")
-    # 建單者或 admin 可編輯；退回給品保時 QC 也可編輯
+    # 建單者/admin 可編輯；各退回角色也可編輯
     is_creator = (current_user.role == Role.ADMIN or form.created_by == current_user.id)
-    is_qc_returned = (current_user.role == Role.QC and
-                      form.status == PCNFormStatus.RETURNED and
-                      form.reject_to == "品保")
-    if not is_creator and not is_qc_returned:
+    ret = form.status == PCNFormStatus.RETURNED
+    is_qc_ret    = (current_user.role == Role.QC       and ret and form.reject_to == "品保")
+    is_prod_ret  = (current_user.role == Role.PROD_MGR and ret and form.reject_to == "產線主管")
+    is_wh_ret    = (current_user.role == Role.WAREHOUSE and ret and form.reject_to == "倉管")
+    if not is_creator and not is_qc_ret and not is_prod_ret and not is_wh_ret:
         raise HTTPException(status_code=403, detail="無編輯權限")
 
     change_types_list = _parse_change_types(form.change_types)
@@ -363,10 +373,11 @@ async def update_pcn_form(
     if form.status not in (PCNFormStatus.DRAFT, PCNFormStatus.RETURNED):
         raise HTTPException(status_code=403)
     is_creator = (current_user.role == Role.ADMIN or form.created_by == current_user.id)
-    is_qc_returned = (current_user.role == Role.QC and
-                      form.status == PCNFormStatus.RETURNED and
-                      form.reject_to == "品保")
-    if not is_creator and not is_qc_returned:
+    ret = form.status == PCNFormStatus.RETURNED
+    is_qc_ret    = (current_user.role == Role.QC       and ret and form.reject_to == "品保")
+    is_prod_ret  = (current_user.role == Role.PROD_MGR and ret and form.reject_to == "產線主管")
+    is_wh_ret    = (current_user.role == Role.WAREHOUSE and ret and form.reject_to == "倉管")
+    if not is_creator and not is_qc_ret and not is_prod_ret and not is_wh_ret:
         raise HTTPException(status_code=403)
 
     form.department         = department
@@ -590,21 +601,23 @@ async def eng_resubmit(
     current_user: User = Depends(get_current_user),
     comment: str = Form(""),
 ):
-    """工程師在退回狀態重新送品保確認"""
+    """工程師在退回狀態重新送審（BU退回→BU；QC退回→品保）"""
     form = await _get_form_or_404(form_id, db)
-    if form.status != PCNFormStatus.RETURNED or form.reject_to != "工程師":
+    if form.status != PCNFormStatus.RETURNED or form.reject_to not in ("工程師", "工程師_QC"):
         raise HTTPException(status_code=400, detail="目前狀態不允許工程師重新送審")
     if current_user.role not in (Role.ENGINEER, Role.ADMIN):
         raise HTTPException(status_code=403)
     old = form.status
-    form.status     = PCNFormStatus.PENDING_BU_APPROVAL
+    # QC 退回 → 重送品保；BU 退回 → 直送 BU
+    next_s = PCNFormStatus.PENDING_QC if form.reject_to == "工程師_QC" else PCNFormStatus.PENDING_BU_APPROVAL
+    form.status     = next_s
     form.reject_to  = None
     form.updated_at = datetime.utcnow()
     db.add(form)
     db.add(PCNApproval(
         form_id_fk=form.id, approver_id=current_user.id, action="ENG_RESUBMIT",
         comment=comment or None, from_status=old.value,
-        to_status=PCNFormStatus.PENDING_BU_APPROVAL.value,
+        to_status=next_s.value,
     ))
     await db.commit()
     return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
@@ -696,23 +709,160 @@ async def prod_done(
         raise HTTPException(status_code=400)
     if current_user.role not in (Role.PROD_MGR, Role.ADMIN):
         raise HTTPException(status_code=403)
-    cats    = {d.category for d in form.documents}
-    missing = [c for c in ["作業SOP", "包裝SOP"] if c not in cats]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"請先上傳【{'、'.join(missing)}】")
+    cats = {d.category for d in form.documents}
+    if "作業SOP" not in cats:
+        raise HTTPException(status_code=400, detail="請先上傳【作業SOP】")
 
     old = form.status
-    form.status      = PCNFormStatus.PENDING_BU_APPROVAL
+    form.status      = PCNFormStatus.PENDING_WAREHOUSE_SOP  # 次站：倉管做包裝SOP
     form.prod_comment= comment or None
     form.updated_at  = datetime.utcnow()
     db.add(form)
     db.add(PCNApproval(
         form_id_fk=form.id, approver_id=current_user.id, action="PROD_DONE",
         comment=comment or None, from_status=old.value,
+        to_status=PCNFormStatus.PENDING_WAREHOUSE_SOP.value,
+    ))
+    await db.commit()
+    await notif.notify_pcn_prod_done(db, form)
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── PCN 品保退回工程師 ────────────────────────────
+
+@router.post("/{form_id}/qc-reject-to-eng")
+async def qc_reject_to_eng(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(...),
+):
+    """品保退回工程師要求調整補件（PCN）"""
+    form = await _get_form_or_404(form_id, db)
+    if form.status != PCNFormStatus.PENDING_QC:
+        raise HTTPException(status_code=400, detail="目前狀態不允許品保退回工程師")
+    if current_user.role not in (Role.QC, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    if not comment.strip():
+        raise HTTPException(status_code=400, detail="退回原因不得為空")
+    old = form.status
+    form.status     = PCNFormStatus.RETURNED
+    form.reject_to  = "工程師_QC"   # 區別是 QC 退回（重送後回到 QC）
+    form.updated_at = datetime.utcnow()
+    db.add(form)
+    db.add(PCNApproval(
+        form_id_fk=form.id, approver_id=current_user.id, action="QC_REJECT",
+        comment=comment.strip(), from_status=old.value,
+        to_status=PCNFormStatus.RETURNED.value, reject_target="工程師",
+    ))
+    await db.commit()
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── PCN 倉管上傳包裝SOP ──────────────────────────
+
+@router.post("/{form_id}/upload-wh-sop")
+async def upload_wh_sop(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    attach_files: List[UploadFile] = File(default=[]),
+    attach_categories: List[str] = Form(default=[]),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status not in (PCNFormStatus.PENDING_WAREHOUSE_SOP,):
+        raise HTTPException(status_code=403, detail="目前狀態不允許上傳包裝SOP")
+    if current_user.role not in (Role.WAREHOUSE, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
+    await db.commit()
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── PCN 倉管包裝SOP完成 ─────────────────────────
+
+@router.post("/{form_id}/wh-sop-done")
+async def wh_sop_done(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    """倉管完成包裝SOP，送 BU 審核"""
+    form = await _get_form_or_404(form_id, db)
+    if form.status != PCNFormStatus.PENDING_WAREHOUSE_SOP:
+        raise HTTPException(status_code=400, detail="目前狀態不允許倉管送審")
+    if current_user.role not in (Role.WAREHOUSE, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    if not any(d.category == "包裝SOP" for d in form.documents):
+        raise HTTPException(status_code=400, detail="請先上傳【包裝SOP】")
+    old = form.status
+    form.status     = PCNFormStatus.PENDING_BU_APPROVAL
+    form.updated_at = datetime.utcnow()
+    db.add(form)
+    db.add(PCNApproval(
+        form_id_fk=form.id, approver_id=current_user.id, action="WH_SOP_DONE",
+        comment=comment or None, from_status=old.value,
         to_status=PCNFormStatus.PENDING_BU_APPROVAL.value,
     ))
     await db.commit()
     await notif.notify_pcn_prod_done(db, form)
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── 退回後重新送審（產線主管）────────────────────
+
+@router.post("/{form_id}/prod-resubmit")
+async def prod_resubmit(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != PCNFormStatus.RETURNED or form.reject_to != "產線主管":
+        raise HTTPException(status_code=400)
+    if current_user.role not in (Role.PROD_MGR, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    old = form.status
+    form.status     = PCNFormStatus.PENDING_BU_APPROVAL
+    form.reject_to  = None
+    form.updated_at = datetime.utcnow()
+    db.add(form)
+    db.add(PCNApproval(
+        form_id_fk=form.id, approver_id=current_user.id, action="PROD_RESUBMIT",
+        comment=comment or None, from_status=old.value,
+        to_status=PCNFormStatus.PENDING_BU_APPROVAL.value,
+    ))
+    await db.commit()
+    return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── 退回後重新送審（倉管 PCN）────────────────────
+
+@router.post("/{form_id}/wh-resubmit")
+async def wh_resubmit(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != PCNFormStatus.RETURNED or form.reject_to != "倉管":
+        raise HTTPException(status_code=400)
+    if current_user.role not in (Role.WAREHOUSE, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    old = form.status
+    form.status     = PCNFormStatus.PENDING_BU_APPROVAL
+    form.reject_to  = None
+    form.updated_at = datetime.utcnow()
+    db.add(form)
+    db.add(PCNApproval(
+        form_id_fk=form.id, approver_id=current_user.id, action="WH_RESUBMIT",
+        comment=comment or None, from_status=old.value,
+        to_status=PCNFormStatus.PENDING_BU_APPROVAL.value,
+    ))
+    await db.commit()
     return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
 
 

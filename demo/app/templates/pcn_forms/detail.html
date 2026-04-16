@@ -45,6 +45,8 @@
               <span class="badge bg-light text-primary fs-6">PCN 待品保</span>
             {% elif form.status.value == 'PENDING_PRODUCTION' %}
               <span class="badge bg-light text-info fs-6">PCN 待產線主管</span>
+            {% elif form.status.value == 'PENDING_WAREHOUSE_SOP' %}
+              <span class="badge bg-light fs-6" style="color:#fd7e14">PCN 待倉管包裝SOP</span>
             {% elif form.status.value == 'PENDING_BU_APPROVAL' %}
               <span class="badge bg-light text-warning fs-6">待 BU 審核</span>
             {% elif form.status.value == 'APPROVED' %}
@@ -65,10 +67,11 @@
               ('DRAFT', '草稿', 'bi-pencil'),
               ('PENDING_QC', '品保 SIP', 'bi-clipboard2-check'),
               ('PENDING_PRODUCTION', '產線 SOP', 'bi-tools'),
+              ('PENDING_WAREHOUSE_SOP', '倉管包裝', 'bi-box-seam'),
               ('PENDING_BU_APPROVAL', 'BU 審核', 'bi-person-check'),
               ('APPROVED', '核准', 'bi-check-circle'),
             ] %}
-            {% set status_order = ['DRAFT','PENDING_QC','PENDING_PRODUCTION','PENDING_BU_APPROVAL','APPROVED','CLOSED'] %}
+            {% set status_order = ['DRAFT','PENDING_QC','PENDING_PRODUCTION','PENDING_WAREHOUSE_SOP','PENDING_BU_APPROVAL','APPROVED','CLOSED'] %}
           {% elif ecn_tech_review and ecn_needs_warehouse %}
             {# ECN 設計變更含庫存盤點流程 #}
             {% set steps = [
@@ -489,37 +492,43 @@
               <i class="bi bi-check-lg me-1"></i>品保完成，送產線主管
             </button>
           </form>
+          <hr class="my-3">
+          {# 品保退回工程師（要求補件）#}
+          <form method="post" action="/pcn-forms/{{ form.form_id }}/qc-reject-to-eng">
+            <div class="mb-2">
+              <label class="form-label fw-semibold text-danger">退回工程師（要求調整補件）</label>
+              <textarea name="comment" class="form-control border-danger" rows="2"
+                placeholder="請說明需要補充或調整的項目..." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-outline-danger btn-sm"
+              onclick="return confirm('確認退回工程師要求補件？')">
+              <i class="bi bi-arrow-return-left me-1"></i>退回工程師補件
+            </button>
+          </form>
         </div>
       </div>
       {% endif %}
 
-      {# 產線主管上傳 SOP 操作區 #}
+      {# 產線主管上傳 作業SOP 操作區 #}
       {% if form.status.value == 'PENDING_PRODUCTION' and user.role.value in ('prod_mgr', 'admin') %}
       <div class="card shadow-sm mb-3 border-info">
         <div class="card-header bg-info text-dark fw-semibold">
-          <i class="bi bi-tools me-2"></i>產線主管作業區 — 上傳 SOP 並完成
+          <i class="bi bi-tools me-2"></i>產線主管作業區 — 上傳作業 SOP 並完成
         </div>
         <div class="card-body">
-          {# 上傳 SOP #}
+          <div class="alert alert-info small mb-3">
+            <i class="bi bi-info-circle me-1"></i>
+            請上傳<strong>作業 SOP</strong>，完成後由<strong>倉管</strong>依據工程包裝說明製作包裝 SOP。
+          </div>
+          {# 上傳作業SOP #}
           <form method="post" action="/pcn-forms/{{ form.form_id }}/upload-prod" enctype="multipart/form-data" class="mb-3">
-            <div class="row g-2 mb-2">
-              <div class="col-md-6">
-                <label class="form-label fw-semibold small">作業 SOP <span class="text-danger">*</span></label>
-                <div class="d-flex gap-2">
-                  <input type="file" name="attach_files" class="form-control">
-                  <input type="hidden" name="attach_categories" value="作業SOP">
-                </div>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label fw-semibold small">包裝 SOP <span class="text-danger">*</span></label>
-                <div class="d-flex gap-2">
-                  <input type="file" name="attach_files" class="form-control">
-                  <input type="hidden" name="attach_categories" value="包裝SOP">
-                </div>
-              </div>
+            <label class="form-label fw-semibold small">作業 SOP <span class="text-danger">*</span></label>
+            <div class="d-flex gap-2 mb-2">
+              <input type="file" name="attach_files" class="form-control">
+              <input type="hidden" name="attach_categories" value="作業SOP">
             </div>
             <button type="submit" class="btn btn-outline-info text-dark">
-              <i class="bi bi-upload me-1"></i>上傳 SOP
+              <i class="bi bi-upload me-1"></i>上傳作業 SOP
             </button>
           </form>
           {# 完成按鈕 #}
@@ -529,8 +538,52 @@
               <textarea name="comment" class="form-control" rows="2" placeholder="產線審查意見..."></textarea>
             </div>
             <button type="submit" class="btn btn-info text-dark"
-              onclick="return confirm('確認產線作業完成，送交 BU Head 審核？')">
-              <i class="bi bi-check-lg me-1"></i>產線完成，送 BU 審核
+              onclick="return confirm('確認產線作業SOP完成，送交倉管製作包裝SOP？')">
+              <i class="bi bi-check-lg me-1"></i>產線完成，送倉管包裝SOP
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      {# 倉管包裝SOP作業區（PCN）#}
+      {% if form.status.value == 'PENDING_WAREHOUSE_SOP' and user.role.value in ('warehouse', 'admin') %}
+      <div class="card shadow-sm mb-3" style="border-color:#fd7e14!important">
+        <div class="card-header fw-semibold text-white" style="background:#fd7e14">
+          <i class="bi bi-box-seam me-2"></i>倉管作業區 — 依包裝說明製作包裝 SOP
+        </div>
+        <div class="card-body">
+          <div class="alert small mb-3" style="background:#fff3e0;border-color:#fd7e14">
+            <i class="bi bi-info-circle me-1"></i>
+            請參考工程師的<strong>各製程包裝說明</strong>，上傳<strong>包裝 SOP</strong>，完成後送 BU Head 審核。
+          </div>
+          {# 顯示工程包裝說明 #}
+          {% if form.change_reason %}
+          <div class="mb-3 p-2 border rounded bg-light small">
+            <div class="text-muted mb-1"><i class="bi bi-sticky me-1"></i>工程包裝說明</div>
+            <div style="white-space:pre-wrap">{{ form.change_reason }}</div>
+          </div>
+          {% endif %}
+          {# 上傳包裝SOP #}
+          <form method="post" action="/pcn-forms/{{ form.form_id }}/upload-wh-sop" enctype="multipart/form-data" class="mb-3">
+            <label class="form-label fw-semibold small">包裝 SOP <span class="text-danger">*</span></label>
+            <div class="d-flex gap-2 mb-2">
+              <input type="file" name="attach_files" class="form-control">
+              <input type="hidden" name="attach_categories" value="包裝SOP">
+            </div>
+            <button type="submit" class="btn btn-outline-warning">
+              <i class="bi bi-upload me-1"></i>上傳包裝 SOP
+            </button>
+          </form>
+          {# 完成按鈕 #}
+          <form method="post" action="/pcn-forms/{{ form.form_id }}/wh-sop-done">
+            <div class="mb-2">
+              <label class="form-label fw-semibold">倉管備註（選填）</label>
+              <textarea name="comment" class="form-control" rows="2" placeholder="包裝SOP相關說明..."></textarea>
+            </div>
+            <button type="submit" class="btn fw-semibold text-white" style="background:#fd7e14"
+              onclick="return confirm('確認包裝SOP完成，送交 BU Head 審核？')">
+              <i class="bi bi-check-lg me-1"></i>包裝SOP完成，送 BU 審核
             </button>
           </form>
         </div>

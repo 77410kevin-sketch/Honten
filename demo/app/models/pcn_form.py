@@ -17,8 +17,9 @@ class PCNFormStatus(str, enum.Enum):
     ECN_PENDING_ENG     = "ECN_PENDING_ENG"   # ECN 待工程確認
     ECN_PENDING_QC      = "ECN_PENDING_QC"    # ECN 待品保確認
     # PCN 標準路線
-    PENDING_QC          = "PENDING_QC"         # PCN 待品保 SIP
-    PENDING_PRODUCTION  = "PENDING_PRODUCTION" # PCN 待產線 SOP
+    PENDING_QC            = "PENDING_QC"            # PCN 待品保 SIP
+    PENDING_PRODUCTION    = "PENDING_PRODUCTION"    # PCN 待產線 作業SOP
+    PENDING_WAREHOUSE_SOP = "PENDING_WAREHOUSE_SOP" # PCN 待倉管 包裝SOP
     # 共用
     PENDING_BU_APPROVAL = "PENDING_BU_APPROVAL"
     APPROVED            = "APPROVED"
