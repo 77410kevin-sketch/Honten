@@ -321,8 +321,13 @@ async def edit_pcn_form_page(
     form = await _get_form_or_404(form_id, db)
     if form.status not in (PCNFormStatus.DRAFT, PCNFormStatus.RETURNED):
         raise HTTPException(status_code=403, detail="只有草稿或退回可編輯")
-    if current_user.role != Role.ADMIN and form.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="只有建單者可編輯")
+    # 建單者或 admin 可編輯；退回給品保時 QC 也可編輯
+    is_creator = (current_user.role == Role.ADMIN or form.created_by == current_user.id)
+    is_qc_returned = (current_user.role == Role.QC and
+                      form.status == PCNFormStatus.RETURNED and
+                      form.reject_to == "品保")
+    if not is_creator and not is_qc_returned:
+        raise HTTPException(status_code=403, detail="無編輯權限")
 
     change_types_list = _parse_change_types(form.change_types)
     return templates.TemplateResponse("pcn_forms/edit.html", {
@@ -357,7 +362,11 @@ async def update_pcn_form(
     form = await _get_form_or_404(form_id, db)
     if form.status not in (PCNFormStatus.DRAFT, PCNFormStatus.RETURNED):
         raise HTTPException(status_code=403)
-    if current_user.role != Role.ADMIN and form.created_by != current_user.id:
+    is_creator = (current_user.role == Role.ADMIN or form.created_by == current_user.id)
+    is_qc_returned = (current_user.role == Role.QC and
+                      form.status == PCNFormStatus.RETURNED and
+                      form.reject_to == "品保")
+    if not is_creator and not is_qc_returned:
         raise HTTPException(status_code=403)
 
     form.department         = department
@@ -780,6 +789,36 @@ async def reject_pcn_form(
     await db.commit()
     await notif.notify_pcn_rejected(db, form, reject_target)
     return RedirectResponse(url=f"/pcn-forms/{form_id}", status_code=303)
+
+
+# ── CC Package PDF 下載 ──────────────────────────
+
+@router.get("/{form_id}/cc-pdf")
+async def download_cc_pdf(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """即時生成（或重新生成）CC Package PDF 並下載"""
+    import json as _json
+    from app.services.pdf_export import generate_cc_pdf
+    from fastapi.responses import Response
+
+    form = await _get_form_or_404(form_id, db)
+    inv_rows = []
+    if form.inventory_data:
+        try:
+            inv_rows = _json.loads(form.inventory_data)
+        except Exception:
+            pass
+
+    pdf_bytes = generate_cc_pdf(form, inv_rows or None)
+    filename = f"CC_{form.form_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── 結案 ─────────────────────────────────────────

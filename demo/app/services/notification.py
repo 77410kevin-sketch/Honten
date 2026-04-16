@@ -22,8 +22,13 @@ async def notify_pcn_prod_done(db, form):
 
 
 async def notify_pcn_approved(db, form):
-    logger.info(f"[LINE通知-Demo] BU核准 | {form.form_id}")
-    print(f"\n📱 [LINE通知] 【✅ PCN/ECN已核准】{form.form_id} - {form.product_name} 通知所有相關人員\n")
+    from app.services.pdf_export import save_cc_pdf
+    pdf_path = save_cc_pdf(form)
+    logger.info(f"[LINE通知-Demo] BU核准 | {form.form_id} | PDF={pdf_path}")
+    print(
+        f"\n📱 [LINE通知] 【✅ PCN/ECN已核准】{form.form_id} - {form.product_name} 通知所有相關人員\n"
+        f"   📄 CC PDF 已生成：{pdf_path}\n"
+    )
 
 
 async def notify_pcn_rejected(db, form, reject_target: str = "提案單位"):
@@ -34,29 +39,45 @@ async def notify_pcn_rejected(db, form, reject_target: str = "提案單位"):
 # ── ECN 核准 CC 通知 ─────────────────────────────
 
 async def notify_ecn_approved_tech(db, form):
-    """ECN 技術類（製程/設計/供應商）核准 → CC：工程 + 品保 + 資材 + 提出單位"""
-    logger.info(f"[LINE通知-Demo] ECN技術類核准 | {form.form_id} | CC→工程、品保、資材、提出單位")
+    """ECN 技術類（製程/設計/供應商）核准 → CC：工程 + 品保 + 資材 + 提出單位 + PDF"""
+    import json
+    from app.services.pdf_export import save_cc_pdf
+    inv_rows = []
+    if form.inventory_data:
+        try:
+            inv_rows = json.loads(form.inventory_data)
+        except Exception:
+            pass
+    pdf_path = save_cc_pdf(form, inv_rows or None)
+    logger.info(f"[LINE通知-Demo] ECN技術類核准 | {form.form_id} | CC→工程、品保、資材、提出單位 | PDF={pdf_path}")
     print(
         f"\n📱 [LINE通知-CC] 【✅ ECN技術類核准】{form.form_id} - {form.product_name}\n"
         f"   CC 通知：工程部門、品保部門、資材部門（採購/倉管）、提出單位（{form.department or '—'}）\n"
+        f"   📄 CC PDF 已生成：{pdf_path}\n"
     )
 
 
 async def notify_ecn_approved_price(db, form):
-    """ECN 售價變更核准 → CC：提出單位 + 業助 + 人事"""
-    logger.info(f"[LINE通知-Demo] ECN售價變更核准 | {form.form_id} | CC→提出單位、業助、人事")
+    """ECN 售價變更核准 → CC：提出單位 + 業助 + 人事 + PDF"""
+    from app.services.pdf_export import save_cc_pdf
+    pdf_path = save_cc_pdf(form)
+    logger.info(f"[LINE通知-Demo] ECN售價變更核准 | {form.form_id} | CC→提出單位、業助、人事 | PDF={pdf_path}")
     print(
         f"\n📱 [LINE通知-CC] 【✅ ECN售價變更核准】{form.form_id} - {form.product_name}\n"
         f"   CC 通知：提出單位（{form.department or '—'}）、業務助理、人事\n"
+        f"   📄 CC PDF 已生成：{pdf_path}\n"
     )
 
 
 async def notify_ecn_approved_cost(db, form):
-    """ECN 成本變更核准 → CC：提出單位 + 採購 + 人事 + 業務"""
-    logger.info(f"[LINE通知-Demo] ECN成本變更核准 | {form.form_id} | CC→提出單位、採購、人事、業務")
+    """ECN 成本變更核准 → CC：提出單位 + 採購 + 人事 + 業務 + PDF"""
+    from app.services.pdf_export import save_cc_pdf
+    pdf_path = save_cc_pdf(form)
+    logger.info(f"[LINE通知-Demo] ECN成本變更核准 | {form.form_id} | CC→提出單位、採購、人事、業務 | PDF={pdf_path}")
     print(
         f"\n📱 [LINE通知-CC] 【✅ ECN成本變更核准】{form.form_id} - {form.product_name}\n"
         f"   CC 通知：提出單位（{form.department or '—'}）、採購、人事、業務\n"
+        f"   📄 CC PDF 已生成：{pdf_path}\n"
     )
 
 

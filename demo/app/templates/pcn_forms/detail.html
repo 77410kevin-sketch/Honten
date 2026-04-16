@@ -630,6 +630,13 @@
           </a>
           {% endif %}
 
+          {# 編輯（退回給品保 + 品保/admin）#}
+          {% if form.status.value == 'RETURNED' and form.reject_to == '品保' and user.role.value in ('qc', 'admin') %}
+          <a href="/pcn-forms/{{ form.form_id }}/edit" class="btn btn-outline-warning">
+            <i class="bi bi-pencil me-1"></i>編輯（品保）
+          </a>
+          {% endif %}
+
           {# 送審（草稿/退回 + 建單者）#}
           {% if form.status.value in ('DRAFT', 'RETURNED') and (user.role.value == 'admin' or form.created_by == user.id) %}
           <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#submitModal">
@@ -677,6 +684,13 @@
           <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#closeModal">
             <i class="bi bi-archive me-1"></i>結案
           </button>
+          {% endif %}
+
+          {# CC Package PDF 下載（核准後可用）#}
+          {% if form.status.value in ('APPROVED', 'CLOSED') %}
+          <a href="/pcn-forms/{{ form.form_id }}/cc-pdf" class="btn btn-outline-danger" target="_blank">
+            <i class="bi bi-file-earmark-pdf me-1"></i>下載 CC Package PDF
+          </a>
           {% endif %}
 
           <a href="/pcn-forms/" class="btn btn-outline-secondary">
