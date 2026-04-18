@@ -190,6 +190,27 @@ async def new_npi_page(
     })
 
 
+# ── AI 智慧解析詢價信 → 回 JSON（前端用以預填欄位）─
+
+@router.post("/_parse-inquiry")
+async def parse_inquiry(
+    current_user: User = Depends(get_current_user),
+    inquiry_file: UploadFile = File(...),
+):
+    if current_user.role not in _SALES_ROLES:
+        raise HTTPException(status_code=403, detail="只有業務可以使用此功能")
+    from app.services.inquiry_parser import parse_inquiry_letter, extract_text_from_upload
+    content = await inquiry_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="檔案為空")
+    try:
+        text = extract_text_from_upload(inquiry_file.filename or "upload.txt", content)
+        data = parse_inquiry_letter(text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"解析失敗：{e}")
+    return {"ok": True, "data": data}
+
+
 @router.post("/new")
 async def create_npi(
     db: AsyncSession = Depends(get_db),

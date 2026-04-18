@@ -2065,3 +2065,64 @@ After doing this, you may fix the identity used for this commit with:
 To github.com:77410kevin-sketch/Honten.git
    57e2e4b..e6cd861  main -> main
 [2026-04-18 11:38] ✅ 已自動 push
+[main c7e7b88] 自動備份 2026-04-18 12:38
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 44 files changed, 8895 insertions(+)
+ create mode 100644 feature/npi-module/app/database.py
+ create mode 100644 feature/npi-module/app/drawing_checker/__init__.py
+ create mode 100644 feature/npi-module/app/drawing_checker/analyzer.py
+ create mode 100644 feature/npi-module/app/drawing_checker/db.py
+ create mode 100644 feature/npi-module/app/drawing_checker/pdf_converter.py
+ create mode 100644 feature/npi-module/app/drawing_checker/preprocess.py
+ create mode 100644 feature/npi-module/app/main.py
+ create mode 100644 feature/npi-module/app/models/npi_form.py
+ create mode 100644 feature/npi-module/app/models/pcn_form.py
+ create mode 100644 feature/npi-module/app/models/supplier.py
+ create mode 100644 feature/npi-module/app/models/user.py
+ create mode 100644 feature/npi-module/app/routes/auth.py
+ create mode 100644 feature/npi-module/app/routes/drawing_checker.py
+ create mode 100644 feature/npi-module/app/routes/npi_forms.py
+ create mode 100644 feature/npi-module/app/routes/pcn_forms.py
+ create mode 100644 feature/npi-module/app/routes/suppliers.py
+ create mode 100644 feature/npi-module/app/services/auth.py
+ create mode 100644 feature/npi-module/app/services/notification.py
+ create mode 100644 feature/npi-module/app/services/npi_notification.py
+ create mode 100644 feature/npi-module/app/services/pdf_export.py
+ create mode 100644 feature/npi-module/app/templates/base.html
+ create mode 100644 feature/npi-module/app/templates/drawing_checker/index.html
+ create mode 100644 feature/npi-module/app/templates/login.html
+ create mode 100644 feature/npi-module/app/templates/npi_forms/detail.html
+ create mode 100644 feature/npi-module/app/templates/npi_forms/edit.html
+ create mode 100644 feature/npi-module/app/templates/npi_forms/list.html
+ create mode 100644 feature/npi-module/app/templates/npi_forms/new.html
+ create mode 100644 feature/npi-module/app/templates/pcn_forms/detail.html
+ create mode 100644 feature/npi-module/app/templates/pcn_forms/edit.html
+ create mode 100644 feature/npi-module/app/templates/pcn_forms/list.html
+ create mode 100644 feature/npi-module/app/templates/pcn_forms/new.html
+ create mode 100644 feature/npi-module/app/templates/suppliers/edit.html
+ create mode 100644 feature/npi-module/app/templates/suppliers/list.html
+ create mode 100644 feature/npi-module/app/templates/suppliers/new.html
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206A\345\240\261\345\203\271.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206B\345\240\261\345\203\271.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\350\246\217\346\240\274\346\233\270/\350\246\217\346\240\274\346\233\270.txt"
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\350\255\260\345\203\271\350\250\230\351\214\204/\350\255\260\345\203\271\350\250\230\351\214\204.txt"
+ create mode 100644 feature/npi-module/requirements.txt
+To github.com:77410kevin-sketch/Honten.git
+   e6cd861..c7e7b88  main -> main
+[2026-04-18 12:38] ✅ 已自動 push
