@@ -1,0 +1,77 @@
+{
+  "form_id": "RFQ-20260418-013",
+  "customer_name": "Dynapack International Technology Corp.",
+  "product_name": "UPS 鉛金件",
+  "product_model": "DG110U",
+  "quoted_unit_price": 675.8,
+  "cost_analysis_note": null,
+  "bu_quote_note": "核准報價",
+  "quote_cost_data": {
+    "columns": [
+      {
+        "label": "IMG_3366.PNG",
+        "subtotal": 511,
+        "defect_amount": 25.55,
+        "overhead_amount": 35.77,
+        "qa_ship_amount": 15.33,
+        "tooling_cost": 3500,
+        "tooling_profit_rate": 0.15,
+        "tooling_profit_amount": 525,
+        "tooling_quote": 4025,
+        "cost_total": 587.65,
+        "profit_rate": 0.15,
+        "profit_amount": 88.15,
+        "quote": 675.8
+      },
+      {
+        "label": "IMG_3366.PNG",
+        "subtotal": 55,
+        "defect_amount": 2.75,
+        "overhead_amount": 3.85,
+        "qa_ship_amount": 1.65,
+        "tooling_cost": 1500,
+        "tooling_profit_rate": 0.15,
+        "tooling_profit_amount": 225,
+        "tooling_quote": 1725,
+        "cost_total": 63.25,
+        "profit_rate": 0.15,
+        "profit_amount": 9.49,
+        "quote": 72.74
+      }
+    ],
+    "rows": [
+      {
+        "process": "鋁擠",
+        "prices": [
+          45,
+          null
+        ]
+      },
+      {
+        "process": "NCT",
+        "prices": [
+          466,
+          null
+        ]
+      },
+      {
+        "process": "沖壓",
+        "prices": [
+          null,
+          33
+        ]
+      },
+      {
+        "process": "烤漆",
+        "prices": [
+          null,
+          22
+        ]
+      }
+    ],
+    "defect_rate": 0.05,
+    "overhead_rate": 0.07,
+    "qa_ship_rate": 0.03
+  },
+  "approved_at": "2026-04-18T15:57:09.263209"
+}

@@ -2323,3 +2323,26 @@ After doing this, you may fix the identity used for this commit with:
 To github.com:77410kevin-sketch/Honten.git
    b7794e5..99c590b  main -> main
 [2026-04-18 22:39] ✅ 已自動 push
+[main ba3c4f3] 自動備份 2026-04-18 23:39
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 10 files changed, 778 insertions(+), 208 deletions(-)
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-012/RFQ_Quote/customer_quote/NPI-20260418-012_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html"
+ create mode 100644 feature/npi-module/nas_npi/NPI-20260418-012/RFQ_Quote/internal_cost_analysis/quote_summary.json
+ create mode 100644 feature/npi-module/nas_npi/NPI-20260418-012/RFQ_Quote/supplier_quotes/IMG_3366.PNG
+ create mode 100644 feature/npi-module/nas_npi/NPI-20260418-012/RFQ_Quote/supplier_quotes/IMG_3367.PNG
+ create mode 100644 feature/npi-module/scripts/test_rfq_merge_mail.py
+To github.com:77410kevin-sketch/Honten.git
+   99c590b..ba3c4f3  main -> main
+[2026-04-18 23:39] ✅ 已自動 push

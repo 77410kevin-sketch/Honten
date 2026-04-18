@@ -29,6 +29,7 @@ from app.models.npi_form import (
 )
 from app.services.auth import get_current_user
 import app.services.npi_notification as notif
+from app.services import rfq_archive
 
 router    = APIRouter(prefix="/npi-forms")
 templates = Jinja2Templates(directory="app/templates")
@@ -741,9 +742,15 @@ async def customer_quote_view(
             quote_data = json.loads(form.quote_cost_data)
         except Exception:
             pass
+    # 查詢對應 BU 的 BU Head（若無指定 bu 則取任一位 BU）
+    bu_head_q = select(User).where(User.role == Role.BU, User.is_active == True)
+    if form.bu is not None:
+        bu_head_q = bu_head_q.where(User.bu == form.bu)
+    bu_head = (await db.execute(bu_head_q)).scalars().first()
     return templates.TemplateResponse("npi_forms/customer_quote.html", {
         "request": request, "user": current_user,
         "form": form, "quote_data": quote_data,
+        "bu_head": bu_head,
         "now": datetime.utcnow(),
     })
 

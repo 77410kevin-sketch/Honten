@@ -398,10 +398,7 @@
         <div class="card-body small">
           <div id="quoteSheetView"></div>
           <div class="row g-2 mt-2">
-            <div class="col-md-4"><strong>業務決定報價單價：</strong>
-              <span class="text-primary fw-bold fs-6">{{ form.quoted_unit_price or '—' }}</span>
-            </div>
-            <div class="col-md-8"><strong>業務備註：</strong>{{ form.cost_analysis_note or '—' }}</div>
+            <div class="col-12"><strong>業務備註：</strong>{{ form.cost_analysis_note or '—' }}</div>
             {% if form.bu_quote_note %}
             <div class="col-12"><strong>BU 評語：</strong><span class="text-muted">{{ form.bu_quote_note }}</span></div>
             {% endif %}
@@ -445,7 +442,7 @@
             html += fmtRow('製程成本小計', 'subtotal', 'table-secondary fw-semibold');
             html += fmtRow(`不良率 (${defect}%)`, 'defect_amount');
             html += fmtRow(`管銷 (${oh}%)`, 'overhead_amount');
-            html += fmtRow(`品保運 (${qa}%)`, 'qa_ship_amount');
+            html += fmtRow(`品包運 (${qa}%)`, 'qa_ship_amount');
             html += fmtRow('成本合計（不含模治具）', 'cost_total', 'table-light fw-bold');
             // 利潤 — 每欄獨立 %（顯示 rate + amount）
             let profitRow = `<tr><th class="text-start">利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small></th>`;
@@ -461,11 +458,25 @@
             profitRow += '</tr>';
             html += profitRow;
             html += fmtRow('最終報價單價', 'quote', 'table-warning fw-bold');
-            // 模治具費用獨立列於報價之下（不計入單價）
+            // 模治具費用獨立列於報價之下（不計入單價，但可套利潤成報價）
             let hasTooling = false;
             cols.forEach(c => { if (c.tooling_cost && c.tooling_cost > 0) hasTooling = true; });
             if (hasTooling) {
-              html += fmtRow('模治具費用（獨立，不含於單價）', 'tooling_cost', 'table-info');
+              html += fmtRow('模治具成本（供應商加總）', 'tooling_cost', 'table-info');
+              // 模治具利潤 — 每欄獨立 %（顯示 rate + amount）
+              let tProfitRow = `<tr class="table-info"><th class="text-start">模治具利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small></th>`;
+              cols.forEach(c => {
+                let rate = c.tooling_profit_rate;
+                if (rate == null) rate = c.profit_rate; // 舊資料向下相容
+                let amt = c.tooling_profit_amount;
+                if (amt == null && rate != null && c.tooling_cost != null) amt = c.tooling_cost * rate;
+                const ratePct = rate != null ? (rate*100).toFixed(1)+'%' : '—';
+                const amtStr = amt!=null?(typeof amt==='number'?amt.toFixed(2):amt):'—';
+                tProfitRow += `<td class="text-end"><span class="badge bg-light text-dark border me-1">${ratePct}</span>${amtStr}</td>`;
+              });
+              tProfitRow += '</tr>';
+              html += tProfitRow;
+              html += fmtRow('模治具報價（含利潤）', 'tooling_quote', 'table-warning fw-bold');
             }
             html += '</tfoot></table></div>';
             target.innerHTML = html;
@@ -1127,7 +1138,7 @@
 })();
 </script>
 
-{# 業務試算 + 送 BU 審核報價 modal（直列 5 欄 + 不良率/管銷/品保運/利潤）#}
+{# 業務試算 + 送 BU 審核報價 modal（直列 5 欄 + 不良率/管銷/品包運/利潤）#}
 {% if (form.status.value == 'QUOTES_COLLECTED'
        or (form.status.value == 'RETURNED' and form.reject_to == '業務'))
     and user.role.value in ('sales','admin') %}
@@ -1141,7 +1152,7 @@
       <div class="modal-body">
         <div class="alert alert-info small mb-2">
           每欄對應一個 <strong>機種</strong>（預設帶入業務上傳的圖面檔名），可 <kbd>+ 欄</kbd> / <kbd>− 欄</kbd> 增減。
-          每列為一個製程，工程/採購已填的供應商單價會自動帶入。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品保運</strong>，
+          每列為一個製程，工程/採購已填的供應商單價會自動帶入。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品包運</strong>，
           利潤由業務填寫，即產出每個機種的「最終報價單價」，全部一起送 BU 審核。
         </div>
         <div class="d-flex gap-2 mb-2">
@@ -1188,7 +1199,7 @@
               </tr>
               <tr>
                 <th class="text-start">
-                  品保運
+                  品包運
                   <input type="number" step="0.1" id="qaRate" value="3"
                          class="form-control form-control-sm d-inline-block align-middle"
                          style="width:70px"> %
@@ -1207,7 +1218,17 @@
               </tr>
               <tr class="table-info">
                 <th class="text-start">
-                  模治具費用 <small class="text-muted fw-normal">（獨立計價，不含於單價）</small>
+                  模治具成本 <small class="text-muted fw-normal">（加總供應商填報，可編輯）</small>
+                </th>
+              </tr>
+              <tr class="table-info">
+                <th class="text-start">
+                  模治具利潤 <small class="text-muted fw-normal">（每欄獨立 %，可與單價利潤不同）</small>
+                </th>
+              </tr>
+              <tr class="table-warning fw-bold">
+                <th class="text-start">
+                  模治具報價 <small class="text-muted fw-normal">（給客戶的含利潤金額）</small>
                 </th>
               </tr>
             </tfoot>
@@ -1270,12 +1291,12 @@
     {% endfor %}
     return m;
   })();
-  // 模治具費用對應表：按 drawing_id 彙總（同圖不同供應商則取最高 / 可由使用者覆寫）
+  // 模治具費用對應表：按 drawing_id 加總（同圖多家供應商加總後給業務做為預設值，可覆寫）
   const toolingByDrawing = (function(){
     const m = {};
     {% for inv in form.invites %}
       {% if inv.tooling_cost %}
-      (function(k, v){ if (!(k in m) || v > m[k]) m[k] = v; })('{{ inv.drawing_doc_id or 0 }}', {{ inv.tooling_cost }});
+      (function(k, v){ m[k] = (m[k] || 0) + v; })('{{ inv.drawing_doc_id or 0 }}', {{ inv.tooling_cost }});
       {% endif %}
     {% endfor %}
     return m;
@@ -1341,7 +1362,7 @@
       while (tr.children.length > 1) tr.removeChild(tr.lastChild);
     });
     const trs = tfoot.querySelectorAll('tr');
-    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品保運, 4: 成本合計, 5: 利潤(每欄獨立 input+amount), 6: 最終報價, 7: 模治具費用(input, 獨立)
+    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品包運, 4: 成本合計, 5: 利潤(每欄獨立 input+amount), 6: 最終報價, 7: 模治具費用(input, 獨立), 8: 模治具利潤(獨立 %), 9: 模治具報價
     for (let i = 0; i < nCols; i++) {
       trs[0].insertAdjacentHTML('beforeend', `<td class="text-end sum-col" data-col="${i}">—</td>`);
       trs[1].insertAdjacentHTML('beforeend', `<td class="text-end defect-col" data-col="${i}">—</td>`);
@@ -1376,7 +1397,22 @@
         tooling = autoTooling;
       }
       trs[7].insertAdjacentHTML('beforeend',
-        `<td><input type="number" step="any" class="form-control form-control-sm tooling-col" data-col="${i}" value="${tooling}" placeholder="一次性"></td>`);
+        `<td><input type="number" step="any" class="form-control form-control-sm tooling-col"
+                    data-col="${i}" value="${tooling}" placeholder="加總成本"></td>`);
+      // 模治具利潤率：每欄獨立 % input + 顯示金額（預設帶單價利潤率以相容舊資料）
+      let toolingProfitRate = profitRate;
+      if (initData && initData.columns && initData.columns[i] && initData.columns[i].tooling_profit_rate != null) {
+        toolingProfitRate = initData.columns[i].tooling_profit_rate * 100;
+      }
+      trs[8].insertAdjacentHTML('beforeend',
+        `<td class="text-end">
+           <div class="d-flex align-items-center justify-content-end gap-1">
+             <input type="number" step="0.1" class="form-control form-control-sm tooling-profit-rate-col"
+                    data-col="${i}" value="${(+toolingProfitRate).toFixed(1)}" style="width:60px"><span>%</span>
+           </div>
+           <div class="tooling-profit-col mt-1" data-col="${i}">—</div>
+         </td>`);
+      trs[9].insertAdjacentHTML('beforeend', `<td class="text-end fw-bold tooling-quote-col" data-col="${i}">—</td>`);
     }
   }
   function recalc() {
@@ -1403,6 +1439,13 @@
       const profit = pInp ? (parseFloat(pInp.value)||0)/100 : 0;
       const profitAmt = costTotal * profit;
       const quote = costTotal + profitAmt;
+      // 模治具成本 → 套用獨立模治具利潤 % 產出含利潤報價
+      const tInp = document.querySelector(`.tooling-col[data-col="${i}"]`);
+      const toolingCost = tInp ? (parseFloat(tInp.value)||0) : 0;
+      const tpInp = document.querySelector(`.tooling-profit-rate-col[data-col="${i}"]`);
+      const toolingProfitRate = tpInp ? (parseFloat(tpInp.value)||0)/100 : 0;
+      const toolingProfitAmt = toolingCost * toolingProfitRate;
+      const toolingQuote = toolingCost + toolingProfitAmt;
       const fmt = v => v ? v.toFixed(2) : '—';
       document.querySelector(`.sum-col[data-col="${i}"]`).textContent = fmt(sub);
       document.querySelector(`.defect-col[data-col="${i}"]`).textContent = fmt(defectAmt);
@@ -1411,6 +1454,10 @@
       document.querySelector(`.cost-col[data-col="${i}"]`).textContent = fmt(costTotal);
       document.querySelector(`.profit-col[data-col="${i}"]`).textContent = fmt(profitAmt);
       document.querySelector(`.quote-col[data-col="${i}"]`).textContent = fmt(quote);
+      const tpEl = document.querySelector(`.tooling-profit-col[data-col="${i}"]`);
+      const tqEl = document.querySelector(`.tooling-quote-col[data-col="${i}"]`);
+      if (tpEl) tpEl.textContent = fmt(toolingProfitAmt);
+      if (tqEl) tqEl.textContent = fmt(toolingQuote);
     }
     // hidden finalQuote = 第一欄的最終報價（多機種一起送審，代表主報價）
     for (let i = 0; i < nCols; i++) {
@@ -1496,12 +1543,19 @@
       const tooling = toolingInp ? (parseFloat(toolingInp.value)||0) : 0;
       const pInp = document.querySelector(`.profit-rate-col[data-col="${i}"]`);
       const profitRate = pInp ? (parseFloat(pInp.value)||0)/100 : 0;
+      const tpInp = document.querySelector(`.tooling-profit-rate-col[data-col="${i}"]`);
+      const toolingProfitRate = tpInp ? (parseFloat(tpInp.value)||0)/100 : 0;
+      const toolingProfit = +(tooling * toolingProfitRate).toFixed(2);
+      const toolingQuote = +(tooling + toolingProfit).toFixed(2);
       columns.push({
         label, subtotal: sub,
         defect_amount: +(sub*defect).toFixed(2),
         overhead_amount: +(sub*oh).toFixed(2),
         qa_ship_amount: +(sub*qa).toFixed(2),
         tooling_cost: tooling,
+        tooling_profit_rate: toolingProfitRate,
+        tooling_profit_amount: toolingProfit,
+        tooling_quote: toolingQuote,
         cost_total: costTotal,
         profit_rate: profitRate,
         profit_amount: profitAmt,

@@ -22,8 +22,8 @@
     .quote-tbl td, .quote-tbl th { vertical-align:middle; }
     .quote-tbl .machine { min-width:150px; }
     .terms { font-size:0.9rem; color:#555; }
-    .sig-row td { padding-top:28px; height:80px; vertical-align:bottom; }
-    .sig-row .sig-line { border-top:1px solid #333; padding-top:4px; }
+    .sig-row td { padding:14px 10px; height:80px; vertical-align:middle; }
+    .sig-row .sig-name { padding:4px; }
     .no-print { }
     /* contenteditable 微調樣式：編輯時 hover 提示，列印時隱藏 */
     [contenteditable="true"] {
@@ -49,6 +49,12 @@
   <a href="/npi-forms/{{ form.form_id }}" class="btn btn-outline-light btn-sm">
     <i class="bi bi-arrow-left me-1"></i>返回 NPI 單
   </a>
+  <div class="btn-group btn-group-sm ms-3" role="group" aria-label="幣別切換">
+    <input type="radio" class="btn-check" name="currency" id="curNTD" autocomplete="off" checked>
+    <label class="btn btn-outline-light" for="curNTD">NTD</label>
+    <input type="radio" class="btn-check" name="currency" id="curUSD" autocomplete="off">
+    <label class="btn btn-outline-light" for="curUSD">USD (匯率 32)</label>
+  </div>
   <span class="text-info small ms-3">
     <i class="bi bi-pencil-square me-1"></i>所有藍色虛線框（hover 顯示）均可點擊直接編輯；列印時框線自動隱藏
   </span>
@@ -56,13 +62,16 @@
 
 <div class="sheet">
   {# 抬頭 #}
-  <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
-    <div>
-      <h1 class="mb-1" style="font-size:1.8rem;">鴻騰電子股份有限公司</h1>
-      <div class="text-muted small">HonTen Electronic Co., Ltd.</div>
-      <div class="small mt-2">
-        <i class="bi bi-geo-alt me-1"></i>地址：新北市板橋區 ｜
-        <i class="bi bi-telephone me-1"></i>(02) XXXX-XXXX
+  <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
+    <div class="d-flex align-items-center gap-3">
+      <img src="/static/ht_logo.png" alt="HonTen" style="height:64px;">
+      <div>
+        <h1 class="mb-1" style="font-size:1.6rem;">鴻騰電子股份有限公司</h1>
+        <div class="text-muted small">HonTen Electronic Co., Ltd.</div>
+        <div class="small mt-1">
+          <i class="bi bi-geo-alt me-1"></i>地址：新北市樹林區三俊街154號 ｜
+          <i class="bi bi-telephone me-1"></i>(02) 2688-2150
+        </div>
       </div>
     </div>
     <div class="text-end">
@@ -101,8 +110,8 @@
         <th>產品說明</th>
         <th style="width:80px">材質</th>
         <th style="width:70px">數量</th>
-        <th style="width:100px">單價 (NTD)</th>
-        <th style="width:110px">總價 (NTD)</th>
+        <th style="width:100px">單價 (<span class="currency-label">NTD</span>)</th>
+        <th style="width:110px">總價 (<span class="currency-label">NTD</span>)</th>
       </tr>
     </thead>
     <tbody>
@@ -121,20 +130,22 @@
           </td>
           <td class="text-center"><span contenteditable="true">{{ shared_mat or '—' }}</span></td>
           <td class="text-end"><span contenteditable="true">{{ shared_qty or '—' }}</span></td>
-          <td class="text-end"><span contenteditable="true">{{ '%.2f' | format(c.quote) if c.quote else '—' }}</span></td>
-          <td class="text-end fw-semibold">
+          <td class="text-end money" data-ntd="{{ c.quote or 0 }}">{% if c.quote %}{{ '%.2f' | format(c.quote) }}{% else %}—{% endif %}</td>
+          <td class="text-end fw-semibold money" data-ntd="{{ (c.quote * shared_qty) if (c.quote and shared_qty) else 0 }}">
             {% if c.quote and shared_qty %}{{ '%.2f' | format(c.quote * shared_qty) }}{% else %}—{% endif %}
           </td>
         </tr>
-        {% if c.tooling_cost and c.tooling_cost > 0 %}
+        {# 客戶報價單使用「含利潤」的 tooling_quote；舊資料向下相容退回 tooling_cost #}
+        {% set _t_quote = c.tooling_quote if c.tooling_quote is not none else c.tooling_cost %}
+        {% if _t_quote and _t_quote > 0 %}
         <tr class="table-light">
           <td class="text-center">{{ loop.index }}-T</td>
           <td class="fw-semibold"><small><span contenteditable="true">{{ c.label or '—' }}（模治具費用）</span></small></td>
           <td><small class="text-muted"><span contenteditable="true">一次性模治具攤提 / 買斷</span></small></td>
           <td class="text-center">—</td>
           <td class="text-end">1</td>
-          <td class="text-end"><span contenteditable="true">{{ '%.2f' | format(c.tooling_cost) }}</span></td>
-          <td class="text-end fw-semibold">{{ '%.2f' | format(c.tooling_cost) }}</td>
+          <td class="text-end money" data-ntd="{{ _t_quote }}">{{ '%.2f' | format(_t_quote) }}</td>
+          <td class="text-end fw-semibold money" data-ntd="{{ _t_quote }}">{{ '%.2f' | format(_t_quote) }}</td>
         </tr>
         {% endif %}
         {% endfor %}
@@ -148,8 +159,8 @@
           </td>
           <td class="text-center"><span contenteditable="true">{{ shared_mat or '—' }}</span></td>
           <td class="text-end"><span contenteditable="true">{{ shared_qty or '—' }}</span></td>
-          <td class="text-end"><span contenteditable="true">{{ '%.2f' | format(form.quoted_unit_price) if form.quoted_unit_price else '—' }}</span></td>
-          <td class="text-end fw-semibold">
+          <td class="text-end money" data-ntd="{{ form.quoted_unit_price or 0 }}">{% if form.quoted_unit_price %}{{ '%.2f' | format(form.quoted_unit_price) }}{% else %}—{% endif %}</td>
+          <td class="text-end fw-semibold money" data-ntd="{{ (form.quoted_unit_price * shared_qty) if (form.quoted_unit_price and shared_qty) else 0 }}">
             {% if form.quoted_unit_price and shared_qty %}{{ '%.2f' | format(form.quoted_unit_price * shared_qty) }}{% else %}—{% endif %}
           </td>
         </tr>
@@ -157,13 +168,13 @@
     </tbody>
     {% if quote_data.columns %}
     <tfoot>
+      {% set total = namespace(v=0) %}
+      {% for c in quote_data.columns %}
+        {% if c.quote and shared_qty %}{% set total.v = total.v + c.quote * shared_qty %}{% endif %}
+      {% endfor %}
       <tr class="fw-bold">
-        <td colspan="6" class="text-end">總計 (NTD)</td>
-        <td class="text-end">
-          {% set total = namespace(v=0) %}
-          {% for c in quote_data.columns %}
-            {% if c.quote and shared_qty %}{% set total.v = total.v + c.quote * shared_qty %}{% endif %}
-          {% endfor %}
+        <td colspan="6" class="text-end">總計 (<span class="currency-label">NTD</span>)</td>
+        <td class="text-end money" data-ntd="{{ total.v }}">
           {{ '%.2f' | format(total.v) if total.v else '—' }}
         </td>
       </tr>
@@ -175,10 +186,10 @@
   <div class="terms mt-4" contenteditable="true">
     <div class="fw-bold mb-1">報價條款</div>
     <ol class="mb-0 ps-3">
-      <li>本報價金額以新台幣計算，未含營業稅。</li>
+      <li>本報價金額以<span class="term-currency">新台幣</span>計算，未含營業稅。</li>
       <li>報價有效期：自報價日起 <strong>30 日內</strong>。</li>
       <li>付款條件：<strong>月結 60 天</strong>，或依雙方協議。</li>
-      <li>交貨地點：本公司指定出貨地點，運費另議。</li>
+      <li class="term-delivery">交貨地點：貴公司指定地點，海外運費另議。</li>
       <li>若有任何規格／數量調整，請書面通知，本公司將重新估算報價。</li>
       <li>模具費用（如適用）另議，由客戶分期攤提或一次性買斷。</li>
     </ol>
@@ -192,14 +203,14 @@
       <th>客戶確認</th>
     </tr>
     <tr>
-      <td class="text-center align-bottom">
-        <div class="sig-line" contenteditable="true">{{ form.creator.display_name if form.creator else '—' }}</div>
+      <td class="align-middle">
+        <div class="sig-name" contenteditable="true">{{ form.creator.display_name if form.creator else '—' }}</div>
       </td>
-      <td class="text-center align-bottom">
-        <div class="sig-line">&nbsp;</div>
+      <td class="align-middle">
+        <div class="sig-name" contenteditable="true">{{ bu_head.display_name if bu_head else '—' }}</div>
       </td>
-      <td class="text-center align-bottom">
-        <div class="sig-line">&nbsp;</div>
+      <td class="align-middle">
+        <div class="sig-name">&nbsp;</div>
       </td>
     </tr>
   </table>
@@ -208,5 +219,30 @@
     感謝 貴公司惠顧！如有任何疑問，歡迎隨時與業務窗口聯繫。
   </div>
 </div>
+
+<script>
+(function(){
+  const USD_RATE = 32;
+  const labels = document.querySelectorAll('.currency-label');
+  const cells  = document.querySelectorAll('.money');
+  const termCur = document.querySelector('.term-currency');
+  function render(cur){
+    const isUSD = (cur === 'USD');
+    labels.forEach(el => el.textContent = isUSD ? 'USD' : 'NTD');
+    cells.forEach(td => {
+      const ntd = parseFloat(td.dataset.ntd) || 0;
+      if (ntd <= 0) { td.textContent = '—'; return; }
+      if (isUSD) {
+        td.textContent = (ntd / USD_RATE).toFixed(2);
+      } else {
+        td.textContent = ntd.toFixed(2);
+      }
+    });
+    if (termCur) termCur.textContent = isUSD ? '美金' : '新台幣';
+  }
+  document.getElementById('curNTD').addEventListener('change', () => render('NTD'));
+  document.getElementById('curUSD').addEventListener('change', () => render('USD'));
+})();
+</script>
 </body>
 </html>

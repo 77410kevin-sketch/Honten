@@ -137,6 +137,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HonTen PCN/ECN Demo", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key="honten-demo-secret-2026")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
 # ── DB 注入 Middleware ───────────────────────────
