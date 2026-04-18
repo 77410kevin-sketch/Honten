@@ -377,12 +377,7 @@ async def submit_to_eng(
         raise HTTPException(status_code=400, detail="目前狀態不允許送審")
     if current_user.role != Role.ADMIN and form.created_by != current_user.id:
         raise HTTPException(status_code=403)
-    # 送審前驗證必要附件：至少要有 客戶詢價信 + (規格書或圖面)
-    cats = {d.category for d in form.documents}
-    if "客戶詢價信" not in cats:
-        raise HTTPException(status_code=400, detail="請先上傳【客戶詢價信】")
-    if not (cats & {"規格書", "圖面"}):
-        raise HTTPException(status_code=400, detail="請至少上傳【規格書】或【圖面】")
+    # 送審不強制附件；由業務自行判斷（可空單送審）
     old = form.status
     form.status = NPIFormStatus.ENG_DISPATCH
     form.reject_to = None
