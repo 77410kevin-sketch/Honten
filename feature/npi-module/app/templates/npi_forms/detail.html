@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ form.form_id }} — NPI 詳細{% endblock %}
 {% block content %}
+<style>
+  /* 供應商派發列：已儲存 vs 未填寫的視覺差異 */
+  .invite-row-saved { background-color: #f1f9f3 !important; }
+  .invite-row-saved td { border-top: 1px solid #c7e3cf; }
+  .form-control-sm.is-saved {
+    background-color: #eafaf1;
+    border-color: #9fd3b0;
+    color: #0f5132;
+    font-weight: 600;
+  }
+  .form-control-sm.is-saved:focus {
+    background-color: #fff;
+    border-color: #198754;
+    box-shadow: 0 0 0 0.15rem rgba(25, 135, 84, 0.2);
+  }
+</style>
 <div class="container-fluid py-3">
 
   {# ── 頂欄 ── #}
@@ -129,8 +145,13 @@
       {# 工程排製程筆記 #}
       {% if form.eng_process_note %}
       <div class="card shadow-sm mb-3">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-diagram-3 me-2"></i>工程製程評估</div>
-        <div class="card-body small">{{ form.eng_process_note }}</div>
+        <div class="card-header bg-white fw-semibold">
+          <i class="bi bi-envelope-paper me-2"></i>詢價信模板
+          <small class="text-muted fw-normal">（寄信時會替換供應商 / 圖面 / 材質 / MOQ 等變數）</small>
+        </div>
+        <div class="card-body small">
+          <pre class="mb-0" style="white-space:pre-wrap; font-family:inherit">{{ form.eng_process_note }}</pre>
+        </div>
       </div>
       {% endif %}
 
@@ -147,36 +168,78 @@
         </div>
         <div class="card-body p-0">
           {% if form.invites %}
-          {# 整張單共用的材質 / 評估 MOQ（取第一筆有值的 invite）#}
-          {% set mat_inv = (form.invites | selectattr('material') | first) %}
-          {% set qty_inv = (form.invites | selectattr('qty') | first) %}
-          {% if mat_inv or qty_inv %}
-          <div class="px-3 pt-2 small text-muted d-flex flex-wrap gap-3 border-bottom pb-2">
-            <span><strong class="text-dark">材質：</strong>{{ mat_inv.material if mat_inv else '—' }}</span>
-            <span><strong class="text-dark">評估 MOQ：</strong>{{ qty_inv.qty if qty_inv else '—' }}</span>
+          {# 每張圖獨立的材質 / MOQ 摘要（取該 drawing_id 群組內第一筆有值的 invite）#}
+          {% set ns = namespace(seen=[]) %}
+          {% set meta_list = [] %}
+          {% for inv in form.invites %}
+            {% set did = inv.drawing_doc_id or 0 %}
+            {% if did not in ns.seen and (inv.material or inv.qty) %}
+              {% set _ = ns.seen.append(did) %}
+              {% set _ = meta_list.append(inv) %}
+            {% endif %}
+          {% endfor %}
+          {% if meta_list %}
+          <div class="px-3 pt-2 small border-bottom pb-2">
+            {% for inv in meta_list %}
+            <div class="d-flex flex-wrap gap-3 text-muted">
+              <span>
+                <strong class="text-primary">
+                  <i class="bi bi-image me-1"></i>{{ inv.drawing.original_name if inv.drawing else '共用' }}
+                </strong>
+              </span>
+              <span><strong class="text-dark">材質：</strong>{{ inv.material or '—' }}</span>
+              <span><strong class="text-dark">評估 MOQ：</strong>{{ inv.qty or '—' }}</span>
+            </div>
+            {% endfor %}
           </div>
           {% endif %}
-          <table class="table mb-0 small align-middle">
+          {# 可否 inline 回填報價（QUOTING 或 BU 退回採購議價）#}
+          {% set _can_reply = (form.status.value == 'QUOTING'
+                 or (form.status.value == 'RETURNED' and form.reject_to == '採購'))
+                and user.role.value in ('purchase','engineer','admin') %}
+          {# macro：列出某 invite 的已上傳報價附件 #}
+          {% macro invite_docs(inv_id) %}
+            {% for d in form.documents if d.invite_id_fk == inv_id %}
+              <div class="small mb-1">
+                <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="text-decoration-none">
+                  <i class="bi bi-paperclip"></i>{{ d.original_name | truncate(18, True) }}
+                </a>
+              </div>
+            {% endfor %}
+          {% endmacro %}
+
+          {# 每列 invite = 一個獨立 <form>（放在 table 外避免 tr/form 巢狀問題，用 form="..." 屬性關聯）#}
+          {% if _can_reply %}
+          {% for inv in form.invites %}
+          <form id="reply-form-{{ inv.id }}"
+                method="post" enctype="multipart/form-data"
+                action="/npi-forms/{{ form.form_id }}/invite/{{ inv.id }}/reply"></form>
+          {% endfor %}
+          {% endif %}
+
+          <div class="table-responsive">
+          <table class="table mb-0 small align-middle" style="min-width:1200px">
             <thead class="table-light">
               <tr>
                 <th>對應圖面</th>
                 <th>製程</th>
                 <th>供應商</th>
-                <th>期望工作天</th>
                 <th>派發時間</th>
-                <th>跟催</th>
                 <th>回覆時間</th>
-                <th>報價金額</th>
-                <th>模治具費</th>
-                <th>實際交期</th>
-                <th>備註</th>
+                <th style="min-width:110px">報價金額</th>
+                <th style="min-width:110px">模治具費</th>
+                <th style="min-width:95px">交期(天)</th>
+                <th style="min-width:160px">備註</th>
+                <th style="min-width:180px">報價單附件</th>
                 <th>選用</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {% for inv in form.invites %}
-              <tr class="{% if inv.is_selected %}table-success{% endif %}">
+              {# 已儲存 = 有回覆且有報價金額（嚴格判定，避免只選附件未填價錢也算 saved）#}
+              {% set _saved = inv.replied_at is not none and inv.quote_amount is not none %}
+              <tr class="{% if inv.is_selected %}table-success{% elif _saved %}invite-row-saved{% endif %}">
                 <td class="small">
                   {% if inv.drawing %}
                     <a href="#" class="doc-preview"
@@ -197,41 +260,98 @@
                     <span class="badge bg-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }}-subtle text-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }} ms-1">{{ inv.supplier.type.value }}</span>
                   {% endif %}
                 </td>
-                <td class="small">{{ (inv.expected_lead_days ~ ' 天') if inv.expected_lead_days else '—' }}</td>
                 <td>{{ inv.first_sent_at.strftime('%m-%d %H:%M') if inv.first_sent_at else '—' }}</td>
-                <td>{{ inv.reminder_count or 0 }}</td>
-                <td>{{ inv.replied_at.strftime('%m-%d %H:%M') if inv.replied_at else '—' }}</td>
+                <td>
+                  {% if _saved %}
+                  <div>{{ inv.replied_at.strftime('%m-%d %H:%M') }}</div>
+                  <span class="badge bg-success-subtle text-success mt-1"><i class="bi bi-check-circle me-1"></i>已儲存</span>
+                  {% elif inv.replied_at %}
+                  {{ inv.replied_at.strftime('%m-%d %H:%M') }}
+                  {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-hourglass me-1"></i>待填寫</span>
+                  {% endif %}
+                </td>
+
+                {% if _can_reply %}
+                <td>
+                  <input form="reply-form-{{ inv.id }}" name="quote_amount" type="number" step="0.01"
+                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
+                         placeholder="單價">
+                </td>
+                <td>
+                  <input form="reply-form-{{ inv.id }}" name="tooling_cost" type="number" step="0.01"
+                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
+                         placeholder="模具費">
+                </td>
+                <td>
+                  <input form="reply-form-{{ inv.id }}" name="lead_time_days" type="number"
+                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.lead_time_days if inv.lead_time_days is not none else '' }}"
+                         placeholder="天">
+                </td>
+                <td>
+                  <input form="reply-form-{{ inv.id }}" name="quote_comment" type="text"
+                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.quote_comment or '' }}"
+                         placeholder="備註">
+                </td>
+                <td>
+                  {{ invite_docs(inv.id) }}
+                  <label class="btn btn-sm btn-outline-secondary mb-0 w-100">
+                    <i class="bi bi-paperclip me-1"></i>{% if _saved %}追加檔案{% else %}選擇檔案{% endif %}
+                    <input form="reply-form-{{ inv.id }}" type="file" name="attach_files"
+                           class="d-none inline-file" data-inv="{{ inv.id }}" multiple>
+                  </label>
+                  <div class="text-muted small inline-file-name" data-inv="{{ inv.id }}">（可多選）</div>
+                </td>
+                {% else %}
                 <td>{{ inv.quote_amount or '—' }}</td>
                 <td>{{ inv.tooling_cost or '—' }}</td>
-                <td>{{ inv.lead_time_days ~ ' 天' if inv.lead_time_days else '—' }}</td>
+                <td>{{ inv.lead_time_days or '—' }}</td>
                 <td class="text-muted">{{ inv.quote_comment or '—' }}</td>
+                <td>
+                  {% set _inv_docs = form.documents | selectattr('invite_id_fk', 'equalto', inv.id) | list %}
+                  {% if _inv_docs %}
+                    {{ invite_docs(inv.id) }}
+                  {% else %}—{% endif %}
+                </td>
+                {% endif %}
+
                 <td>
                   {% if inv.is_selected %}
                   <i class="bi bi-check-circle-fill text-success"></i>
                   {% endif %}
                 </td>
                 <td>
-                  {% set _show_reply_btn = (form.status.value == 'QUOTING'
-                         or (form.status.value == 'RETURNED' and form.reject_to == '採購'))
-                        and user.role.value in ('purchase','engineer','admin') %}
-                  {% if _show_reply_btn %}
-                    {% if form.status.value == 'RETURNED' and inv.replied_at %}
-                    <button class="btn btn-sm btn-outline-warning"
-                            data-bs-toggle="modal" data-bs-target="#replyModal-{{ inv.id }}">
-                      調整
-                    </button>
-                    {% elif not inv.replied_at %}
-                    <button class="btn btn-sm btn-outline-primary"
-                            data-bs-toggle="modal" data-bs-target="#replyModal-{{ inv.id }}">
-                      回填
-                    </button>
-                    {% endif %}
+                  {% if _can_reply %}
+                  {% if _saved %}
+                  <button form="reply-form-{{ inv.id }}" type="submit"
+                          class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-arrow-repeat"></i> 更新
+                  </button>
+                  {% else %}
+                  <button form="reply-form-{{ inv.id }}" type="submit"
+                          class="btn btn-sm btn-primary">
+                    <i class="bi bi-check-lg"></i> 儲存
+                  </button>
+                  {% endif %}
                   {% endif %}
                 </td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
+          </div>
+          {# 整張單共用訊息（期望工作天 / 跟催數略）#}
+          {% if _can_reply %}
+          <div class="px-3 py-2 border-top small text-muted">
+            <i class="bi bi-info-circle me-1"></i>
+            直接在每列填入<strong>單價 / 模治具費 / 交期</strong>並選附件，按各列「儲存」即完成該供應商報價。
+            表格欄位較多，請左右滑動查看。
+          </div>
+          {% endif %}
           {% else %}
           <div class="text-muted small p-3">尚未派發任何供應商</div>
           {% endif %}
@@ -302,15 +422,16 @@
             html += fmtRow(`管銷 (${oh}%)`, 'overhead_amount');
             html += fmtRow(`品保運 (${qa}%)`, 'qa_ship_amount');
             html += fmtRow('成本合計（不含模治具）', 'cost_total', 'table-light fw-bold');
-            // 利潤 — 左側標題顯示 rate，每欄顯示金額
-            const profitRatePct = (data.profit_rate != null)
-              ? (data.profit_rate*100).toFixed(1)
-              : ((cols[0] && cols[0].profit_rate != null) ? (cols[0].profit_rate*100).toFixed(1) : null);
-            let profitRow = `<tr><th class="text-start">利潤 (${profitRatePct != null ? profitRatePct+'%' : '—'})</th>`;
+            // 利潤 — 每欄獨立 %（顯示 rate + amount）
+            let profitRow = `<tr><th class="text-start">利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small></th>`;
             cols.forEach(c => {
+              let rate = c.profit_rate;
+              if (rate == null && data.profit_rate != null) rate = data.profit_rate; // 舊資料向下相容
               let amt = c.profit_amount;
-              if (amt == null && c.profit_rate != null && c.cost_total != null) amt = c.cost_total * c.profit_rate;
-              profitRow += `<td class="text-end">${amt!=null?(typeof amt==='number'?amt.toFixed(2):amt):'—'}</td>`;
+              if (amt == null && rate != null && c.cost_total != null) amt = c.cost_total * rate;
+              const ratePct = rate != null ? (rate*100).toFixed(1)+'%' : '—';
+              const amtStr = amt!=null?(typeof amt==='number'?amt.toFixed(2):amt):'—';
+              profitRow += `<td class="text-end"><span class="badge bg-light text-dark border me-1">${ratePct}</span>${amtStr}</td>`;
             });
             profitRow += '</tr>';
             html += profitRow;
@@ -421,6 +542,22 @@
           </form>
           {% endif %}
 
+          {# 採購議價調整後重送 BU（BU 退回採購時）#}
+          {% if form.status.value == 'RETURNED' and form.reject_to == '採購'
+                and user.role.value in ('purchase','admin') %}
+          <div class="alert alert-warning small mb-2 py-2">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            BU 已退回要求議價調整。請在<strong>上方供應商列表</strong>逐列修改單價 / 模具費，
+            按各列「更新」儲存後再按下方「重送 BU」。
+          </div>
+          <form method="post" action="/npi-forms/{{ form.form_id }}/purchase-resubmit-bu" class="mb-2">
+            <input type="hidden" name="comment" value="採購議價調整完成">
+            <button class="btn btn-warning w-100">
+              <i class="bi bi-arrow-repeat me-1"></i>議價完成，重送 BU 審核
+            </button>
+          </form>
+          {% endif %}
+
           {# 業務：做試算 → 送 BU 審核報價 #}
           {% if (form.status.value == 'QUOTES_COLLECTED'
                  or (form.status.value == 'RETURNED' and form.reject_to == '業務'))
@@ -438,7 +575,7 @@
           </form>
           <button class="btn btn-outline-danger w-100 mb-2"
                   data-bs-toggle="modal" data-bs-target="#rejectQuoteBuModal">
-            <i class="bi bi-x-lg me-1"></i>退回業務重算
+            <i class="bi bi-x-lg me-1"></i>退回業務 / 採購
           </button>
           {% endif %}
 
@@ -659,25 +796,48 @@
       </div>
       <div class="modal-body">
         <div class="mb-3">
-          <label class="form-label">工程製程評估說明</label>
-          <textarea name="eng_process_note" class="form-control" rows="2"
-                    placeholder="例：本案需開模、沖壓工序、組裝…"></textarea>
+          <label class="form-label">
+            發信內容 <small class="text-muted">（寄給供應商的信件內文模板，可直接編輯）</small>
+          </label>
+          <textarea name="eng_process_note" class="form-control" rows="8"
+                    placeholder="">Hi {contact}，
+
+請依附件圖檔與提供的材質 {material}、MOQ {moq} 協助報價。
+
+案件資訊：
+ 詢價單號：{form_id}
+ 製程：{process}
+ 對應圖面：{drawing}
+ 客戶回覆期限：{due_date}
+
+若有疑問請直接回信聯絡，謝謝！
+
+— 鴻騰電子 NPI 採購</textarea>
+          <div class="small text-muted mt-1">
+            <i class="bi bi-info-circle me-1"></i>
+            變數會依每家供應商 / 每張圖自動替換：
+            <code>{contact}</code>（聯絡人）
+            <code>{supplier}</code>（供應商）
+            <code>{material}</code>（材質）
+            <code>{moq}</code>（MOQ）
+            <code>{process}</code>（製程）
+            <code>{drawing}</code>（圖面）
+            <code>{form_id}</code>、<code>{product}</code>、<code>{customer}</code>、<code>{due_date}</code>
+          </div>
         </div>
         {% if not suppliers %}
         <div class="alert alert-warning small">
           尚無啟用中的供應商，請先至<a href="/suppliers/">供應商主檔</a>建立。
         </div>
         {% else %}
-        <div class="row g-2 mb-3">
-          <div class="col-md-6">
-            <label class="form-label small">材質 <span class="text-muted">（整張單共用）</span></label>
-            <input name="dispatch_material" class="form-control" placeholder="例：SUS304 / AL6061 / ABS">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small">評估 MOQ <span class="text-muted">（最低訂購量，整張單共用）</span></label>
-            <input name="dispatch_qty" type="number" min="0" class="form-control" placeholder="例：1000">
-          </div>
-        </div>
+        {# 常用材質清單（可選 + 可 keyin）#}
+        <datalist id="materialList">
+          <option value="SUS304">
+          <option value="AL6063">
+          <option value="AL6061">
+          <option value="AL5052">
+          <option value="C1100">
+        </datalist>
 
         {# 每張圖一張獨立製程表 — 若無圖則 fallback 到單一共用表 #}
         {% if drawings %}
@@ -713,6 +873,20 @@
               <i class="bi bi-plus"></i> 新增製程列
             </button>
           </div>
+          {# 該圖獨立：材質 + MOQ #}
+          <input type="hidden" name="drawing_meta_id" value="{{ d.id }}">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label small">材質 <span class="text-muted">（可選清單或自行輸入）</span></label>
+              <input name="drawing_material" list="materialList" class="form-control form-control-sm"
+                     autocomplete="off" placeholder="例：SUS304">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">評估 MOQ <span class="text-muted">（該圖紙最低訂購量）</span></label>
+              <input name="drawing_qty" type="number" min="0" class="form-control form-control-sm"
+                     placeholder="例：1000">
+            </div>
+          </div>
           <table class="table table-sm table-bordered align-middle mb-0">
             <thead class="table-light">
               <tr>
@@ -727,6 +901,17 @@
         {% endfor %}
         {% else %}
         {# 無圖面上傳 → 單一共用表 #}
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small">材質 <span class="text-muted">（可選清單或自行輸入）</span></label>
+            <input name="dispatch_material" list="materialList" class="form-control"
+                   autocomplete="off" placeholder="例：SUS304">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">評估 MOQ <span class="text-muted">（最低訂購量）</span></label>
+            <input name="dispatch_qty" type="number" min="0" class="form-control" placeholder="例：1000">
+          </div>
+        </div>
         <div class="d-flex justify-content-between align-items-center mb-2">
           <div class="fw-semibold">依圖紙新增製程列 — 每列 = 一個製程 / 一家供應商</div>
           <button type="button" class="btn btn-sm btn-outline-primary add-row-btn" data-target="#defaultRows">
@@ -781,13 +966,24 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary"><i class="bi bi-send me-1"></i>寄出詢價信</button>
+        <button class="btn btn-primary" id="dispatchSubmitBtn">
+          <i class="bi bi-send me-1"></i>寄出詢價信
+        </button>
       </div>
     </form>
   </div>
 </div>
 <script>
 (function(){
+  // 防重複 submit：按下後 disable + 顯示 loading（寄信可能要幾秒）
+  const dispatchForm = document.querySelector('#dispatchModal form');
+  const dispatchBtn = document.getElementById('dispatchSubmitBtn');
+  if (dispatchForm && dispatchBtn) {
+    dispatchForm.addEventListener('submit', () => {
+      dispatchBtn.disabled = true;
+      dispatchBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>寄送中（請勿重複點擊）…';
+    });
+  }
   const tpl = document.getElementById('dispatchRowTpl');
   if (!tpl) return;
   function addRowToBlock(block) {
@@ -825,63 +1021,28 @@
 </script>
 {% endif %}
 
-{# 回填供應商報價 modals #}
-{% for inv in form.invites %}
-{% set _can_reply = (form.status.value == 'QUOTING'
-                   or (form.status.value == 'RETURNED' and form.reject_to == '採購'))
-                  and user.role.value in ('purchase','engineer','admin') %}
-{% if _can_reply %}
-<div class="modal fade" id="replyModal-{{ inv.id }}" tabindex="-1">
-  <div class="modal-dialog">
-    <form class="modal-content" method="post" enctype="multipart/form-data"
-          action="/npi-forms/{{ form.form_id }}/invite/{{ inv.id }}/reply">
-      <div class="modal-header">
-        <h5 class="modal-title">
-          {% if inv.replied_at %}調整{% else %}回填{% endif %}報價 — {{ inv.supplier.name }}
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body row g-3">
-        <div class="col-md-4">
-          <label class="form-label">單價報價</label>
-          <input name="quote_amount" type="number" step="0.01" class="form-control"
-                 value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">模治具費用 <small class="text-muted">（獨立計價）</small></label>
-          <input name="tooling_cost" type="number" step="0.01" class="form-control"
-                 value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
-                 placeholder="一次性攤提或買斷金額">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">交期（天）</label>
-          <input name="lead_time_days" type="number" class="form-control"
-                 value="{{ inv.lead_time_days if inv.lead_time_days is not none else '' }}">
-        </div>
-        <div class="col-12">
-          <label class="form-label">備註</label>
-          <textarea name="quote_comment" rows="2" class="form-control">{{ inv.quote_comment or '' }}</textarea>
-        </div>
-        <div class="col-12">
-          <label class="form-label">上傳報價檔案（自動歸檔 NAS）</label>
-          <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
-            <label class="btn btn-outline-primary mb-0">
-              <i class="bi bi-paperclip me-1"></i>選擇檔案（可多選）
-              <input type="file" name="attach_files" class="d-none" multiple>
-            </label>
-            <span class="file-picker-name text-muted small">（尚未選擇）</span>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary">儲存回覆</button>
-      </div>
-    </form>
-  </div>
-</div>
-{% endif %}
-{% endfor %}
+{# 供應商報價改為表格內 inline 填寫，不再使用 modal #}
+<script>
+(function(){
+  document.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t.classList.contains('inline-file')) return;
+    const invId = t.dataset.inv;
+    const span = document.querySelector(`.inline-file-name[data-inv="${invId}"]`);
+    if (!span) return;
+    if (t.files && t.files.length) {
+      const names = Array.from(t.files).map(f => f.name).join(', ');
+      span.textContent = names;
+      span.classList.remove('text-muted');
+      span.classList.add('text-primary');
+    } else {
+      span.textContent = '（可多選）';
+      span.classList.add('text-muted');
+      span.classList.remove('text-primary');
+    }
+  });
+})();
+</script>
 
 {# 業務試算 + 送 BU 審核報價 modal（直列 5 欄 + 不良率/管銷/品保運/利潤）#}
 {% if (form.status.value == 'QUOTES_COLLECTED'
@@ -955,10 +1116,7 @@
               </tr>
               <tr>
                 <th class="text-start">
-                  利潤
-                  <input type="number" step="0.1" id="profitRate" value="15"
-                         class="form-control form-control-sm d-inline-block align-middle"
-                         style="width:70px"> %
+                  利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small>
                 </th>
               </tr>
               <tr class="table-warning fw-bold">
@@ -1100,14 +1258,28 @@
       while (tr.children.length > 1) tr.removeChild(tr.lastChild);
     });
     const trs = tfoot.querySelectorAll('tr');
-    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品保運, 4: 成本合計, 5: 利潤, 6: 最終報價, 7: 模治具費用(input, 獨立)
+    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品保運, 4: 成本合計, 5: 利潤(每欄獨立 input+amount), 6: 最終報價, 7: 模治具費用(input, 獨立)
     for (let i = 0; i < nCols; i++) {
       trs[0].insertAdjacentHTML('beforeend', `<td class="text-end sum-col" data-col="${i}">—</td>`);
       trs[1].insertAdjacentHTML('beforeend', `<td class="text-end defect-col" data-col="${i}">—</td>`);
       trs[2].insertAdjacentHTML('beforeend', `<td class="text-end oh-col" data-col="${i}">—</td>`);
       trs[3].insertAdjacentHTML('beforeend', `<td class="text-end qa-col" data-col="${i}">—</td>`);
       trs[4].insertAdjacentHTML('beforeend', `<td class="text-end cost-col" data-col="${i}">—</td>`);
-      trs[5].insertAdjacentHTML('beforeend', `<td class="text-end profit-col" data-col="${i}">—</td>`);
+      // 利潤：每欄一個 % input + 顯示金額
+      let profitRate = 15;
+      if (initData && initData.columns && initData.columns[i] && initData.columns[i].profit_rate != null) {
+        profitRate = initData.columns[i].profit_rate * 100;
+      } else if (initData && initData.profit_rate != null) {
+        profitRate = initData.profit_rate * 100;
+      }
+      trs[5].insertAdjacentHTML('beforeend',
+        `<td class="text-end">
+           <div class="d-flex align-items-center justify-content-end gap-1">
+             <input type="number" step="0.1" class="form-control form-control-sm profit-rate-col"
+                    data-col="${i}" value="${(+profitRate).toFixed(1)}" style="width:60px"><span>%</span>
+           </div>
+           <div class="profit-col mt-1" data-col="${i}">—</div>
+         </td>`);
       trs[6].insertAdjacentHTML('beforeend', `<td class="text-end quote-col" data-col="${i}">—</td>`);
       // 模治具費用：每欄一個 input，獨立計價（不加入 cost_total 與最終報價）
       // 預設帶入供應商填報（依對應 drawing_id）
@@ -1128,7 +1300,6 @@
     const defect = (parseFloat(document.getElementById('defectRate').value)||0)/100;
     const oh = (parseFloat(document.getElementById('overheadRate').value)||0)/100;
     const qa = (parseFloat(document.getElementById('qaRate').value)||0)/100;
-    const profit = (parseFloat(document.getElementById('profitRate').value)||0)/100;
     const subtotals = new Array(nCols).fill(0);
     document.querySelectorAll('#procRows .proc-row').forEach(r => {
       r.querySelectorAll('.p-price').forEach(inp => {
@@ -1144,6 +1315,9 @@
       const qaAmt = sub * qa;
       // 模治具費用獨立計價，不計入 costTotal/最終報價
       const costTotal = sub + defectAmt + ohAmt + qaAmt;
+      // 每欄獨立利潤率
+      const pInp = document.querySelector(`.profit-rate-col[data-col="${i}"]`);
+      const profit = pInp ? (parseFloat(pInp.value)||0)/100 : 0;
       const profitAmt = costTotal * profit;
       const quote = costTotal + profitAmt;
       const fmt = v => v ? v.toFixed(2) : '—';
@@ -1228,7 +1402,6 @@
     const defect = (parseFloat(document.getElementById('defectRate').value)||0)/100;
     const oh = (parseFloat(document.getElementById('overheadRate').value)||0)/100;
     const qa = (parseFloat(document.getElementById('qaRate').value)||0)/100;
-    const profit = (parseFloat(document.getElementById('profitRate').value)||0)/100;
     const columns = [];
     for (let i = 0; i < nCols; i++) {
       const label = document.querySelector(`.col-label[data-col="${i}"]`).value || `方案 ${i+1}`;
@@ -1238,6 +1411,8 @@
       const quote = parseFloat(document.querySelector(`.quote-col[data-col="${i}"]`).textContent)||0;
       const toolingInp = document.querySelector(`.tooling-col[data-col="${i}"]`);
       const tooling = toolingInp ? (parseFloat(toolingInp.value)||0) : 0;
+      const pInp = document.querySelector(`.profit-rate-col[data-col="${i}"]`);
+      const profitRate = pInp ? (parseFloat(pInp.value)||0)/100 : 0;
       columns.push({
         label, subtotal: sub,
         defect_amount: +(sub*defect).toFixed(2),
@@ -1245,6 +1420,7 @@
         qa_ship_amount: +(sub*qa).toFixed(2),
         tooling_cost: tooling,
         cost_total: costTotal,
+        profit_rate: profitRate,
         profit_amount: profitAmt,
         quote: quote
       });
@@ -1261,7 +1437,6 @@
     document.getElementById('quoteCostData').value = JSON.stringify({
       columns, rows,
       defect_rate: defect, overhead_rate: oh, qa_ship_rate: qa,
-      profit_rate: profit,
     });
   });
 
@@ -1269,10 +1444,6 @@
   if (initData && initData.defect_rate != null) document.getElementById('defectRate').value = (initData.defect_rate*100).toFixed(1);
   if (initData && initData.overhead_rate != null) document.getElementById('overheadRate').value = (initData.overhead_rate*100).toFixed(1);
   if (initData && initData.qa_ship_rate != null) document.getElementById('qaRate').value = (initData.qa_ship_rate*100).toFixed(1);
-  if (initData && initData.profit_rate != null) document.getElementById('profitRate').value = (initData.profit_rate*100).toFixed(1);
-  // 舊資料向下相容：若存在 columns[0].profit_rate，帶入共用 profitRate
-  else if (initData && initData.columns && initData.columns[0] && initData.columns[0].profit_rate != null)
-    document.getElementById('profitRate').value = (initData.columns[0].profit_rate*100).toFixed(1);
   rebuildAll();
 })();
 </script>

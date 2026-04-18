@@ -173,11 +173,16 @@ async def list_npi(
                  NPIForm.reject_to.in_(["工程師", "業務"])),
         ))
     elif u.role == Role.PURCHASE:
-        q = q.where(NPIForm.status.in_([
-            NPIFormStatus.QUOTING,            # RFQ 階段收集供應商報價
-            NPIFormStatus.QUOTES_COLLECTED,
-            NPIFormStatus.NPI_PENDING_PURCHASE, # NPI 階段模具議價
-        ]))
+        q = q.where(or_(
+            NPIForm.status.in_([
+                NPIFormStatus.QUOTING,            # RFQ 階段收集供應商報價
+                NPIFormStatus.QUOTES_COLLECTED,
+                NPIFormStatus.NPI_PENDING_PURCHASE, # NPI 階段模具議價
+            ]),
+            # BU 退回採購議價調整
+            and_(NPIForm.status == NPIFormStatus.RETURNED,
+                 NPIForm.reject_to == "採購"),
+        ))
     else:
         q = q.where(NPIForm.created_by == u.id)
     r = await db.execute(q)
@@ -424,11 +429,26 @@ async def dispatch_quotes(
     if current_user.role not in _ENG_ROLES:
         raise HTTPException(status_code=403)
 
-    # 讀整張單共用的材質 / 總需求量 + 多列製程派發
+    # 讀每張圖獨立的材質 / MOQ（drawing_meta_id + drawing_material + drawing_qty 三個同長度陣列）
+    # 無圖時退回整張單共用：dispatch_material / dispatch_qty
     fd = await request.form()
-    dispatch_material_raw = (fd.get("dispatch_material") or "").strip() or None
-    dispatch_qty_raw = (fd.get("dispatch_qty") or "").strip()
-    dispatch_qty = int(dispatch_qty_raw) if dispatch_qty_raw.isdigit() else None
+    draw_meta_ids = fd.getlist("drawing_meta_id")
+    draw_materials = fd.getlist("drawing_material")
+    draw_qtys = fd.getlist("drawing_qty")
+    per_drawing: dict[int, dict] = {}
+    for i, raw_id in enumerate(draw_meta_ids):
+        if not raw_id or not raw_id.isdigit():
+            continue
+        did = int(raw_id)
+        mat = (draw_materials[i] if i < len(draw_materials) else "").strip() or None
+        qty_raw = (draw_qtys[i] if i < len(draw_qtys) else "").strip()
+        qty = int(qty_raw) if qty_raw.isdigit() else None
+        per_drawing[did] = {"material": mat, "qty": qty}
+
+    # 無圖 fallback（單一共用）
+    fallback_material = (fd.get("dispatch_material") or "").strip() or None
+    fallback_qty_raw = (fd.get("dispatch_qty") or "").strip()
+    fallback_qty = int(fallback_qty_raw) if fallback_qty_raw.isdigit() else None
 
     supplier_ids = fd.getlist("row_supplier_id")
     process_names = fd.getlist("row_process")
@@ -458,15 +478,27 @@ async def dispatch_quotes(
         raise HTTPException(status_code=400, detail="所選供應商無效或已停用")
 
     now = datetime.utcnow()
-    # 材質與數量僅記錄於第一列（整張單共用語意），其他列留空
-    for idx, r in enumerate(rows):
+    # 依 drawing_id 套用材質/MOQ；無圖紙的列走 fallback。為方便前端顯示，只在該 drawing 的第一筆 invite 寫 material/qty。
+    seen_drawing_marked: set = set()
+    fallback_marked = False
+    for r in rows:
+        did = r["drawing_doc_id"]
+        if did is not None:
+            meta = per_drawing.get(did, {})
+            mat, qty = meta.get("material"), meta.get("qty")
+            mark_here = did not in seen_drawing_marked
+            seen_drawing_marked.add(did)
+        else:
+            mat, qty = fallback_material, fallback_qty
+            mark_here = not fallback_marked
+            fallback_marked = True
         db.add(NPISupplierInvite(
             form_id_fk=form.id,
             supplier_id=r["supplier_id"],
             process_name=r["process_name"],
-            material=dispatch_material_raw if idx == 0 else None,
-            qty=dispatch_qty if idx == 0 else None,
-            drawing_doc_id=r["drawing_doc_id"],
+            material=(mat if mark_here else None),
+            qty=(qty if mark_here else None),
+            drawing_doc_id=did,
             invited_at=now,
         ))
 
@@ -593,6 +625,33 @@ async def submit_quote_bu(
 
 # ── BU 核准 / 退回 業務報價 ─────────────
 
+@router.post("/{form_id}/purchase-resubmit-bu")
+async def purchase_resubmit_bu(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    """採購議價完成後，將調整後的成本重送 BU 審核。"""
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.RETURNED or form.reject_to != "採購":
+        raise HTTPException(status_code=400, detail="目前狀態非待採購議價調整")
+    if current_user.role not in _PURCHASE_ROLES:
+        raise HTTPException(status_code=403, detail="只有採購可重送")
+    old = form.status
+    form.status = NPIFormStatus.PENDING_QUOTE_BU
+    form.reject_to = None
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "PURCHASE_RESUBMIT_BU", old, form.status,
+                         comment or "採購議價調整完成，重送 BU 審核"))
+    await db.commit()
+    await notif._notify_roles(
+        db, [Role.BU, Role.SALES],
+        f"【採購議價已重送 BU】{form.form_id} - 採購已調整供應商成本，請 BU 重新審核報價",
+    )
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
 @router.post("/{form_id}/approve-quote-bu")
 async def approve_quote_bu(
     form_id: str,
@@ -627,7 +686,8 @@ async def reject_quote_bu(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    comment: str = Form(...),
+    comment:       str = Form(...),
+    reject_target: str = Form("業務"),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.PENDING_QUOTE_BU:
@@ -636,18 +696,23 @@ async def reject_quote_bu(
         raise HTTPException(status_code=403)
     if not comment.strip():
         raise HTTPException(status_code=400, detail="退回原因不得為空")
+    target = reject_target.strip() if reject_target else "業務"
+    if target not in ("業務", "採購"):
+        target = "業務"
     old = form.status
     form.bu_quote_note = comment.strip()
     form.status = NPIFormStatus.RETURNED
-    form.reject_to = "業務"
+    form.reject_to = target
     form.updated_at = datetime.utcnow()
     db.add(_log_approval(form, current_user, "REJECT_QUOTE_BU", old, form.status,
-                         comment.strip(), reject_target="業務"))
+                         comment.strip(), reject_target=target))
     await db.commit()
-    await notif._notify_roles(
-        db, [Role.SALES],
-        f"【報價被 BU 退回】{form.form_id} - 請調整試算後重送。原因：{comment.strip()[:80]}",
+    notify_role = Role.PURCHASE if target == "採購" else Role.SALES
+    notify_msg = (
+        f"【報價被 BU 退回】{form.form_id} - 請{'與供應商議價調整成本後重送' if target == '採購' else '調整試算後重送'}。"
+        f"原因：{comment.strip()[:80]}"
     )
+    await notif._notify_roles(db, [notify_role], notify_msg)
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 

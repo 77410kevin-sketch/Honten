@@ -136,47 +136,80 @@ async def notify_sales_submitted(db: AsyncSession, form: NPIForm):
     await _notify_roles(db, [Role.ENGINEER, Role.ENG_MGR], msg)
 
 
+_DEFAULT_RFQ_TEMPLATE = (
+    "Hi {contact}，\n\n"
+    "請依附件圖檔與提供的材質 {material}、MOQ {moq} 協助報價。\n\n"
+    "案件資訊：\n"
+    " 詢價單號：{form_id}\n"
+    " 製程：{process}\n"
+    " 對應圖面：{drawing}\n"
+    " 客戶回覆期限：{due_date}\n\n"
+    "若有疑問請直接回信聯絡，謝謝！\n\n"
+    "— 鴻騰電子 NPI 採購"
+)
+
+
+def _render_rfq_body(template: str, *, form, invite, supplier, material, moq) -> str:
+    """以變數替換組信件內文。未知變數保持原樣，不報錯。"""
+    values = {
+        "contact":  supplier.contact or "您好",
+        "supplier": supplier.name or "",
+        "material": material or "—",
+        "moq":      moq if moq not in (None, "") else "—",
+        "process":  invite.process_name or "—",
+        "drawing":  invite.drawing.original_name if invite.drawing else "共用圖面",
+        "form_id":  form.form_id,
+        "product":  form.product_name or "",
+        "customer": form.customer_name or "",
+        "due_date": form.rfq_due_date or "—",
+    }
+    out = template or _DEFAULT_RFQ_TEMPLATE
+    for k, v in values.items():
+        out = out.replace("{" + k + "}", str(v))
+    return out
+
+
 async def notify_quotes_dispatched(db: AsyncSession, form: NPIForm, invites: list[NPISupplierInvite]):
-    """工程派發詢價：向每家供應商寄 mail（第一次）+ 通知業務 / 工程主管"""
-    # CC 對象：業務（建單者） + 工程（指派者）— 讓他們留有寄件紀錄
+    """工程派發詢價：向每家供應商寄 mail（第一次）+ 通知業務 / 工程主管。
+    支援使用者自訂的信件模板（form.eng_process_note），依每家供應商 / 每張圖替換變數。
+    """
+    # CC 對象：業務（建單者） + 工程（指派者）
     cc_list = []
     if form.creator and getattr(form.creator, "email", None):
         cc_list.append(form.creator.email)
     if form.assigned_eng and getattr(form.assigned_eng, "email", None):
         cc_list.append(form.assigned_eng.email)
 
-    # 取共用欄位（材質 / MOQ）— 取第一筆有值的
-    shared_mat = next((i.material for i in invites if i.material), "—")
-    shared_qty = next((i.qty for i in invites if i.qty), "—")
+    # 依 drawing_id 蒐集材質 / MOQ（每張圖獨立）
+    drawing_meta: dict = {}
+    for i in invites:
+        key = i.drawing_doc_id or 0
+        if key not in drawing_meta:
+            drawing_meta[key] = {"material": None, "qty": None}
+        if i.material and not drawing_meta[key]["material"]:
+            drawing_meta[key]["material"] = i.material
+        if i.qty and not drawing_meta[key]["qty"]:
+            drawing_meta[key]["qty"] = i.qty
+    # fallback 共用值（任一張圖的第一個有值）
+    fallback_mat = next((m["material"] for m in drawing_meta.values() if m["material"]), None)
+    fallback_qty = next((m["qty"] for m in drawing_meta.values() if m["qty"]), None)
+
+    template = (form.eng_process_note or "").strip() or _DEFAULT_RFQ_TEMPLATE
 
     for inv in invites:
         sup: Supplier | None = inv.supplier
         if not sup or not sup.email:
             logger.warning(f"Supplier {inv.supplier_id} 沒有 email，略過")
             continue
-        drawing_label = ""
-        if inv.drawing:
-            drawing_label = f"\n對應圖面：{inv.drawing.original_name}"
+        meta = drawing_meta.get(inv.drawing_doc_id or 0, {})
+        mat = meta.get("material") or fallback_mat
+        qty = meta.get("qty") or fallback_qty
+
         subject = (f"【鴻騰電子 RFQ 詢價】{form.form_id} - "
                    f"{form.product_name}{(' / ' + inv.process_name) if inv.process_name else ''}")
-        body = (
-            f"您好 {sup.contact or ''}，\n\n"
-            f"鴻騰電子委請 貴司針對下列案件提供報價與交期，詳細資訊如下：\n"
-            f"─────────────────────────────────\n"
-            f"詢價單號：{form.form_id}\n"
-            f"客戶：{form.customer_name}\n"
-            f"產品：{form.product_name} / 型號：{form.product_model or '—'}\n"
-            f"規格摘要：{form.spec_summary or '—'}\n"
-            f"製程：{inv.process_name or '—'}\n"
-            f"材質：{shared_mat}\n"
-            f"評估 MOQ：{shared_qty}"
-            f"{drawing_label}\n"
-            f"客戶回覆期限：{form.rfq_due_date or '—'}\n"
-            f"─────────────────────────────────\n\n"
-            f"請於 2 個工作天內回覆報價（金額、交期、備註），謝謝。\n"
-            f"若有任何疑問，請直接回信聯絡本案窗口。\n\n"
-            f"— 鴻騰電子 NPI 系統\n"
-        )
+        body = _render_rfq_body(template, form=form, invite=inv, supplier=sup,
+                                material=mat, moq=qty)
+
         # 附件：該供應商對應的圖面（若綁特定圖），否則所有「圖面」類附件
         att_paths = []
         if inv.drawing:

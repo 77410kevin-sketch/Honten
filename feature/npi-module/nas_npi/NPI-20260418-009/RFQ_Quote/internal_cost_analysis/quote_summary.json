@@ -1,0 +1,56 @@
+{
+  "form_id": "NPI-20260418-009",
+  "customer_name": "Dynapack International Technology Corp.",
+  "product_name": "UPS 鈕金件",
+  "product_model": "DG110U",
+  "quoted_unit_price": 46.29,
+  "cost_analysis_note": "客戶壓價",
+  "bu_quote_note": "核准報價",
+  "quote_cost_data": {
+    "columns": [
+      {
+        "label": "量測檢表_DDR3_範例.xlsx",
+        "subtotal": 35,
+        "defect_amount": 1.75,
+        "overhead_amount": 2.45,
+        "qa_ship_amount": 1.05,
+        "tooling_cost": 15000,
+        "cost_total": 40.25,
+        "profit_amount": 6.04,
+        "quote": 46.29
+      },
+      {
+        "label": "IMG_3366.PNG",
+        "subtotal": 45,
+        "defect_amount": 2.25,
+        "overhead_amount": 3.15,
+        "qa_ship_amount": 1.35,
+        "tooling_cost": 45000,
+        "cost_total": 51.75,
+        "profit_amount": 7.76,
+        "quote": 59.51
+      }
+    ],
+    "rows": [
+      {
+        "process": "沖壓",
+        "prices": [
+          35,
+          45
+        ]
+      },
+      {
+        "process": "鋁擠",
+        "prices": [
+          null,
+          null
+        ]
+      }
+    ],
+    "defect_rate": 0.05,
+    "overhead_rate": 0.07,
+    "qa_ship_rate": 0.03,
+    "profit_rate": 0.15
+  },
+  "approved_at": "2026-04-18T14:11:42.961455"
+}

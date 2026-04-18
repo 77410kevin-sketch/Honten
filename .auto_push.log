@@ -2279,3 +2279,24 @@ After doing this, you may fix the identity used for this commit with:
 To github.com:77410kevin-sketch/Honten.git
    4066c8a..9382a4f  main -> main
 [2026-04-18 20:39] ✅ 已自動 push
+[main b7794e5] 自動備份 2026-04-18 21:39
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 12 files changed, 922 insertions(+), 148 deletions(-)
+ create mode 100644 feature/npi-module/app/templates/npi_forms/customer_quote.html
+ create mode 100644 "feature/npi-module/nas_npi/NPI-20260418-007/RFQ_Quote/customer_quote/NPI-20260418-007_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html"
+ create mode 100644 feature/npi-module/nas_npi/NPI-20260418-007/RFQ_Quote/internal_cost_analysis/quote_summary.json
+To github.com:77410kevin-sketch/Honten.git
+   9382a4f..b7794e5  main -> main
+[2026-04-18 21:39] ✅ 已自動 push
