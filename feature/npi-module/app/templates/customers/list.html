@@ -1,40 +1,41 @@
 {% extends "base.html" %}
-{% block title %}供應商主檔{% endblock %}
+{% block title %}客戶主檔{% endblock %}
 {% block content %}
 <div class="container-fluid py-3">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-truck me-2 text-primary"></i>供應商主檔
-      <small class="text-muted fs-6">— NPI 詢價派發用，可從 ERP 同步</small>
+    <h4 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>客戶主檔
+      <small class="text-muted fs-6">— 可從 ERP 同步</small>
     </h4>
-    {% if can_manage %}
     <div class="d-flex gap-2">
-      <form method="post" action="/suppliers/_sync-erp" class="d-inline">
+      {% if can_manage %}
+      <form method="post" action="/customers/_sync-erp" class="d-inline">
         <button class="btn btn-outline-success">
           <i class="bi bi-cloud-download me-1"></i>從 ERP 同步
         </button>
       </form>
-      <a href="/suppliers/new" class="btn btn-primary">
+      <a href="/customers/new" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i>手動新增
       </a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 
-  {# ERP 連線狀態 #}
-  {% if erp_status %}
+  {# ERP 連線狀態列 #}
   <div class="alert alert-{{ 'info' if erp_status.is_stub else ('success' if erp_status.connected else 'warning') }} small py-2 mb-3">
     <i class="bi bi-hdd-network me-1"></i>
     ERP 連接口：<strong>{{ erp_status.backend }}</strong>
     {% if erp_status.is_stub %}
       <span class="badge bg-info-subtle text-info ms-1">Stub 模式（本機假資料）</span>
+      — 正式 ERP 上線後，於 <code>.env</code> 設定 <code>ERP_BACKEND=sqlserver</code> 並補齊連線參數即可切換
     {% elif erp_status.connected %}
       <span class="badge bg-success-subtle text-success ms-1">已連線</span>
     {% else %}
       <span class="badge bg-warning-subtle text-warning ms-1">未連線</span>
+      — 缺少 <code>ERP_HOST/DATABASE/USER/PASSWORD</code> 環境變數
     {% endif %}
   </div>
-  {% endif %}
 
+  {# 同步結果 flash #}
   {% if request.query_params.get('sync') == 'ok' %}
   <div class="alert alert-success small py-2">
     <i class="bi bi-check-circle me-1"></i>同步完成 — 新增 {{ request.query_params.get('added', 0) }} 筆、更新 {{ request.query_params.get('updated', 0) }} 筆
@@ -47,8 +48,10 @@
         <table class="table table-hover mb-0 align-middle">
           <thead class="table-light">
             <tr>
-              <th>類型</th>
-              <th>名稱</th>
+              <th>來源</th>
+              <th>ERP 代碼</th>
+              <th>客戶名稱</th>
+              <th>事業部</th>
               <th>聯絡人</th>
               <th>Email</th>
               <th>電話</th>
@@ -57,42 +60,41 @@
             </tr>
           </thead>
           <tbody>
-            {% for s in items %}
-            <tr class="{% if not s.is_active %}text-muted{% endif %}">
+            {% for c in items %}
+            <tr class="{% if not c.is_active %}text-muted{% endif %}">
               <td>
-                {% if s.type.value == '廠內' %}
-                  <span class="badge bg-info-subtle text-info border border-info-subtle">廠內</span>
+                {% if c.source == 'erp' %}
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">
+                    <i class="bi bi-hdd-network me-1"></i>ERP
+                  </span>
                 {% else %}
-                  <span class="badge bg-warning-subtle text-warning border border-warning-subtle">外部</span>
+                  <span class="badge bg-secondary-subtle text-secondary border">手動</span>
                 {% endif %}
               </td>
-              <td class="fw-semibold">{{ s.name }}</td>
-              <td>{{ s.contact or '—' }}</td>
-              <td>{{ s.email or '—' }}</td>
-              <td>{{ s.phone or '—' }}</td>
+              <td class="small text-muted">{{ c.erp_code or '—' }}</td>
+              <td class="fw-semibold">{{ c.name }}</td>
+              <td class="small">{{ c.bu or '—' }}</td>
+              <td>{{ c.contact or '—' }}</td>
+              <td class="small">{{ c.email or '—' }}</td>
+              <td class="small">{{ c.phone or '—' }}</td>
               <td>
-                {% if s.is_active %}
-                <span class="badge bg-success">啟用</span>
+                {% if c.is_active %}
+                  <span class="badge bg-success">啟用</span>
                 {% else %}
-                <span class="badge bg-secondary">停用</span>
+                  <span class="badge bg-secondary">停用</span>
                 {% endif %}
               </td>
               <td class="text-end">
                 {% if can_manage %}
-                <a href="/suppliers/{{ s.id }}/edit" class="btn btn-sm btn-outline-secondary">
+                <a href="/customers/{{ c.id }}/edit" class="btn btn-sm btn-outline-secondary">
                   <i class="bi bi-pencil"></i>
                 </a>
-                <form method="post" action="/suppliers/{{ s.id }}/toggle" class="d-inline">
-                  <button class="btn btn-sm btn-outline-{% if s.is_active %}warning{% else %}success{% endif %}">
-                    <i class="bi bi-toggle-{% if s.is_active %}on{% else %}off{% endif %}"></i>
-                  </button>
-                </form>
                 {% endif %}
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="text-center text-muted py-4">
-              <i class="bi bi-inbox fs-4 d-block mb-1"></i>尚無供應商資料
+            <tr><td colspan="9" class="text-center text-muted py-4">
+              <i class="bi bi-inbox fs-4 d-block mb-1"></i>尚無客戶資料 — 可點「從 ERP 同步」匯入
             </td></tr>
             {% endfor %}
           </tbody>

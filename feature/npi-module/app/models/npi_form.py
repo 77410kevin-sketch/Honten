@@ -97,6 +97,12 @@ class NPISupplierInvite(Base):
     form_id_fk     = Column(Integer, ForeignKey("npi_forms.id"), nullable=False)
     supplier_id    = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
 
+    # 工程派發時填寫：每列 = 一個製程 / 一家供應商
+    process_name       = Column(String(100), nullable=True)   # 例：CNC 加工、表面處理
+    material           = Column(String(100), nullable=True)   # 例：SUS304、鋁 6061
+    qty                = Column(Integer, nullable=True)       # 派發數量
+    expected_lead_days = Column(Integer, nullable=True)       # 工程期望工作天
+
     invited_at     = Column(DateTime, default=datetime.utcnow)
     first_sent_at  = Column(DateTime, nullable=True)    # 第一次寄信時間
     last_reminder_at = Column(DateTime, nullable=True)  # 最近一次跟催時間

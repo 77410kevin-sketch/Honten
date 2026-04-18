@@ -43,7 +43,7 @@ _PURCHASE_ROLES = (Role.PURCHASE, Role.ADMIN)
 _RFQ_COLLECT_ROLES = (Role.PURCHASE, Role.ENGINEER, Role.ADMIN)
 
 ATTACH_CATEGORIES = [
-    "客戶詢價信", "規格書", "圖面",
+    "客戶詢價信", "圖面",
     "供應商報價", "成本分析表", "客戶報價單",
     "模具請購單", "議價記錄", "其它",
 ]
@@ -134,14 +134,20 @@ def _log_approval(form: NPIForm, user: User, action: str,
 @router.get("/", response_class=HTMLResponse)
 async def list_npi(
     request: Request,
+    stage: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """列表 — 可用 ?stage=RFQ / ?stage=NPI 將 RFQ 詢價與 NPI 開發流程切開顯示。"""
     q = (
         select(NPIForm)
         .options(selectinload(NPIForm.creator))
         .order_by(NPIForm.created_at.desc())
     )
+    if stage == "RFQ":
+        q = q.where(NPIForm.stage == NPIStage.RFQ)
+    elif stage == "NPI":
+        q = q.where(NPIForm.stage == NPIStage.NPI)
     u = current_user
     if u.role in (Role.ADMIN, Role.BU, Role.ENG_MGR):
         pass
@@ -178,6 +184,7 @@ async def list_npi(
     return templates.TemplateResponse("npi_forms/list.html", {
         "request": request, "user": current_user,
         "forms": forms, "NPIFormStatus": NPIFormStatus, "NPIStage": NPIStage,
+        "stage_filter": stage or "",
     })
 
 
@@ -186,13 +193,19 @@ async def list_npi(
 @router.get("/new", response_class=HTMLResponse)
 async def new_npi_page(
     request: Request,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in _SALES_ROLES:
         raise HTTPException(status_code=403, detail="只有業務可以建立 NPI 單")
+    # 取已啟用的客戶作為 datalist 來源（手動建立或從 ERP 同步的都列）
+    from app.models.customer import Customer
+    r_cust = await db.execute(select(Customer).where(Customer.is_active == True).order_by(Customer.name))
+    customers = list(r_cust.scalars().all())
     return templates.TemplateResponse("npi_forms/new.html", {
         "request": request, "user": current_user,
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
+        "customers": customers,
     })
 
 
@@ -205,13 +218,21 @@ async def parse_inquiry(
 ):
     if current_user.role not in _SALES_ROLES:
         raise HTTPException(status_code=403, detail="只有業務可以使用此功能")
-    from app.services.inquiry_parser import parse_inquiry_letter, extract_text_from_upload
+    from app.services.inquiry_parser import (
+        parse_inquiry_letter, parse_inquiry_image,
+        extract_text_from_upload, IMAGE_EXTS,
+    )
     content = await inquiry_file.read()
     if not content:
         raise HTTPException(status_code=400, detail="檔案為空")
+    filename = inquiry_file.filename or "upload.txt"
+    ext = os.path.splitext(filename)[1].lower()
     try:
-        text = extract_text_from_upload(inquiry_file.filename or "upload.txt", content)
-        data = parse_inquiry_letter(text)
+        if ext in IMAGE_EXTS:
+            data = parse_inquiry_image(content, filename)
+        else:
+            text = extract_text_from_upload(filename, content)
+            data = parse_inquiry_letter(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"解析失敗：{e}")
     return {"ok": True, "data": data}
@@ -399,28 +420,57 @@ async def submit_to_eng(
 @router.post("/{form_id}/dispatch")
 async def dispatch_quotes(
     form_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     eng_process_note: str = Form(""),
-    supplier_ids:     List[int] = Form(default=[]),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.ENG_DISPATCH:
         raise HTTPException(status_code=400, detail="目前狀態非待工程派發")
     if current_user.role not in _ENG_ROLES:
         raise HTTPException(status_code=403)
-    if not supplier_ids:
-        raise HTTPException(status_code=400, detail="請至少選擇一家供應商")
 
-    # 寫入派發明細
-    r = await db.execute(select(Supplier).where(Supplier.id.in_(supplier_ids), Supplier.is_active == True))
-    sups = list(r.scalars().all())
-    if not sups:
-        raise HTTPException(status_code=400, detail="選擇的供應商無效或已停用")
+    # 讀多列派發（process / supplier / material / qty / expected_lead_days）
+    fd = await request.form()
+    supplier_ids = fd.getlist("row_supplier_id")
+    process_names = fd.getlist("row_process")
+    materials = fd.getlist("row_material")
+    qtys = fd.getlist("row_qty")
+    lead_days = fd.getlist("row_lead_days")
+
+    # 過濾無效列（未選供應商者略過）
+    rows = []
+    for i in range(len(supplier_ids)):
+        sid = supplier_ids[i].strip() if i < len(supplier_ids) else ""
+        if not sid or not sid.isdigit():
+            continue
+        rows.append({
+            "supplier_id": int(sid),
+            "process_name": (process_names[i] if i < len(process_names) else "").strip() or None,
+            "material":     (materials[i]     if i < len(materials)     else "").strip() or None,
+            "qty":          int(qtys[i]) if i < len(qtys) and qtys[i].isdigit() else None,
+            "expected_lead_days": int(lead_days[i]) if i < len(lead_days) and lead_days[i].isdigit() else None,
+        })
+    if not rows:
+        raise HTTPException(status_code=400, detail="請至少新增一列並指定供應商")
+
+    valid_sids = {r["supplier_id"] for r in rows}
+    r_sup = await db.execute(select(Supplier).where(Supplier.id.in_(valid_sids), Supplier.is_active == True))
+    sup_map = {s.id: s for s in r_sup.scalars().all()}
+    rows = [r for r in rows if r["supplier_id"] in sup_map]
+    if not rows:
+        raise HTTPException(status_code=400, detail="所選供應商無效或已停用")
+
     now = datetime.utcnow()
-    for s in sups:
+    for r in rows:
         db.add(NPISupplierInvite(
-            form_id_fk=form.id, supplier_id=s.id,
+            form_id_fk=form.id,
+            supplier_id=r["supplier_id"],
+            process_name=r["process_name"],
+            material=r["material"],
+            qty=r["qty"],
+            expected_lead_days=r["expected_lead_days"],
             invited_at=now,
         ))
 
@@ -429,8 +479,9 @@ async def dispatch_quotes(
     form.assigned_eng_id = current_user.id
     form.status = NPIFormStatus.QUOTING
     form.updated_at = now
+    summary = "、".join(f"{sup_map[r['supplier_id']].name}({r['process_name'] or '—'})" for r in rows)
     db.add(_log_approval(form, current_user, "DISPATCH", old, form.status,
-                         f"派發 {len(sups)} 家：" + ", ".join(s.name for s in sups)))
+                         f"派發 {len(rows)} 列：{summary}"))
     await db.commit()
 
     # 清空 session identity map 再重讀，確保 selectinload 拿到剛寫入的 invites
@@ -557,6 +608,10 @@ async def approve_quote_bu(
     form.updated_at = datetime.utcnow()
     db.add(_log_approval(form, current_user, "APPROVE_QUOTE_BU", old, form.status, comment))
     await db.commit()
+    # 重新載入以便 NAS 歸檔存取 documents 關聯
+    db.expire_all()
+    form = await _get_form_or_404(form_id, db)
+    await notif.notify_quote_approved(db, form)
     await notif._notify_roles(
         db, [Role.SALES],
         f"【報價已核准】{form.form_id} - BU 已核准，請發送客戶報價",
@@ -829,6 +884,9 @@ async def detail_npi(
     # 列可選供應商（派發時用）
     r = await db.execute(select(Supplier).where(Supplier.is_active == True).order_by(Supplier.type, Supplier.name))
     suppliers = list(r.scalars().all())
+    # 可選製程（ERP 連接口 — stub 模式回固定清單；未來從 ERP 讀）
+    from app.services import erp_client as _erp
+    erp_processes = _erp.fetch_processes_from_erp()
     erp_req_rows = []
     if form.erp_req_data:
         try:
@@ -856,6 +914,7 @@ async def detail_npi(
         "suppliers": suppliers,
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
         "erp_req_rows": erp_req_rows,
+        "erp_processes": erp_processes,
     })
 
 

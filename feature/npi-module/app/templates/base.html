@@ -44,13 +44,25 @@
     </a>
     {% endif %}
 
-    <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">NPI</div>
-    <a href="/npi-forms/" class="nav-link {% if '/npi-forms' in request.url.path %}active{% endif %}">
-      <i class="bi bi-box-seam me-2"></i>NPI 新產品開發
+    <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">RFQ 詢價</div>
+    <a href="/npi-forms/?stage=RFQ" class="nav-link {% if request.query_params.get('stage') == 'RFQ' %}active{% endif %}">
+      <i class="bi bi-envelope-paper me-2"></i>RFQ 流程管理
     </a>
     {% if user.role.value in ('sales', 'admin') %}
     <a href="/npi-forms/new" class="nav-link {% if request.url.path == '/npi-forms/new' %}active{% endif %}">
-      <i class="bi bi-plus-circle me-2"></i>新建 NPI/RFQ
+      <i class="bi bi-plus-circle me-2"></i>新建 RFQ 詢價單
+    </a>
+    {% endif %}
+
+    <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">NPI 開發</div>
+    <a href="/npi-forms/?stage=NPI" class="nav-link {% if request.query_params.get('stage') == 'NPI' %}active{% endif %}">
+      <i class="bi bi-gear-wide-connected me-2"></i>NPI 開發管理
+    </a>
+
+    <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">主檔</div>
+    {% if user.role.value in ('sales', 'admin') %}
+    <a href="/customers/" class="nav-link {% if '/customers' in request.url.path %}active{% endif %}">
+      <i class="bi bi-people me-2"></i>客戶主檔
     </a>
     {% endif %}
     {% if user.role.value in ('engineer', 'eng_mgr', 'admin') %}

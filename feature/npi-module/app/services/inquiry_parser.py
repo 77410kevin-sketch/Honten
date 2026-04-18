@@ -5,10 +5,20 @@
 """
 import os
 import json
+import base64
 import logging
 from typing import Any
 
 import anthropic
+
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+_IMAGE_MEDIA = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +87,46 @@ def parse_inquiry_letter(text: str) -> dict[str, Any]:
         raise ValueError(f"AI 回傳非有效 JSON：{raw[:200]}")
 
     logger.info(f"[inquiry_parser] cache tokens: "
+                f"read={getattr(resp.usage, 'cache_read_input_tokens', 0)}, "
+                f"write={getattr(resp.usage, 'cache_creation_input_tokens', 0)}")
+    return data
+
+
+def parse_inquiry_image(image_bytes: bytes, filename: str) -> dict[str, Any]:
+    """從詢價信截圖（PNG/JPG 等）用 Claude vision 擷取欄位。"""
+    if not image_bytes:
+        raise ValueError("圖片內容為空")
+    ext = os.path.splitext(filename)[1].lower()
+    media_type = _IMAGE_MEDIA.get(ext, "image/png")
+    b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+
+    client = _build_client()
+    resp = client.messages.create(
+        model=_PARSER_MODEL,
+        max_tokens=1024,
+        system=[{
+            "type": "text",
+            "text": _SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }],
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": "以上是客戶詢價信的截圖（可能含中/英文），請依系統指示擷取欄位並只回 JSON。"},
+            ],
+        }],
+    )
+    raw = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(l for l in lines if not l.startswith("```"))
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning(f"parse_inquiry_image JSON decode failed: {e}\nraw={raw[:500]}")
+        raise ValueError(f"AI 回傳非有效 JSON：{raw[:200]}")
+    logger.info(f"[inquiry_parser/image] cache tokens: "
                 f"read={getattr(resp.usage, 'cache_read_input_tokens', 0)}, "
                 f"write={getattr(resp.usage, 'cache_creation_input_tokens', 0)}")
     return data

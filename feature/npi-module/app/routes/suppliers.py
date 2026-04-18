@@ -5,10 +5,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from datetime import datetime
+
 from app.database import get_db
 from app.models.user import User, Role
 from app.models.supplier import Supplier, SupplierType
 from app.services.auth import get_current_user
+from app.services import erp_client
 
 router    = APIRouter(prefix="/suppliers")
 templates = Jinja2Templates(directory="app/templates")
@@ -33,7 +36,43 @@ async def list_suppliers(
         "request": request, "user": current_user,
         "items": items, "can_manage": _can_manage(current_user),
         "SupplierType": SupplierType,
+        "erp_status": erp_client.erp_status(),
     })
+
+
+@router.post("/_sync-erp")
+async def sync_suppliers_from_erp(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """從 ERP 同步供應商主檔（依名稱去重）。Stub 模式。"""
+    if not _can_manage(current_user):
+        raise HTTPException(status_code=403)
+    st = erp_client.erp_status()
+    if not st["connected"]:
+        raise HTTPException(status_code=503, detail="ERP 尚未連線")
+    rows = erp_client.fetch_suppliers_from_erp()
+    added, updated = 0, 0
+    for row in rows:
+        r = await db.execute(select(Supplier).where(Supplier.name == row.name))
+        sup = r.scalars().first()
+        sup_type = SupplierType.INTERNAL if row.type == "廠內" else SupplierType.EXTERNAL
+        if sup:
+            sup.contact = row.contact
+            sup.email = row.email
+            sup.phone = row.phone
+            sup.type = sup_type
+            sup.is_active = row.is_active
+            updated += 1
+        else:
+            db.add(Supplier(
+                name=row.name, type=sup_type,
+                contact=row.contact, email=row.email, phone=row.phone,
+                is_active=row.is_active,
+            ))
+            added += 1
+    await db.commit()
+    return RedirectResponse(url=f"/suppliers/?sync=ok&added={added}&updated={updated}", status_code=303)
 
 
 @router.get("/new", response_class=HTMLResponse)

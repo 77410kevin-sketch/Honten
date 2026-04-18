@@ -79,10 +79,10 @@ async def notify_quotes_dispatched(db: AsyncSession, form: NPIForm, invites: lis
             f"年需量：{form.annual_qty or '—'}  /  客戶回覆期限：{form.rfq_due_date or '—'}\n\n"
             f"請於 2 個工作天內回覆，否則系統將自動發信跟催。"
         )
-        # 附件：圖面、規格書
+        # 附件：圖面
         att_paths = []
         for d in form.documents:
-            if d.category in ("圖面", "規格書"):
+            if d.category == "圖面":
                 att_paths.append(os.path.join(UPLOAD_BASE, f"npi_{form.id}", d.filename))
         _send_mail(sup.email, subject, body, att_paths)
         inv.first_sent_at = datetime.utcnow()
@@ -194,6 +194,65 @@ async def notify_npi_rejected(db: AsyncSession, form: NPIForm, target: str):
         db, [Role.ENGINEER, Role.SALES],
         f"【NPI 退回 {target}】{form.form_id} - 請調整後重送",
     )
+
+
+async def notify_quote_approved(db: AsyncSession, form: NPIForm):
+    """BU 核准報價後：把成本分析 + 報價資訊落地 NAS 的 RFQ_Quote 資料夾。
+
+    包含：
+    - quote_summary.json（quote_cost_data + 報價單價 + BU 評語）
+    - 成本分析類附件（category: 成本分析）
+    - 供應商報價類附件（category: 供應商報價）
+    """
+    nas_dir = _ensure_nas_dir(form, "RFQ_Quote")
+    # 1. 寫出 quote_summary.json
+    summary = {
+        "form_id": form.form_id,
+        "customer_name": form.customer_name,
+        "product_name": form.product_name,
+        "product_model": form.product_model,
+        "quoted_unit_price": form.quoted_unit_price,
+        "target_price": form.target_price,
+        "cost_analysis_note": form.cost_analysis_note,
+        "bu_quote_note": form.bu_quote_note,
+        "quote_cost_data": _safe_parse_json(form.quote_cost_data),
+        "approved_at": datetime.utcnow().isoformat(),
+    }
+    try:
+        with open(os.path.join(nas_dir, "quote_summary.json"), "w", encoding="utf-8") as f:
+            import json as _json
+            _json.dump(summary, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"write quote_summary.json failed: {e}")
+    # 2. 複製成本分析 / 供應商報價附件
+    for d in form.documents:
+        if (d.category or "") not in ("成本分析", "供應商報價", "客戶報價"):
+            continue
+        src = os.path.join(UPLOAD_BASE, f"npi_{form.id}", d.filename)
+        if not os.path.exists(src):
+            continue
+        cat = (d.category or "其它").replace("/", "_")
+        sub = os.path.join(nas_dir, cat)
+        os.makedirs(sub, exist_ok=True)
+        try:
+            shutil.copy2(src, os.path.join(sub, d.original_name))
+        except Exception as e:
+            logger.warning(f"copy to NAS (quote approved) failed: {e}")
+    # 3. 通知業務 + BU
+    await _notify_roles(
+        db, [Role.SALES, Role.BU],
+        f"【報價核准並歸檔】{form.form_id} - 成本分析與報價已存入 NAS：{nas_dir}",
+    )
+
+
+def _safe_parse_json(s: str | None):
+    if not s:
+        return None
+    try:
+        import json as _json
+        return _json.loads(s)
+    except Exception:
+        return s
 
 
 async def notify_npi_closed(db: AsyncSession, form: NPIForm):

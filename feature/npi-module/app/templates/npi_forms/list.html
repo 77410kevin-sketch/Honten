@@ -1,15 +1,36 @@
 {% extends "base.html" %}
-{% block title %}NPI 新產品開發{% endblock %}
+{% block title %}
+{% if stage_filter == 'RFQ' %}RFQ 詢價與報價{% elif stage_filter == 'NPI' %}NPI 新產品開發{% else %}NPI / RFQ 總覽{% endif %}
+{% endblock %}
 {% block content %}
 <div class="container-fluid py-3">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-box-seam me-2 text-primary"></i>NPI 新產品開發</h4>
+    <h4 class="mb-0">
+      {% if stage_filter == 'RFQ' %}
+        <i class="bi bi-envelope-paper me-2 text-primary"></i>RFQ 詢價與報價
+        <small class="text-muted fs-6">（至 BU 核准報價為止）</small>
+      {% elif stage_filter == 'NPI' %}
+        <i class="bi bi-gear-wide-connected me-2 text-primary"></i>NPI 新產品開發
+        <small class="text-muted fs-6">（客戶確定開發後的模具/量產流程）</small>
+      {% else %}
+        <i class="bi bi-box-seam me-2 text-primary"></i>RFQ / NPI 總覽
+      {% endif %}
+    </h4>
     {% if user.role.value in ('sales', 'admin') %}
     <a href="/npi-forms/new" class="btn btn-primary">
-      <i class="bi bi-plus-circle me-1"></i>新建 NPI/RFQ 單
+      <i class="bi bi-plus-circle me-1"></i>新建 RFQ 詢價單
     </a>
     {% endif %}
   </div>
+
+  <ul class="nav nav-pills mb-3 small">
+    <li class="nav-item"><a class="nav-link {% if stage_filter == 'RFQ' %}active{% endif %}"
+      href="/npi-forms/?stage=RFQ"><i class="bi bi-envelope-paper me-1"></i>RFQ 流程</a></li>
+    <li class="nav-item"><a class="nav-link {% if stage_filter == 'NPI' %}active{% endif %}"
+      href="/npi-forms/?stage=NPI"><i class="bi bi-gear-wide-connected me-1"></i>NPI 流程</a></li>
+    <li class="nav-item"><a class="nav-link {% if not stage_filter %}active{% endif %}"
+      href="/npi-forms/"><i class="bi bi-list-ul me-1"></i>全部</a></li>
+  </ul>
 
   <div class="d-flex flex-wrap gap-2 mb-3 small">
     <span class="badge bg-secondary">草稿</span>

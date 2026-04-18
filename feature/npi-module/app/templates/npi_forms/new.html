@@ -11,12 +11,14 @@
     </div>
     <div class="card-body">
       <p class="small text-muted mb-2">
-        上傳客戶寄來的詢價信（<strong>.txt / .pdf / .eml</strong>），AI 會自動擷取客戶、產品、規格、數量、期限等欄位填入下方表格，業務確認後再送出。
+        上傳客戶寄來的詢價信（<strong>.txt / .pdf / .eml</strong>）或 <strong>截圖（.png / .jpg）</strong>，
+        AI 會自動擷取客戶、產品、規格、數量、期限等欄位填入下方表格，業務確認後再送出。
       </p>
       <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
         <label class="btn btn-outline-primary mb-0">
-          <i class="bi bi-upload me-1"></i>選擇詢價信檔案
-          <input type="file" id="aiInquiryFile" class="d-none" accept=".txt,.pdf,.eml,.msg">
+          <i class="bi bi-upload me-1"></i>選擇詢價信檔案 / 截圖
+          <input type="file" id="aiInquiryFile" class="d-none"
+                 accept=".txt,.pdf,.eml,.msg,.png,.jpg,.jpeg,.gif,.webp,image/*">
         </label>
         <span class="file-picker-name text-muted small flex-grow-1">（尚未選擇）</span>
         <button type="button" class="btn btn-primary" id="aiParseBtn">
@@ -32,12 +34,28 @@
       <div class="card-header bg-white fw-semibold"><i class="bi bi-person-lines-fill me-2"></i>客戶資訊</div>
       <div class="card-body row g-3">
         <div class="col-md-6">
-          <label class="form-label">客戶名稱 <span class="text-danger">*</span></label>
-          <input name="customer_name" class="form-control" required>
+          <label class="form-label">客戶名稱 <span class="text-danger">*</span>
+            {% if customers %}
+            <small class="text-muted">（輸入以從主檔自動補完 — 共 {{ customers|length }} 筆）</small>
+            {% else %}
+            <small class="text-muted">（<a href="/customers/" target="_blank">客戶主檔</a>尚無資料，可從 ERP 同步或手動輸入）</small>
+            {% endif %}
+          </label>
+          <input name="customer_name" id="customerName" class="form-control"
+                 list="customerList" autocomplete="off" required>
+          <datalist id="customerList">
+            {% for c in customers or [] %}
+            <option value="{{ c.name }}"
+                    data-contact="{{ c.contact or '' }}"
+                    data-email="{{ c.email or '' }}"
+                    data-phone="{{ c.phone or '' }}"
+                    data-bu="{{ c.bu or '' }}"></option>
+            {% endfor %}
+          </datalist>
         </div>
         <div class="col-md-6">
           <label class="form-label">客戶聯絡人</label>
-          <input name="customer_contact" class="form-control">
+          <input name="customer_contact" id="customerContact" class="form-control">
         </div>
         <div class="col-md-8">
           <label class="form-label">客戶 Email <small class="text-muted">(報價完成後寄送對象)</small></label>
@@ -93,14 +111,13 @@
       <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件上傳</div>
       <div class="card-body">
         <p class="small text-muted mb-3">
-          送審時須至少包含【客戶詢價信】與【規格書或圖面】其一。
+          送審時須至少包含【客戶詢價信】與【圖面】。
         </p>
         <div id="attach-rows">
           <div class="row g-2 mb-2 attach-row align-items-center">
             <div class="col-md-3">
               <select name="attach_categories" class="form-select">
                 <option>客戶詢價信</option>
-                <option>規格書</option>
                 <option>圖面</option>
                 <option>其它</option>
               </select>
@@ -208,5 +225,25 @@ function fillFields(data) {
     if (buSel) buSel.value = data.bu;
   }
 }
+
+// 客戶 datalist：選中客戶時自動填聯絡人/email/BU
+(function(){
+  const nameInp = document.getElementById('customerName');
+  const listEl = document.getElementById('customerList');
+  if (!nameInp || !listEl) return;
+  nameInp.addEventListener('change', () => {
+    const opt = [...listEl.options].find(o => o.value === nameInp.value);
+    if (!opt) return;
+    const fill = (id, attr) => {
+      const el = document.getElementById(id) || document.querySelector(`[name="${id}"]`);
+      if (el && !el.value) el.value = opt.dataset[attr] || '';
+    };
+    fill('customerContact', 'contact');
+    const emailEl = document.querySelector('[name="customer_email"]');
+    if (emailEl && !emailEl.value) emailEl.value = opt.dataset.email || '';
+    const buSel = document.querySelector('[name="bu"]');
+    if (buSel && !buSel.value) buSel.value = opt.dataset.bu || '';
+  });
+})();
 </script>
 {% endblock %}
