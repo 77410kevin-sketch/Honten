@@ -423,15 +423,26 @@
 {% if form.status.value == 'QUOTES_COLLECTED' and user.role.value in ('sales','admin') %}
 <div class="modal fade" id="sendCustomerQuoteModal" tabindex="-1">
   <div class="modal-dialog">
-    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/send-customer-quote">
+    <form class="modal-content" method="post" enctype="multipart/form-data"
+          action="/npi-forms/{{ form.form_id }}/send-customer-quote">
       <div class="modal-header">
         <h5 class="modal-title">發送客戶報價</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="alert alert-warning small">
-          送出前請確認已於附件上傳【成本分析表】與【客戶報價單】。<br>
+          請上傳【成本分析表】與【客戶報價單】（必要）。<br>
           將自動以 mail 寄送至：<strong>{{ form.customer_email or '（尚未填客戶 Email）' }}</strong>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">成本分析表（必要）</label>
+          <input type="hidden" name="attach_categories" value="成本分析表">
+          <input type="file" name="attach_files" class="form-control">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">客戶報價單（必要）</label>
+          <input type="hidden" name="attach_categories" value="客戶報價單">
+          <input type="file" name="attach_files" class="form-control">
         </div>
         <label class="form-label">成本分析摘要 / 給客戶的補充說明</label>
         <textarea name="cost_analysis_note" class="form-control" rows="3"></textarea>
@@ -450,7 +461,8 @@
 {% if form.status.value == 'NPI_STARTED' and user.role.value in ('engineer','admin') %}
 <div class="modal fade" id="submitBuModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
-    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/submit-bu">
+    <form class="modal-content" method="post" enctype="multipart/form-data"
+          action="/npi-forms/{{ form.form_id }}/submit-bu">
       <div class="modal-header">
         <h5 class="modal-title">選供應商 + 開 ERP 模具請購單 + 送 BU 核准</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -483,13 +495,13 @@
                     placeholder='[{"料號":"M001","品名":"下模","數量":1,"單價":50000}]'></textarea>
         </div>
         <div class="col-12">
-          <label class="form-label">備註</label>
-          <textarea name="comment" rows="2" class="form-control"></textarea>
+          <label class="form-label">模具請購單（必要附件）</label>
+          <input type="hidden" name="attach_categories" value="模具請購單">
+          <input type="file" name="attach_files" class="form-control">
         </div>
         <div class="col-12">
-          <div class="alert alert-info small mb-0">
-            請確認已於附件上傳【模具請購單】。送出後將通知 BU 核准。
-          </div>
+          <label class="form-label">備註</label>
+          <textarea name="comment" rows="2" class="form-control"></textarea>
         </div>
       </div>
       <div class="modal-footer">

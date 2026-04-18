@@ -411,7 +411,8 @@ async def dispatch_quotes(
                          f"派發 {len(sups)} 家：" + ", ".join(s.name for s in sups)))
     await db.commit()
 
-    # 重新載入關聯後寄信
+    # 清空 session identity map 再重讀，確保 selectinload 拿到剛寫入的 invites
+    db.expire_all()
     form = await _get_form_or_404(form_id, db)
     await notif.notify_quotes_dispatched(db, form, list(form.invites))
     await db.commit()
@@ -490,12 +491,19 @@ async def send_customer_quote(
     current_user: User = Depends(get_current_user),
     cost_analysis_note: str = Form(""),
     comment: str = Form(""),
+    attach_files:      List[UploadFile] = File(default=[]),
+    attach_categories: List[str] = Form(default=[]),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.QUOTES_COLLECTED:
         raise HTTPException(status_code=400)
     if current_user.role not in _SALES_ROLES:
         raise HTTPException(status_code=403)
+    if attach_files:
+        await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
+        await db.commit()
+        db.expire_all()
+        form = await _get_form_or_404(form_id, db)
     cats = {d.category for d in form.documents}
     if "成本分析表" not in cats:
         raise HTTPException(status_code=400, detail="請先上傳【成本分析表】")
@@ -547,6 +555,8 @@ async def submit_bu(
     erp_req_data:   str  = Form(""),   # JSON snapshot
     mould_cost_est: str  = Form(""),
     comment:        str  = Form(""),
+    attach_files:      List[UploadFile] = File(default=[]),
+    attach_categories: List[str] = Form(default=[]),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.NPI_STARTED:
@@ -556,6 +566,12 @@ async def submit_bu(
     inv = next((i for i in form.invites if i.id == selected_invite_id), None)
     if not inv or not inv.replied_at:
         raise HTTPException(status_code=400, detail="請選擇一家已報價的供應商")
+    if attach_files:
+        await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
+        await db.commit()
+        db.expire_all()
+        form = await _get_form_or_404(form_id, db)
+        inv = next((i for i in form.invites if i.id == selected_invite_id), None)
     # 送審前驗證附件
     cats = {d.category for d in form.documents}
     if "模具請購單" not in cats:
@@ -688,6 +704,7 @@ async def purchase_close(
     db.add(_log_approval(form, current_user, "PURCHASE_CLOSE", old, form.status,
                          f"議價後成本 {form.mould_cost_final} / {purchase_note}"))
     await db.commit()
+    db.expire_all()
     form = await _get_form_or_404(form_id, db)
     await notif.notify_npi_closed(db, form)
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
