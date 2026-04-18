@@ -63,6 +63,8 @@ class NPIForm(Base):
     mould_cost_est   = Column(Float, nullable=True)  # 工程估算成本
     mould_cost_final = Column(Float, nullable=True)  # 採購議價後實際成本
     purchase_note    = Column(Text, nullable=True)   # 採購議價備註
+    t1_plan_data     = Column(Text, nullable=True)   # 每張圖客戶 T1 試模日期+備註 JSON
+    eng_process_data = Column(Text, nullable=True)   # NPI 工程填寫：{process_name:{part_no, need_routing}} JSON
     nas_folder       = Column(String(300), nullable=True)
 
     # 退回控制

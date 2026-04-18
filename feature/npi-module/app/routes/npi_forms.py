@@ -33,6 +33,15 @@ from app.services import rfq_archive
 
 router    = APIRouter(prefix="/npi-forms")
 templates = Jinja2Templates(directory="app/templates")
+
+def _fromjson_filter(s):
+    if not s:
+        return {}
+    try:
+        return json.loads(s)
+    except Exception:
+        return {}
+templates.env.filters["fromjson"] = _fromjson_filter
 UPLOAD_BASE = "uploads"
 
 # 可建單角色
@@ -757,6 +766,63 @@ async def customer_quote_view(
 
 # ── 業務完成成本分析 → 發客戶報價 ──────────
 
+async def _build_rfq_archive_pdf(form: NPIForm, db: AsyncSession, out_path: str) -> str:
+    """把 form + invites + quote_data + BU Head 組成 dict 餵給 PDF 產生器。"""
+    creator_name = form.creator.display_name if form.creator else None
+    bu_head_name = None
+    if form.bu:
+        q = select(User).where(User.role == Role.BU, User.bu == form.bu, User.is_active == True)
+        bu_head = (await db.execute(q)).scalars().first()
+        if bu_head:
+            bu_head_name = bu_head.display_name
+    quote_data = {}
+    if form.quote_cost_data:
+        try:
+            quote_data = json.loads(form.quote_cost_data)
+        except Exception:
+            pass
+    shared_mat = ""
+    shared_qty = ""
+    for inv in form.invites or []:
+        if not shared_mat and inv.material:
+            shared_mat = inv.material
+        if not shared_qty and inv.qty:
+            shared_qty = inv.qty
+    form_dict = {
+        "form_id": form.form_id,
+        "customer_name": form.customer_name,
+        "customer_contact": form.customer_contact,
+        "customer_email": form.customer_email,
+        "product_name": form.product_name,
+        "product_model": form.product_model,
+        "spec_summary": form.spec_summary,
+        "bu": form.bu.value if form.bu else None,
+        "sales_note": form.sales_note,
+        "_shared_mat": shared_mat,
+        "_shared_qty": shared_qty,
+    }
+    invites_list = []
+    for inv in form.invites or []:
+        invites_list.append({
+            "supplier_name": inv.supplier.name if inv.supplier else None,
+            "process_name": inv.process_name,
+            "material": inv.material,
+            "qty": inv.qty,
+            "quote_amount": inv.quote_amount,
+            "tooling_cost": inv.tooling_cost,
+            "lead_time_days": inv.lead_time_days,
+            "is_selected": inv.is_selected,
+        })
+    return rfq_archive.build_archive_pdf(
+        form_dict, invites_list, quote_data, creator_name, bu_head_name, out_path,
+    )
+
+
+def _rfq_archive_path(form: NPIForm, quote_data: dict) -> str:
+    fname = rfq_archive.archive_filename(form.form_id, quote_data)
+    return os.path.join(notif.NAS_ROOT, form.form_id, "RFQ_Archive", fname)
+
+
 @router.post("/{form_id}/send-customer-quote")
 async def send_customer_quote(
     form_id: str,
@@ -782,10 +848,189 @@ async def send_customer_quote(
     form.cost_analysis_note = cost_analysis_note or None
     form.status = NPIFormStatus.RFQ_DONE
     form.updated_at = datetime.utcnow()
-    db.add(_log_approval(form, current_user, "SEND_CUSTOMER_QUOTE", old, form.status, comment))
+
+    # 產出結案歸檔 PDF → NAS
+    quote_data = {}
+    if form.quote_cost_data:
+        try:
+            quote_data = json.loads(form.quote_cost_data)
+        except Exception:
+            pass
+    archive_path = _rfq_archive_path(form, quote_data)
+    try:
+        await _build_rfq_archive_pdf(form, db, archive_path)
+        form.nas_folder = os.path.dirname(archive_path)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"RFQ archive PDF 生成失敗：{e}")
+
+    db.add(_log_approval(form, current_user, "SEND_CUSTOMER_QUOTE", old, form.status,
+                         comment or f"結案：報價歸檔 PDF → {archive_path}"))
     await db.commit()
     await notif.notify_sales_cost_analysis_done(db, form)
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/save-t1-plan")
+async def save_t1_plan(
+    form_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """業務儲存每張圖的 T1 試模計畫（預計 T1 時間 + 樣品提供時間）;
+    儲存後通知工程接手推進。
+    """
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (*_SALES_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅業務可維護 T1 計畫")
+    form_data = await request.form()
+    ids = form_data.getlist("drawing_id")
+    t1_dates = form_data.getlist("t1_date")
+    sample_dates = form_data.getlist("sample_date")
+    notes = form_data.getlist("t1_note")
+    plan = {}
+    for i, did in enumerate(ids):
+        if not did:
+            continue
+        plan[str(did)] = {
+            "t1_date":     (t1_dates[i] if i < len(t1_dates) else "") or "",
+            "sample_date": (sample_dates[i] if i < len(sample_dates) else "") or "",
+            "note":        (notes[i] if i < len(notes) else "") or "",
+        }
+    form.t1_plan_data = json.dumps(plan, ensure_ascii=False) if plan else None
+    form.updated_at = datetime.utcnow()
+    await db.commit()
+    try:
+        await notif._notify_roles(
+            db, [Role.ENGINEER],
+            f"【NPI 業務已提供 T1 計畫】{form.form_id} - 預計 T1 / 樣品時間已填寫，請工程接手推進",
+        )
+    except Exception:
+        pass
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/submit-mould-requisition")
+async def submit_mould_requisition(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    erp_req_no: str = Form(""),
+    attach_files: List[UploadFile] = File(default=[]),
+    attach_categories: List[str] = Form(default=[]),
+):
+    """工程送出模治具請購單：ERP 單號 + 附件；
+    送出前檢查所有有 tooling_cost 的站都已填 tool_part_no。
+    """
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (*_ENG_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅工程可送出模治具請購單")
+    if form.stage != NPIStage.NPI:
+        raise HTTPException(status_code=400, detail="需進入 NPI 階段")
+    if form.erp_req_no:
+        raise HTTPException(status_code=400, detail="已送出過，若需修改請聯絡管理員")
+    erp_req_no = (erp_req_no or "").strip()
+    if not erp_req_no:
+        raise HTTPException(status_code=400, detail="請填寫 ERP 模具請購單號")
+    # 檢查：每個有 tooling_cost 的站，eng_process_data 必須有 tool_part_no
+    try:
+        eng_map = json.loads(form.eng_process_data) if form.eng_process_data else {}
+    except Exception:
+        eng_map = {}
+    missing = []
+    for inv in form.invites or []:
+        if inv.tooling_cost and inv.tooling_cost > 0 and inv.process_name:
+            saved = eng_map.get(inv.process_name) or {}
+            if not saved.get("tool_part_no"):
+                if inv.process_name not in missing:
+                    missing.append(inv.process_name)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"以下站別尚未填寫模具料號：{', '.join(missing)}",
+        )
+    # 儲存 ERP 單號 + 附件
+    form.erp_req_no = erp_req_no
+    if attach_files and any(f.filename for f in attach_files):
+        await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "MOULD_REQ_SUBMIT",
+                         form.status, form.status,
+                         f"送出模治具請購單 ERP {erp_req_no}"))
+    await db.commit()
+    try:
+        await notif._notify_roles(
+            db, [Role.PURCHASE, Role.SALES],
+            f"【模治具請購單已送出】{form.form_id} - ERP {erp_req_no}，請採購接手議價",
+        )
+    except Exception:
+        pass
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/save-eng-process")
+async def save_eng_process(
+    form_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """工程於 NPI 階段填寫：每站廠內料號 + 是否建途程（SFT）。
+
+    接收 process_name[]/part_no[]/need_routing[] 平行陣列。
+    """
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (*_ENG_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅工程可維護廠內料號 / 途程")
+    form_data = await request.form()
+    procs = form_data.getlist("process_name")
+    parts = form_data.getlist("part_no")
+    tool_parts = form_data.getlist("tool_part_no")
+    routings_raw = set(form_data.getlist("need_routing"))  # 只勾選才會出現
+    data = {}
+    for i, pn in enumerate(procs):
+        if not pn:
+            continue
+        data[pn] = {
+            "part_no":      (parts[i] if i < len(parts) else "") or "",
+            "tool_part_no": (tool_parts[i] if i < len(tool_parts) else "") or "",
+            "need_routing": pn in routings_raw,
+        }
+    form.eng_process_data = json.dumps(data, ensure_ascii=False) if data else None
+    form.updated_at = datetime.utcnow()
+    await db.commit()
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.get("/{form_id}/archive.pdf")
+async def download_rfq_archive(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """結案歸檔 PDF 下載 — 僅 BU / admin（業務不提供下載，歸檔僅存於 NAS）。"""
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (*_BU_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    if form.status not in (NPIFormStatus.QUOTE_APPROVED, NPIFormStatus.RFQ_DONE,
+                           NPIFormStatus.NPI_STARTED, NPIFormStatus.CLOSED):
+        raise HTTPException(status_code=400, detail="需先 BU 核准報價後才能下載歸檔 PDF")
+    quote_data = {}
+    if form.quote_cost_data:
+        try:
+            quote_data = json.loads(form.quote_cost_data)
+        except Exception:
+            pass
+    archive_path = _rfq_archive_path(form, quote_data)
+    if not os.path.exists(archive_path):
+        await _build_rfq_archive_pdf(form, db, archive_path)
+    fname = os.path.basename(archive_path)
+    return FileResponse(
+        archive_path, media_type="application/pdf",
+        filename=fname,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{urlquote(fname)}"},
+    )
 
 
 # ── 業務宣告「客戶確定開發」→ 進入 NPI 階段 ─

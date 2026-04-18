@@ -2346,3 +2346,48 @@ After doing this, you may fix the identity used for this commit with:
 To github.com:77410kevin-sketch/Honten.git
    99c590b..ba3c4f3  main -> main
 [2026-04-18 23:39] ✅ 已自動 push
+[main ecb9bc9] 自動備份 2026-04-19 00:39
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 32 files changed, 1298 insertions(+), 47 deletions(-)
+ create mode 100644 feature/npi-module/app/services/rfq_archive.py
+ create mode 100644 feature/npi-module/app/static/ht_logo.png
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206A\345\240\261\345\203\271.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206A\345\240\261\345\203\271.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206B\345\240\261\345\203\271.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/\344\276\233\346\207\211\345\225\206B\345\240\261\345\203\271.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256/\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241/\345\256\242\346\210\266\350\251\242\345\203\271\344\277\241.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250/\346\210\220\346\234\254\345\210\206\346\236\220\350\241\250.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256/\346\250\241\345\205\267\350\253\213\350\263\274\345\226\256.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\350\246\217\346\240\274\346\233\270/\350\246\217\346\240\274\346\233\270.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\350\246\217\346\240\274\346\233\270/\350\246\217\346\240\274\346\233\270.txt" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-001/Closure/\350\255\260\345\203\271\350\250\230\351\214\204/\350\255\260\345\203\271\350\250\230\351\214\204.txt" => "feature/npi-module/nas_npi/RFQ-20260418-001/Closure/\350\255\260\345\203\271\350\250\230\351\214\204/\350\255\260\345\203\271\350\250\230\351\214\204.txt" (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-005 => RFQ-20260418-005}/RFQ_Quote/quote_summary.json (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-005/RFQ_Quote/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/IMG_3366.PNG" => "feature/npi-module/nas_npi/RFQ-20260418-005/RFQ_Quote/\344\276\233\346\207\211\345\225\206\345\240\261\345\203\271/IMG_3366.PNG" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-007/RFQ_Quote/customer_quote/NPI-20260418-007_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" => "feature/npi-module/nas_npi/RFQ-20260418-007/RFQ_Quote/customer_quote/NPI-20260418-007_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-007 => RFQ-20260418-007}/RFQ_Quote/internal_cost_analysis/quote_summary.json (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-009/RFQ_Quote/customer_quote/NPI-20260418-009_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" => "feature/npi-module/nas_npi/RFQ-20260418-009/RFQ_Quote/customer_quote/NPI-20260418-009_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-009 => RFQ-20260418-009}/RFQ_Quote/internal_cost_analysis/quote_summary.json (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-009 => RFQ-20260418-009}/RFQ_Quote/supplier_quotes/IMG_3366.PNG (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-009/RFQ_Quotes/\344\271\205\347\233\233\345\241\221\350\206\240__IMG_3366.PNG" => "feature/npi-module/nas_npi/RFQ-20260418-009/RFQ_Quotes/\344\271\205\347\233\233\345\241\221\350\206\240__IMG_3366.PNG" (100%)
+ rename "feature/npi-module/nas_npi/NPI-20260418-012/RFQ_Quote/customer_quote/NPI-20260418-012_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" => "feature/npi-module/nas_npi/RFQ-20260418-012/RFQ_Quote/customer_quote/NPI-20260418-012_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html" (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-012 => RFQ-20260418-012}/RFQ_Quote/internal_cost_analysis/quote_summary.json (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-012 => RFQ-20260418-012}/RFQ_Quote/supplier_quotes/IMG_3366.PNG (100%)
+ rename feature/npi-module/nas_npi/{NPI-20260418-012 => RFQ-20260418-012}/RFQ_Quote/supplier_quotes/IMG_3367.PNG (100%)
+ create mode 100644 "feature/npi-module/nas_npi/RFQ-20260418-013/RFQ_Quote/customer_quote/RFQ-20260418-013_\345\256\242\346\210\266\345\240\261\345\203\271\345\226\256.html"
+ create mode 100644 feature/npi-module/nas_npi/RFQ-20260418-013/RFQ_Quote/internal_cost_analysis/quote_summary.json
+ create mode 100644 feature/npi-module/nas_npi/RFQ-20260418-013/RFQ_Quote/supplier_quotes/IMG_3366.PNG
+ create mode 100644 feature/npi-module/nas_npi/RFQ-20260418-013/RFQ_Quote/supplier_quotes/IMG_3367.PNG
+ create mode 100644 feature/npi-module/scripts/test_rfq_archive_pdf.py
+To github.com:77410kevin-sketch/Honten.git
+   ba3c4f3..ecb9bc9  main -> main
+[2026-04-19 00:39] ✅ 已自動 push
