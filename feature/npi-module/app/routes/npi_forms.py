@@ -58,8 +58,9 @@ def _upload_dir(form_pk: int) -> str:
 
 
 async def _gen_form_id(db: AsyncSession) -> str:
+    """新建單一律 RFQ- 開頭；若轉入 NPI 階段，ID 仍沿用（便於追溯）。"""
     today  = datetime.utcnow().strftime("%Y%m%d")
-    prefix = f"NPI-{today}-"
+    prefix = f"RFQ-{today}-"
     r = await db.execute(select(func.count()).where(NPIForm.form_id.like(f"{prefix}%")))
     n = r.scalar() or 0
     return f"{prefix}{str(n + 1).zfill(3)}"
@@ -512,10 +513,13 @@ async def dispatch_quotes(
                          f"派發 {len(rows)} 列：{summary}"))
     await db.commit()
 
+    # 合併寄出 flag（UI checkbox 勾選 → 同一供應商多筆合併一封信）
+    merge_mail = (fd.get("merge_mail") == "1")
+
     # 清空 session identity map 再重讀，確保 selectinload 拿到剛寫入的 invites
     db.expire_all()
     form = await _get_form_or_404(form_id, db)
-    await notif.notify_quotes_dispatched(db, form, list(form.invites))
+    await notif.notify_quotes_dispatched(db, form, list(form.invites), merge=merge_mail)
     await db.commit()
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 

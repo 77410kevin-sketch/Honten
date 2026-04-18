@@ -169,9 +169,32 @@ def _render_rfq_body(template: str, *, form, invite, supplier, material, moq) ->
     return out
 
 
-async def notify_quotes_dispatched(db: AsyncSession, form: NPIForm, invites: list[NPISupplierInvite]):
+def _collect_drawing_meta(invites):
+    """從所有 invites 組出 {drawing_id: {material, qty}} map + fallback。"""
+    m: dict = {}
+    for i in invites:
+        key = i.drawing_doc_id or 0
+        if key not in m:
+            m[key] = {"material": None, "qty": None}
+        if i.material and not m[key]["material"]:
+            m[key]["material"] = i.material
+        if i.qty and not m[key]["qty"]:
+            m[key]["qty"] = i.qty
+    fb_mat = next((v["material"] for v in m.values() if v["material"]), None)
+    fb_qty = next((v["qty"] for v in m.values() if v["qty"]), None)
+    return m, fb_mat, fb_qty
+
+
+async def notify_quotes_dispatched(
+    db: AsyncSession,
+    form: NPIForm,
+    invites: list[NPISupplierInvite],
+    *,
+    merge: bool = False,
+):
     """工程派發詢價：向每家供應商寄 mail（第一次）+ 通知業務 / 工程主管。
-    支援使用者自訂的信件模板（form.eng_process_note），依每家供應商 / 每張圖替換變數。
+    - 支援使用者自訂的信件模板（form.eng_process_note），依供應商 / 圖替換變數。
+    - merge=True：同一供應商若有多筆 invite → 合併成一封信，列多項目 + 合併附件。
     """
     # CC 對象：業務（建單者） + 工程（指派者）
     cc_list = []
@@ -180,50 +203,100 @@ async def notify_quotes_dispatched(db: AsyncSession, form: NPIForm, invites: lis
     if form.assigned_eng and getattr(form.assigned_eng, "email", None):
         cc_list.append(form.assigned_eng.email)
 
-    # 依 drawing_id 蒐集材質 / MOQ（每張圖獨立）
-    drawing_meta: dict = {}
-    for i in invites:
-        key = i.drawing_doc_id or 0
-        if key not in drawing_meta:
-            drawing_meta[key] = {"material": None, "qty": None}
-        if i.material and not drawing_meta[key]["material"]:
-            drawing_meta[key]["material"] = i.material
-        if i.qty and not drawing_meta[key]["qty"]:
-            drawing_meta[key]["qty"] = i.qty
-    # fallback 共用值（任一張圖的第一個有值）
-    fallback_mat = next((m["material"] for m in drawing_meta.values() if m["material"]), None)
-    fallback_qty = next((m["qty"] for m in drawing_meta.values() if m["qty"]), None)
-
+    drawing_meta, fallback_mat, fallback_qty = _collect_drawing_meta(invites)
     template = (form.eng_process_note or "").strip() or _DEFAULT_RFQ_TEMPLATE
 
-    for inv in invites:
-        sup: Supplier | None = inv.supplier
-        if not sup or not sup.email:
-            logger.warning(f"Supplier {inv.supplier_id} 沒有 email，略過")
-            continue
-        meta = drawing_meta.get(inv.drawing_doc_id or 0, {})
-        mat = meta.get("material") or fallback_mat
-        qty = meta.get("qty") or fallback_qty
-
-        subject = (f"【鴻騰電子 RFQ 詢價】{form.form_id} - "
-                   f"{form.product_name}{(' / ' + inv.process_name) if inv.process_name else ''}")
-        body = _render_rfq_body(template, form=form, invite=inv, supplier=sup,
-                                material=mat, moq=qty)
-
-        # 附件：該供應商對應的圖面（若綁特定圖），否則所有「圖面」類附件
-        att_paths = []
+    def _attachments_for(inv):
+        paths = []
         if inv.drawing:
             src = os.path.join(UPLOAD_BASE, f"npi_{form.id}", inv.drawing.filename)
             if os.path.exists(src):
-                att_paths.append(src)
+                paths.append(src)
         else:
             for d in form.documents:
                 if d.category == "圖面":
                     p = os.path.join(UPLOAD_BASE, f"npi_{form.id}", d.filename)
                     if os.path.exists(p):
-                        att_paths.append(p)
-        _send_mail(sup.email, subject, body, att_paths, cc=cc_list)
-        inv.first_sent_at = datetime.utcnow()
+                        paths.append(p)
+        return paths
+
+    def _meta_for(inv):
+        meta = drawing_meta.get(inv.drawing_doc_id or 0, {})
+        return (meta.get("material") or fallback_mat,
+                meta.get("qty") or fallback_qty)
+
+    if merge:
+        # 依 supplier_id 群組
+        groups: dict = {}
+        for inv in invites:
+            groups.setdefault(inv.supplier_id, []).append(inv)
+
+        for sid, group in groups.items():
+            first = group[0]
+            sup: Supplier | None = first.supplier
+            if not sup or not sup.email:
+                logger.warning(f"Supplier {sid} 沒有 email，略過")
+                continue
+
+            # 單筆 → 走單項模板邏輯（與非 merge 模式一致）
+            if len(group) == 1:
+                mat, qty = _meta_for(first)
+                subject = (f"【鴻騰電子 RFQ 詢價】{form.form_id} - "
+                           f"{form.product_name}{(' / ' + first.process_name) if first.process_name else ''}")
+                body = _render_rfq_body(template, form=form, invite=first, supplier=sup,
+                                        material=mat, moq=qty)
+                atts = _attachments_for(first)
+                _send_mail(sup.email, subject, body, atts, cc=cc_list)
+                first.first_sent_at = datetime.utcnow()
+                continue
+
+            # 多筆 → 合併：模板中的單項變數（製程/圖/材質/MOQ）改成「見下列項目」
+            merged_template = (template
+                               .replace("{process}", "（見下列項目）")
+                               .replace("{drawing}", "（見下列項目）")
+                               .replace("{material}", "（見下列項目）")
+                               .replace("{moq}", "（見下列項目）"))
+            intro = _render_rfq_body(merged_template, form=form, invite=first, supplier=sup,
+                                     material="（見下列項目）", moq="（見下列項目）")
+
+            lines = ["", "━━━━━━━━━━━━━━━━━━━━━━━", "本次詢價項目：", ""]
+            att_set: list = []
+            att_seen: set = set()
+            for idx, inv in enumerate(group, 1):
+                mat, qty = _meta_for(inv)
+                drawing_name = inv.drawing.original_name if inv.drawing else "共用圖面"
+                lines.append(f"{idx}. 製程：{inv.process_name or '—'}")
+                lines.append(f"   對應圖面：{drawing_name}")
+                lines.append(f"   材質：{mat or '—'}　MOQ：{qty if qty not in (None, '') else '—'}")
+                lines.append("")
+                for p in _attachments_for(inv):
+                    if p not in att_seen:
+                        att_seen.add(p)
+                        att_set.append(p)
+            body = intro + "\n".join(lines)
+
+            # 主旨以項目數表示
+            subject = (f"【鴻騰電子 RFQ 詢價】{form.form_id} - "
+                       f"{form.product_name}（共 {len(group)} 項製程）")
+
+            _send_mail(sup.email, subject, body, att_set, cc=cc_list)
+            now = datetime.utcnow()
+            for inv in group:
+                inv.first_sent_at = now
+    else:
+        # 原始：逐筆寄送
+        for inv in invites:
+            sup: Supplier | None = inv.supplier
+            if not sup or not sup.email:
+                logger.warning(f"Supplier {inv.supplier_id} 沒有 email，略過")
+                continue
+            mat, qty = _meta_for(inv)
+            subject = (f"【鴻騰電子 RFQ 詢價】{form.form_id} - "
+                       f"{form.product_name}{(' / ' + inv.process_name) if inv.process_name else ''}")
+            body = _render_rfq_body(template, form=form, invite=inv, supplier=sup,
+                                    material=mat, moq=qty)
+            _send_mail(sup.email, subject, body, _attachments_for(inv), cc=cc_list)
+            inv.first_sent_at = datetime.utcnow()
     # 業務 + 工程主管
     await _notify_roles(
         db, [Role.SALES, Role.ENG_MGR],

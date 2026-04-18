@@ -62,20 +62,26 @@
     </div>
   </div>
 
-  {# ── 流程步驟圖 ── #}
-  {% set stages = [
-    ('DRAFT', '草稿', 'bi-pencil-square'),
-    ('ENG_DISPATCH', '待工程派發', 'bi-send'),
-    ('QUOTING', '供應商報價中', 'bi-hourglass-split'),
-    ('QUOTES_COLLECTED', '採購收齊', 'bi-collection'),
-    ('PENDING_QUOTE_BU', '業務試算→BU', 'bi-calculator'),
-    ('QUOTE_APPROVED', '報價已核准', 'bi-patch-check'),
-    ('RFQ_DONE', '已發客戶報價', 'bi-envelope-check'),
-    ('NPI_STARTED', 'NPI 啟動', 'bi-play-circle'),
-    ('NPI_PENDING_BU', '待 BU 核准', 'bi-person-check'),
-    ('NPI_PENDING_PURCHASE', '待採購議價', 'bi-cash-coin'),
-    ('CLOSED', '結案', 'bi-check-circle-fill'),
-  ] %}
+  {# ── 流程步驟圖（依 stage 顯示不同流程）── #}
+  {% if form.stage.value == 'NPI' %}
+    {% set stages = [
+      ('NPI_STARTED', 'NPI 啟動', 'bi-play-circle'),
+      ('NPI_PENDING_BU', '待 BU 核准', 'bi-person-check'),
+      ('NPI_PENDING_PURCHASE', '待採購議價', 'bi-cash-coin'),
+      ('CLOSED', '結案', 'bi-check-circle-fill'),
+    ] %}
+  {% else %}
+    {# RFQ 流程：草稿 → 派發 → 報價 → 採購收齊 → 業務試算 → 核准 → 結案 #}
+    {% set stages = [
+      ('DRAFT', '草稿', 'bi-pencil-square'),
+      ('ENG_DISPATCH', '待工程派發', 'bi-send'),
+      ('QUOTING', '供應商報價中', 'bi-hourglass-split'),
+      ('QUOTES_COLLECTED', '採購收齊', 'bi-collection'),
+      ('PENDING_QUOTE_BU', '業務試算→BU', 'bi-calculator'),
+      ('QUOTE_APPROVED', '報價已核准', 'bi-patch-check'),
+      ('CLOSED', '結案', 'bi-check-circle-fill'),
+    ] %}
+  {% endif %}
   {% set cur = form.status.value %}
   {% set ns = namespace(idx=-1) %}
   {% for code, _lbl, _i in stages %}
@@ -168,35 +174,11 @@
         </div>
         <div class="card-body p-0">
           {% if form.invites %}
-          {# 每張圖獨立的材質 / MOQ 摘要（取該 drawing_id 群組內第一筆有值的 invite）#}
-          {% set ns = namespace(seen=[]) %}
-          {% set meta_list = [] %}
-          {% for inv in form.invites %}
-            {% set did = inv.drawing_doc_id or 0 %}
-            {% if did not in ns.seen and (inv.material or inv.qty) %}
-              {% set _ = ns.seen.append(did) %}
-              {% set _ = meta_list.append(inv) %}
-            {% endif %}
-          {% endfor %}
-          {% if meta_list %}
-          <div class="px-3 pt-2 small border-bottom pb-2">
-            {% for inv in meta_list %}
-            <div class="d-flex flex-wrap gap-3 text-muted">
-              <span>
-                <strong class="text-primary">
-                  <i class="bi bi-image me-1"></i>{{ inv.drawing.original_name if inv.drawing else '共用' }}
-                </strong>
-              </span>
-              <span><strong class="text-dark">材質：</strong>{{ inv.material or '—' }}</span>
-              <span><strong class="text-dark">評估 MOQ：</strong>{{ inv.qty or '—' }}</span>
-            </div>
-            {% endfor %}
-          </div>
-          {% endif %}
           {# 可否 inline 回填報價（QUOTING 或 BU 退回採購議價）#}
           {% set _can_reply = (form.status.value == 'QUOTING'
                  or (form.status.value == 'RETURNED' and form.reject_to == '採購'))
                 and user.role.value in ('purchase','engineer','admin') %}
+
           {# macro：列出某 invite 的已上傳報價附件 #}
           {% macro invite_docs(inv_id) %}
             {% for d in form.documents if d.invite_id_fk == inv_id %}
@@ -208,6 +190,114 @@
             {% endfor %}
           {% endmacro %}
 
+          {# macro：單一 invite 的 <tr>（給下方每張圖紙的 table 重複使用）#}
+          {% macro invite_row(inv) %}
+            {% set _saved = inv.replied_at is not none and (inv.quote_amount is not none or inv.tooling_cost is not none) %}
+            <tr class="{% if inv.is_selected %}table-success{% elif _saved %}invite-row-saved{% endif %}">
+              <td class="small">{{ inv.process_name or '—' }}</td>
+              <td class="fw-semibold">
+                {{ inv.supplier.name if inv.supplier else '(未知)' }}
+                {% if inv.supplier %}
+                  <span class="badge bg-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }}-subtle text-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }} ms-1">{{ inv.supplier.type.value }}</span>
+                {% endif %}
+              </td>
+              <td>{{ inv.first_sent_at.strftime('%m-%d %H:%M') if inv.first_sent_at else '—' }}</td>
+              <td>
+                {% if _saved %}
+                <div>{{ inv.replied_at.strftime('%m-%d %H:%M') }}</div>
+                <span class="badge bg-success-subtle text-success mt-1"><i class="bi bi-check-circle me-1"></i>已儲存</span>
+                {% elif inv.replied_at %}
+                {{ inv.replied_at.strftime('%m-%d %H:%M') }}
+                {% else %}
+                <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-hourglass me-1"></i>待填寫</span>
+                {% endif %}
+              </td>
+              {% if _can_reply %}
+              <td>
+                <input form="reply-form-{{ inv.id }}" name="quote_amount" type="number" step="0.01"
+                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                       value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
+                       placeholder="單價">
+              </td>
+              <td>
+                <input form="reply-form-{{ inv.id }}" name="tooling_cost" type="number" step="0.01"
+                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                       value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
+                       placeholder="模具費">
+              </td>
+              <td>
+                <input form="reply-form-{{ inv.id }}" name="lead_time_days" type="number"
+                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                       value="{{ inv.lead_time_days if inv.lead_time_days is not none else '' }}"
+                       placeholder="天">
+              </td>
+              <td>
+                <input form="reply-form-{{ inv.id }}" name="quote_comment" type="text"
+                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
+                       value="{{ inv.quote_comment or '' }}"
+                       placeholder="備註">
+              </td>
+              <td>
+                {{ invite_docs(inv.id) }}
+                <label class="btn btn-sm btn-outline-secondary mb-0 w-100">
+                  <i class="bi bi-paperclip me-1"></i>{% if _saved %}追加檔案{% else %}選擇檔案{% endif %}
+                  <input form="reply-form-{{ inv.id }}" type="file" name="attach_files"
+                         class="d-none inline-file" data-inv="{{ inv.id }}" multiple>
+                </label>
+                <div class="text-muted small inline-file-name" data-inv="{{ inv.id }}">（可多選）</div>
+              </td>
+              {% else %}
+              <td class="{% if inv.quote_amount %}fw-bold text-success{% endif %}">{{ inv.quote_amount or '—' }}</td>
+              <td class="{% if inv.tooling_cost %}fw-bold text-info{% endif %}">{{ inv.tooling_cost or '—' }}</td>
+              <td>{{ inv.lead_time_days or '—' }}</td>
+              <td class="text-muted">{{ inv.quote_comment or '—' }}</td>
+              <td>
+                {% set _inv_docs = form.documents | selectattr('invite_id_fk', 'equalto', inv.id) | list %}
+                {% if _inv_docs %}
+                  {{ invite_docs(inv.id) }}
+                {% else %}—{% endif %}
+              </td>
+              {% endif %}
+              <td>
+                {% if inv.is_selected %}
+                <i class="bi bi-check-circle-fill text-success"></i>
+                {% endif %}
+              </td>
+              <td>
+                {% if _can_reply %}
+                {% if _saved %}
+                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-outline-success">
+                  <i class="bi bi-arrow-repeat"></i> 更新
+                </button>
+                {% else %}
+                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-primary">
+                  <i class="bi bi-check-lg"></i> 儲存
+                </button>
+                {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endmacro %}
+
+          {# macro：表頭 #}
+          {% macro invite_thead() %}
+            <thead class="table-light">
+              <tr>
+                <th style="min-width:85px">製程</th>
+                <th style="min-width:160px">供應商</th>
+                <th style="min-width:90px">派發時間</th>
+                <th style="min-width:110px">回覆時間</th>
+                <th style="min-width:110px">報價金額</th>
+                <th style="min-width:110px">模治具費</th>
+                <th style="min-width:90px">交期(天)</th>
+                <th style="min-width:150px">備註</th>
+                <th style="min-width:180px">報價單附件</th>
+                <th style="min-width:45px">選用</th>
+                <th style="min-width:70px"></th>
+              </tr>
+            </thead>
+          {% endmacro %}
+
           {# 每列 invite = 一個獨立 <form>（放在 table 外避免 tr/form 巢狀問題，用 form="..." 屬性關聯）#}
           {% if _can_reply %}
           {% for inv in form.invites %}
@@ -217,139 +307,74 @@
           {% endfor %}
           {% endif %}
 
-          <div class="table-responsive">
-          <table class="table mb-0 small align-middle" style="min-width:1200px">
-            <thead class="table-light">
-              <tr>
-                <th>對應圖面</th>
-                <th>製程</th>
-                <th>供應商</th>
-                <th>派發時間</th>
-                <th>回覆時間</th>
-                <th style="min-width:110px">報價金額</th>
-                <th style="min-width:110px">模治具費</th>
-                <th style="min-width:95px">交期(天)</th>
-                <th style="min-width:160px">備註</th>
-                <th style="min-width:180px">報價單附件</th>
-                <th>選用</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for inv in form.invites %}
-              {# 已儲存 = 有回覆且有報價金額（嚴格判定，避免只選附件未填價錢也算 saved）#}
-              {% set _saved = inv.replied_at is not none and inv.quote_amount is not none %}
-              <tr class="{% if inv.is_selected %}table-success{% elif _saved %}invite-row-saved{% endif %}">
-                <td class="small">
-                  {% if inv.drawing %}
-                    <a href="#" class="doc-preview"
-                       data-url="/npi-forms/doc/preview/{{ inv.drawing.id }}"
-                       data-name="{{ inv.drawing.original_name }}"
-                       data-type="{{ 'image' if inv.drawing.original_name.split('.')[-1].lower() in ['png','jpg','jpeg','gif','webp'] else 'pdf' }}"
-                       title="{{ inv.drawing.original_name }}">
-                      <i class="bi bi-image me-1"></i>{{ inv.drawing.original_name | truncate(14, True) }}
-                    </a>
-                  {% else %}
-                    <span class="badge bg-secondary-subtle text-secondary">共用</span>
-                  {% endif %}
-                </td>
-                <td class="small">{{ inv.process_name or '—' }}</td>
-                <td class="fw-semibold">
-                  {{ inv.supplier.name if inv.supplier else '(未知)' }}
-                  {% if inv.supplier %}
-                    <span class="badge bg-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }}-subtle text-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }} ms-1">{{ inv.supplier.type.value }}</span>
-                  {% endif %}
-                </td>
-                <td>{{ inv.first_sent_at.strftime('%m-%d %H:%M') if inv.first_sent_at else '—' }}</td>
-                <td>
-                  {% if _saved %}
-                  <div>{{ inv.replied_at.strftime('%m-%d %H:%M') }}</div>
-                  <span class="badge bg-success-subtle text-success mt-1"><i class="bi bi-check-circle me-1"></i>已儲存</span>
-                  {% elif inv.replied_at %}
-                  {{ inv.replied_at.strftime('%m-%d %H:%M') }}
-                  {% else %}
-                  <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-hourglass me-1"></i>待填寫</span>
-                  {% endif %}
-                </td>
+          {# ── 依圖分組顯示（每張圖一個區塊）──────────────── #}
+          {% set drawing_docs = form.documents | selectattr('category', 'equalto', '圖面') | list %}
+          {% set ns_dr = namespace(has_any=false) %}
+          {% for draw in drawing_docs %}
+            {% set group = form.invites | selectattr('drawing_doc_id', 'equalto', draw.id) | list %}
+            {% if group %}
+            {% set ns_dr.has_any = true %}
+            {% set mat_inv = group | selectattr('material') | first %}
+            {% set qty_inv = group | selectattr('qty') | first %}
+            {% set ext = (draw.original_name.rsplit('.',1)[-1] | lower) if '.' in draw.original_name else '' %}
+            <div class="border-bottom">
+              {# 圖片 header #}
+              <div class="px-3 py-2 bg-light d-flex flex-wrap gap-3 align-items-center">
+                <a href="#" class="doc-preview text-decoration-none"
+                   data-url="/npi-forms/doc/preview/{{ draw.id }}"
+                   data-name="{{ draw.original_name }}"
+                   data-type="{{ 'image' if ext in ['png','jpg','jpeg','gif','webp'] else 'pdf' }}">
+                  <i class="bi bi-image me-1 text-primary"></i>
+                  <strong class="text-primary">{{ draw.original_name }}</strong>
+                </a>
+                <span class="small"><strong class="text-dark">材質：</strong>{{ (mat_inv.material if mat_inv else '—') }}</span>
+                <span class="small"><strong class="text-dark">評估 MOQ：</strong>{{ (qty_inv.qty if qty_inv else '—') }}</span>
+                <span class="small text-muted ms-auto">共 {{ group|length }} 家供應商</span>
+              </div>
+              {# 該圖的供應商派發 / 報價 table #}
+              <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle small" style="min-width:1100px">
+                  {{ invite_thead() }}
+                  <tbody>
+                    {% for inv in group %}
+                      {{ invite_row(inv) }}
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
 
-                {% if _can_reply %}
-                <td>
-                  <input form="reply-form-{{ inv.id }}" name="quote_amount" type="number" step="0.01"
-                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                         value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
-                         placeholder="單價">
-                </td>
-                <td>
-                  <input form="reply-form-{{ inv.id }}" name="tooling_cost" type="number" step="0.01"
-                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                         value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
-                         placeholder="模具費">
-                </td>
-                <td>
-                  <input form="reply-form-{{ inv.id }}" name="lead_time_days" type="number"
-                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                         value="{{ inv.lead_time_days if inv.lead_time_days is not none else '' }}"
-                         placeholder="天">
-                </td>
-                <td>
-                  <input form="reply-form-{{ inv.id }}" name="quote_comment" type="text"
-                         class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                         value="{{ inv.quote_comment or '' }}"
-                         placeholder="備註">
-                </td>
-                <td>
-                  {{ invite_docs(inv.id) }}
-                  <label class="btn btn-sm btn-outline-secondary mb-0 w-100">
-                    <i class="bi bi-paperclip me-1"></i>{% if _saved %}追加檔案{% else %}選擇檔案{% endif %}
-                    <input form="reply-form-{{ inv.id }}" type="file" name="attach_files"
-                           class="d-none inline-file" data-inv="{{ inv.id }}" multiple>
-                  </label>
-                  <div class="text-muted small inline-file-name" data-inv="{{ inv.id }}">（可多選）</div>
-                </td>
-                {% else %}
-                <td>{{ inv.quote_amount or '—' }}</td>
-                <td>{{ inv.tooling_cost or '—' }}</td>
-                <td>{{ inv.lead_time_days or '—' }}</td>
-                <td class="text-muted">{{ inv.quote_comment or '—' }}</td>
-                <td>
-                  {% set _inv_docs = form.documents | selectattr('invite_id_fk', 'equalto', inv.id) | list %}
-                  {% if _inv_docs %}
-                    {{ invite_docs(inv.id) }}
-                  {% else %}—{% endif %}
-                </td>
-                {% endif %}
-
-                <td>
-                  {% if inv.is_selected %}
-                  <i class="bi bi-check-circle-fill text-success"></i>
-                  {% endif %}
-                </td>
-                <td>
-                  {% if _can_reply %}
-                  {% if _saved %}
-                  <button form="reply-form-{{ inv.id }}" type="submit"
-                          class="btn btn-sm btn-outline-success">
-                    <i class="bi bi-arrow-repeat"></i> 更新
-                  </button>
-                  {% else %}
-                  <button form="reply-form-{{ inv.id }}" type="submit"
-                          class="btn btn-sm btn-primary">
-                    <i class="bi bi-check-lg"></i> 儲存
-                  </button>
-                  {% endif %}
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          {# ── 共用（無綁定圖面）的 invite 區塊 ──────────────── #}
+          {% set shared_group = form.invites | rejectattr('drawing_doc_id') | list %}
+          {% if shared_group %}
+          <div class="border-bottom">
+            <div class="px-3 py-2 bg-light d-flex flex-wrap gap-3 align-items-center">
+              <span><i class="bi bi-file-earmark me-1 text-secondary"></i><strong class="text-secondary">共用（未綁定特定圖）</strong></span>
+              <span class="small text-muted ms-auto">共 {{ shared_group|length }} 家供應商</span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm mb-0 align-middle small" style="min-width:1100px">
+                {{ invite_thead() }}
+                <tbody>
+                  {% for inv in shared_group %}
+                    {{ invite_row(inv) }}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           </div>
-          {# 整張單共用訊息（期望工作天 / 跟催數略）#}
+          {% endif %}
+
+          {% if not ns_dr.has_any and not shared_group %}
+          <div class="text-muted small p-3">派發資料異常，請聯繫管理員</div>
+          {% endif %}
+
           {% if _can_reply %}
           <div class="px-3 py-2 border-top small text-muted">
             <i class="bi bi-info-circle me-1"></i>
-            直接在每列填入<strong>單價 / 模治具費 / 交期</strong>並選附件，按各列「儲存」即完成該供應商報價。
-            表格欄位較多，請左右滑動查看。
+            每張圖紙獨立區塊呈現 — 直接在每列填入<strong>單價 / 模治具費 / 交期</strong>並選附件，按各列「儲存」即完成該供應商報價。
           </div>
           {% endif %}
           {% else %}
@@ -639,10 +664,18 @@
           </button>
           {% endif %}
 
-          {% if form.status.value in ('DRAFT','RETURNED','ENG_DISPATCH','QUOTING','QUOTES_COLLECTED','RFQ_DONE','NPI_STARTED','NPI_PENDING_BU','NPI_PENDING_PURCHASE') %}
-          <div class="text-muted small text-center">目前狀態 — <strong>{{ form.status.value }}</strong></div>
+          {% if form.status.value == 'CLOSED' %}
+          <div class="text-muted small text-center"><i class="bi bi-check-circle me-1"></i>本單已結案</div>
+          {% elif form.status.value == 'PENDING_QUOTE_BU' %}
+          <div class="text-warning small text-center">
+            <i class="bi bi-hourglass-split me-1"></i>已送 BU 審核報價 — 等待 BU 核准
+          </div>
+          {% elif form.status.value == 'QUOTE_APPROVED' %}
+          <div class="text-success small text-center">
+            <i class="bi bi-check2-circle me-1"></i>報價已核准 — 業務可發客戶報價單
+          </div>
           {% else %}
-          <div class="text-muted small text-center">本單已結案</div>
+          <div class="text-muted small text-center">目前狀態 — <strong>{{ form.status.value }}</strong></div>
           {% endif %}
         </div>
       </div>
@@ -823,6 +856,13 @@
             <code>{process}</code>（製程）
             <code>{drawing}</code>（圖面）
             <code>{form_id}</code>、<code>{product}</code>、<code>{customer}</code>、<code>{due_date}</code>
+          </div>
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="mergeMail" name="merge_mail" value="1" checked>
+            <label class="form-check-label small" for="mergeMail">
+              <strong>同一供應商有多筆派發時，合併成一封信寄出</strong>
+              <small class="text-muted">（推薦；關閉則每個製程各寄一封）</small>
+            </label>
           </div>
         </div>
         {% if not suppliers %}
@@ -1024,6 +1064,7 @@
 {# 供應商報價改為表格內 inline 填寫，不再使用 modal #}
 <script>
 (function(){
+  // ── 附件選擇顯示檔名 ──
   document.addEventListener('change', (e) => {
     const t = e.target;
     if (!t.classList.contains('inline-file')) return;
@@ -1040,6 +1081,48 @@
       span.classList.add('text-muted');
       span.classList.remove('text-primary');
     }
+  });
+
+  // ── Enter → 同列下一個輸入欄；備註後按 Enter 自動開啟檔案選擇 ──
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    // 只處理 reply-form 下的 input（quote_amount / tooling_cost / lead_time_days / quote_comment）
+    const formId = t.getAttribute('form') || '';
+    if (!formId.startsWith('reply-form-')) return;
+    if (t.tagName !== 'INPUT' || t.type === 'file') return;
+    e.preventDefault();
+    // 收集同一 reply-form 所有可 focus 的 input（排除 file / hidden），按 DOM 順序
+    const all = Array.from(document.querySelectorAll(
+      `input[form="${formId}"]:not([type="file"]):not([type="hidden"])`
+    ));
+    const idx = all.indexOf(t);
+    if (idx < 0) return;
+    if (idx + 1 < all.length) {
+      all[idx + 1].focus();
+      if (all[idx + 1].select) all[idx + 1].select();
+    } else {
+      // 最後一欄（備註）→ 自動開啟該列的檔案選擇視窗
+      const fileInp = document.querySelector(`input[form="${formId}"][type="file"]`);
+      if (fileInp) fileInp.click();
+    }
+  });
+
+  // ── 儲存後保留捲動位置（submit 前記 scroll，reload 後還原）──
+  document.addEventListener('submit', (e) => {
+    const formId = e.target.id || '';
+    if (formId.startsWith('reply-form-')) {
+      try { sessionStorage.setItem('npi-scroll-y', String(window.scrollY)); } catch(_) {}
+    }
+  });
+  window.addEventListener('DOMContentLoaded', () => {
+    try {
+      const y = sessionStorage.getItem('npi-scroll-y');
+      if (y) {
+        window.scrollTo(0, parseInt(y, 10));
+        sessionStorage.removeItem('npi-scroll-y');
+      }
+    } catch(_) {}
   });
 })();
 </script>
