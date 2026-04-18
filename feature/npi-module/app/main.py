@@ -101,6 +101,8 @@ async def run_migrations():
         "ALTER TABLE npi_forms ADD COLUMN t1_plan_data TEXT",
         # NPI 工程工作區 — 每站廠內料號/是否走途程 JSON
         "ALTER TABLE npi_forms ADD COLUMN eng_process_data TEXT",
+        # NPI 採購議價覆寫（價格/模治具）JSON
+        "ALTER TABLE npi_forms ADD COLUMN bargain_data TEXT",
         # PCNApproval 退回對象欄位
         "ALTER TABLE pcn_approvals ADD COLUMN reject_target VARCHAR(50)",
         # ECN 設計變更庫存盤點

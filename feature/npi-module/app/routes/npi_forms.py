@@ -887,19 +887,39 @@ async def save_t1_plan(
     form_data = await request.form()
     ids = form_data.getlist("drawing_id")
     t1_dates = form_data.getlist("t1_date")
-    sample_dates = form_data.getlist("sample_date")
     notes = form_data.getlist("t1_note")
     plan = {}
     for i, did in enumerate(ids):
         if not did:
             continue
         plan[str(did)] = {
-            "t1_date":     (t1_dates[i] if i < len(t1_dates) else "") or "",
-            "sample_date": (sample_dates[i] if i < len(sample_dates) else "") or "",
-            "note":        (notes[i] if i < len(notes) else "") or "",
+            "t1_date": (t1_dates[i] if i < len(t1_dates) else "") or "",
+            "note":    (notes[i] if i < len(notes) else "") or "",
         }
     form.t1_plan_data = json.dumps(plan, ensure_ascii=False) if plan else None
     form.updated_at = datetime.utcnow()
+    # 客戶通知開案憑證 — 每張圖獨立 file input，name=kickoff_cert_{drawing_id}
+    upload_dir = _upload_dir(form.id)
+    for did in ids:
+        if not did:
+            continue
+        for up in form_data.getlist(f"kickoff_cert_{did}"):
+            if not hasattr(up, "filename") or not up.filename:
+                continue
+            content = await up.read()
+            if not content:
+                continue
+            ext = os.path.splitext(up.filename)[1] or ".bin"
+            saved_name = f"{uuid.uuid4().hex}{ext}"
+            with open(os.path.join(upload_dir, saved_name), "wb") as fh:
+                fh.write(content)
+            db.add(NPIDocument(
+                form_id_fk    = form.id,
+                filename      = saved_name,
+                original_name = f"[DRAW:{did}] {up.filename}",
+                category      = "客戶通知開案憑證",
+                uploaded_by   = current_user.id,
+            ))
     await db.commit()
     try:
         await notif._notify_roles(
@@ -998,6 +1018,109 @@ async def save_eng_process(
             "need_routing": pn in routings_raw,
         }
     form.eng_process_data = json.dumps(data, ensure_ascii=False) if data else None
+    form.updated_at = datetime.utcnow()
+    await db.commit()
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/save-bargain")
+async def save_bargain(
+    form_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """採購議價：回填各製程單價 / 站別模治具 + 狀態 flag + 確定議價的新報價單。
+
+    欄位命名：
+      price_r{i}_c{j}        採購議價後單價
+      tooling_{proc_key}     站別模治具議價後金額
+      flag_r{i}_c{j}         議價狀態：no_bargain / no_room / confirmed / 空
+      flag_t_{proc_key}      模治具欄位議價狀態
+      confirm_file_r{i}_c{j} 確定議價時的新報價單 PDF（會取代對應 invite 的供應商報價）
+      note                   議價備註
+    """
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (Role.PURCHASE, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅採購可議價")
+    if form.stage != NPIStage.NPI:
+        raise HTTPException(status_code=400, detail="需進入 NPI 階段")
+    form_data = await request.form()
+    prices: dict[str, float] = {}
+    tooling: dict[str, float] = {}
+    flags: dict[str, str] = {}
+    files: dict[str, UploadFile] = {}
+    for key, val in form_data.multi_items():
+        if key.startswith("flag_"):
+            s = str(val or "").strip()
+            if s in ("no_bargain", "no_room", "confirmed"):
+                flags[key[5:]] = s
+            continue
+        if key.startswith("confirm_file_") and hasattr(val, "filename") and val.filename:
+            files[key[len("confirm_file_"):]] = val
+            continue
+        if not val or str(val).strip() == "":
+            continue
+        if key.startswith("price_"):
+            try: prices[key[6:]] = float(val)
+            except (TypeError, ValueError): pass
+        elif key.startswith("tooling_"):
+            try: tooling[key[8:]] = float(val)
+            except (TypeError, ValueError): pass
+    note = (form_data.get("note") or "").strip() or None
+    form.bargain_data = json.dumps(
+        {"prices": prices, "tooling": tooling, "flags": flags, "note": note},
+        ensure_ascii=False,
+    )
+
+    # 檔案取代：以 (row.process, col.label) 找到對應 invite，替換其 供應商報價
+    if files and form.quote_cost_data:
+        try:
+            qd = json.loads(form.quote_cost_data)
+            qd_rows = qd.get("rows") or []
+            qd_cols = qd.get("columns") or []
+        except Exception:
+            qd_rows, qd_cols = [], []
+        upload_dir = _upload_dir(form.id)
+        for key, up in files.items():
+            # key 形如 r0_c1 → 取出 row_idx / col_idx
+            try:
+                rpart, cpart = key.split("_")
+                ri = int(rpart[1:]); ci = int(cpart[1:])
+            except Exception:
+                continue
+            if ri >= len(qd_rows) or ci >= len(qd_cols):
+                continue
+            proc_name = (qd_rows[ri].get("process") or "").strip()
+            col_label = (qd_cols[ci].get("label") or "").strip()
+            target_inv = None
+            for inv in form.invites or []:
+                if inv.process_name and inv.supplier and inv.process_name == proc_name and inv.supplier.name == col_label:
+                    target_inv = inv
+                    break
+            if not target_inv:
+                continue
+            # 舊報價單標記為「舊供應商報價」保留歷史
+            for d in form.documents or []:
+                if d.invite_id_fk == target_inv.id and d.category == "供應商報價":
+                    d.category = "舊供應商報價（議價前）"
+            # 寫入新檔案
+            content = await up.read()
+            if not content:
+                continue
+            ext = os.path.splitext(up.filename)[1] or ".bin"
+            saved = f"{uuid.uuid4().hex}{ext}"
+            with open(os.path.join(upload_dir, saved), "wb") as fh:
+                fh.write(content)
+            db.add(NPIDocument(
+                form_id_fk    = form.id,
+                invite_id_fk  = target_inv.id,
+                filename      = saved,
+                original_name = up.filename,
+                category      = "供應商報價",
+                uploaded_by   = current_user.id,
+            ))
+
     form.updated_at = datetime.utcnow()
     await db.commit()
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)

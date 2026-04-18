@@ -55,6 +55,7 @@ class NPIForm(Base):
     quote_cost_data  = Column(Text, nullable=True)   # 業務試算 JSON（明細/管銷/毛利/建議售價）
     quoted_unit_price= Column(Float, nullable=True)  # 業務決定給客戶的報價單價
     bu_quote_note    = Column(Text, nullable=True)   # BU 對報價的核准/退回評語
+    bargain_data     = Column(Text, nullable=True)   # 採購議價覆寫 JSON（prices/tooling/note）
     selected_quote_supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
 
     # NPI 階段（ERP 模具請購單）
