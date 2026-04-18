@@ -11,8 +11,10 @@ from sqlalchemy import select, text
 from app.database import engine, Base, AsyncSessionLocal
 from app.models.user import User, Role, BU
 from app.models.pcn_form import PCNForm, PCNDocument, PCNApproval
+from app.models.supplier import Supplier
+from app.models.npi_form import NPIForm, NPIDocument, NPIApproval, NPISupplierInvite
 from app.services.auth import hash_password
-from app.routes import auth, pcn_forms, drawing_checker
+from app.routes import auth, pcn_forms, drawing_checker, npi_forms, suppliers
 
 
 # ── Seed 初始資料 ────────────────────────────────
@@ -107,6 +109,8 @@ async def db_session_middleware(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(pcn_forms.router)
 app.include_router(drawing_checker.router)
+app.include_router(npi_forms.router)
+app.include_router(suppliers.router)
 
 
 @app.get("/")

@@ -43,6 +43,21 @@
       <i class="bi bi-rulers me-2"></i>圖面辨識量測表
     </a>
     {% endif %}
+
+    <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">NPI</div>
+    <a href="/npi-forms/" class="nav-link {% if '/npi-forms' in request.url.path %}active{% endif %}">
+      <i class="bi bi-box-seam me-2"></i>NPI 新產品開發
+    </a>
+    {% if user.role.value in ('sales', 'admin') %}
+    <a href="/npi-forms/new" class="nav-link {% if request.url.path == '/npi-forms/new' %}active{% endif %}">
+      <i class="bi bi-plus-circle me-2"></i>新建 NPI/RFQ
+    </a>
+    {% endif %}
+    {% if user.role.value in ('engineer', 'eng_mgr', 'admin') %}
+    <a href="/suppliers/" class="nav-link {% if '/suppliers' in request.url.path %}active{% endif %}">
+      <i class="bi bi-truck me-2"></i>供應商主檔
+    </a>
+    {% endif %}
   </nav>
 
   <div class="px-3 mt-auto">
