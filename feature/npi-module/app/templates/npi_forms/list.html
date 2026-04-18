@@ -37,6 +37,8 @@
     <span class="badge bg-primary">待工程派發</span>
     <span class="badge bg-info text-dark">報價中</span>
     <span class="badge" style="background:#6f42c1;color:#fff">報價收齊</span>
+    <span class="badge" style="background:#fd7e14;color:#fff">待 BU 核准報價</span>
+    <span class="badge" style="background:#20c997;color:#fff">報價已核准</span>
     <span class="badge bg-success">已發客戶報價</span>
     <span class="badge bg-warning text-dark">NPI 啟動</span>
     <span class="badge bg-warning">待 BU 核准</span>
@@ -81,6 +83,8 @@
                 {% elif s == 'ENG_DISPATCH' %}<span class="badge bg-primary">待工程派發</span>
                 {% elif s == 'QUOTING' %}<span class="badge bg-info text-dark">報價中</span>
                 {% elif s == 'QUOTES_COLLECTED' %}<span class="badge" style="background:#6f42c1;color:#fff">報價收齊</span>
+                {% elif s == 'PENDING_QUOTE_BU' %}<span class="badge" style="background:#fd7e14;color:#fff">待 BU 核准報價</span>
+                {% elif s == 'QUOTE_APPROVED' %}<span class="badge" style="background:#20c997;color:#fff">報價已核准</span>
                 {% elif s == 'RFQ_DONE' %}<span class="badge bg-success">已發客戶報價</span>
                 {% elif s == 'NPI_STARTED' %}<span class="badge bg-warning text-dark">NPI 啟動</span>
                 {% elif s == 'NPI_PENDING_BU' %}<span class="badge bg-warning">待 BU 核准</span>

@@ -1,0 +1,111 @@
+{
+  "form_id": "NPI-20260418-005",
+  "customer_name": "Dynapack International Technology Corp.",
+  "product_name": "UPS 板金件",
+  "product_model": "DG110U",
+  "quoted_unit_price": 238.05,
+  "cost_analysis_note": null,
+  "bu_quote_note": "核准報價",
+  "quote_cost_data": {
+    "columns": [
+      {
+        "label": "DG110U - 方案 1",
+        "subtotal": 180,
+        "defect_amount": 9,
+        "overhead_amount": 12.6,
+        "qa_ship_amount": 5.4,
+        "cost_total": 207,
+        "profit_amount": 31.05,
+        "quote": 238.05
+      },
+      {
+        "label": "DG110U - 方案 2",
+        "subtotal": 0,
+        "defect_amount": 0,
+        "overhead_amount": 0,
+        "qa_ship_amount": 0,
+        "cost_total": 0,
+        "profit_amount": 0,
+        "quote": 0
+      },
+      {
+        "label": "DG110U - 方案 3",
+        "subtotal": 0,
+        "defect_amount": 0,
+        "overhead_amount": 0,
+        "qa_ship_amount": 0,
+        "cost_total": 0,
+        "profit_amount": 0,
+        "quote": 0
+      },
+      {
+        "label": "DG110U - 方案 4",
+        "subtotal": 0,
+        "defect_amount": 0,
+        "overhead_amount": 0,
+        "qa_ship_amount": 0,
+        "cost_total": 0,
+        "profit_amount": 0,
+        "quote": 0
+      },
+      {
+        "label": "DG110U - 方案 5",
+        "subtotal": 0,
+        "defect_amount": 0,
+        "overhead_amount": 0,
+        "qa_ship_amount": 0,
+        "cost_total": 0,
+        "profit_amount": 0,
+        "quote": 0
+      }
+    ],
+    "rows": [
+      {
+        "process": "鋁擠",
+        "prices": [
+          45,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "process": "噴砂",
+        "prices": [
+          45,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "process": "陽極",
+        "prices": [
+          45,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "process": "組裝",
+        "prices": [
+          45,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    ],
+    "defect_rate": 0.05,
+    "overhead_rate": 0.07,
+    "qa_ship_rate": 0.03,
+    "profit_rate": 0.15,
+    "selected_col_idx": 0
+  },
+  "approved_at": "2026-04-18T12:28:39.292192"
+}

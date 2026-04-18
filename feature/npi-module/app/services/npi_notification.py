@@ -76,7 +76,7 @@ async def notify_quotes_dispatched(db: AsyncSession, form: NPIForm, invites: lis
             f"客戶：{form.customer_name}\n"
             f"產品：{form.product_name} / 型號：{form.product_model or '—'}\n"
             f"規格摘要：{form.spec_summary or '—'}\n"
-            f"年需量：{form.annual_qty or '—'}  /  客戶回覆期限：{form.rfq_due_date or '—'}\n\n"
+            f"客戶回覆期限：{form.rfq_due_date or '—'}\n\n"
             f"請於 2 個工作天內回覆，否則系統將自動發信跟催。"
         )
         # 附件：圖面
@@ -212,7 +212,6 @@ async def notify_quote_approved(db: AsyncSession, form: NPIForm):
         "product_name": form.product_name,
         "product_model": form.product_model,
         "quoted_unit_price": form.quoted_unit_price,
-        "target_price": form.target_price,
         "cost_analysis_note": form.cost_analysis_note,
         "bu_quote_note": form.bu_quote_note,
         "quote_cost_data": _safe_parse_json(form.quote_cost_data),

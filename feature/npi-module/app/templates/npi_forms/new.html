@@ -80,14 +80,6 @@
           <input name="product_model" class="form-control">
         </div>
         <div class="col-md-4">
-          <label class="form-label">目標單價</label>
-          <input name="target_price" type="number" step="0.01" class="form-control">
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">年需求量</label>
-          <input name="annual_qty" type="number" class="form-control">
-        </div>
-        <div class="col-md-4">
           <label class="form-label">事業部</label>
           <select name="bu" class="form-select">
             <option value="">—</option>
@@ -205,8 +197,6 @@ function fillFields(data) {
     product_name: data.product_name,
     product_model: data.product_model,
     spec_summary: data.spec_summary,
-    target_price: data.target_price,
-    annual_qty: data.annual_qty,
     rfq_due_date: data.rfq_due_date,
     sales_note: data.sales_note,
   };

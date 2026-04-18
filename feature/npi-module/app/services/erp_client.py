@@ -101,22 +101,15 @@ class _StubBackend:
         ERPSupplier("I002", "模具課",      "廠內", "林課長", "mold@honten.local","分機 2401"),
     ]
     _PROCESSES = [
-        ERPProcess("P001", "CNC 加工",          "機加工",   ["S001", "S002"]),
-        ERPProcess("P002", "沖壓",              "機加工",   ["S003"]),
-        ERPProcess("P003", "銑床",              "機加工",   ["I001"]),
-        ERPProcess("P004", "車床",              "機加工",   ["I001", "S002"]),
-        ERPProcess("P005", "線割",              "機加工",   ["S001"]),
-        ERPProcess("P006", "熱處理",            "熱處理",   ["S002"]),
-        ERPProcess("P007", "表面處理（陽極）",  "表面處理", ["S003"]),
-        ERPProcess("P008", "表面處理（電鍍）",  "表面處理", ["S003"]),
-        ERPProcess("P009", "噴砂",              "表面處理", ["S003"]),
-        ERPProcess("P010", "烤漆",              "表面處理", ["S003"]),
-        ERPProcess("P011", "射出成型",          "塑膠成型", ["S004"]),
-        ERPProcess("P012", "壓鑄",              "鑄造",     ["S002"]),
-        ERPProcess("P013", "模具製作",          "模具",     ["S001", "I002"]),
-        ERPProcess("P014", "雷射切割",          "機加工",   ["S001"]),
-        ERPProcess("P015", "組裝",              "組裝",     ["I001"]),
-        ERPProcess("P016", "包裝",              "組裝",     ["I001"]),
+        ERPProcess("P001", "沖壓", "機加工",   ["S003"]),
+        ERPProcess("P002", "鋁擠", "機加工",   ["S002"]),
+        ERPProcess("P003", "NCT",  "機加工",   ["I001"]),
+        ERPProcess("P004", "CNC",  "機加工",   ["S001", "S002"]),
+        ERPProcess("P005", "噴砂", "表面處理", ["S003"]),
+        ERPProcess("P006", "髮線", "表面處理", ["S003"]),
+        ERPProcess("P007", "陽極", "表面處理", ["S003"]),
+        ERPProcess("P008", "烤漆", "表面處理", ["S003"]),
+        ERPProcess("P009", "電鍍", "表面處理", ["S003"]),
     ]
 
     def fetch_customers(self) -> list[ERPCustomer]:

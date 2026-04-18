@@ -72,6 +72,7 @@ async def _get_form_or_404(form_id: str, db: AsyncSession) -> NPIForm:
             selectinload(NPIForm.assigned_eng),
             selectinload(NPIForm.selected_quote_supplier),
             selectinload(NPIForm.invites).selectinload(NPISupplierInvite.supplier),
+            selectinload(NPIForm.invites).selectinload(NPISupplierInvite.drawing),
             selectinload(NPIForm.documents).selectinload(NPIDocument.uploader),
             selectinload(NPIForm.approvals).selectinload(NPIApproval.approver),
         )
@@ -248,8 +249,6 @@ async def create_npi(
     product_name:     str  = Form(...),
     product_model:    str  = Form(""),
     spec_summary:     str  = Form(""),
-    target_price:     str  = Form(""),
-    annual_qty:       str  = Form(""),
     rfq_due_date:     str  = Form(""),
     bu:               str  = Form(""),
     sales_note:       str  = Form(""),
@@ -268,8 +267,6 @@ async def create_npi(
         product_name     = product_name.strip(),
         product_model    = product_model or None,
         spec_summary     = spec_summary or None,
-        target_price     = float(target_price) if target_price else None,
-        annual_qty       = int(annual_qty) if annual_qty.isdigit() else None,
         rfq_due_date     = rfq_due_date or None,
         bu               = bu or None,
         sales_note       = sales_note or None,
@@ -313,8 +310,6 @@ async def update_npi(
     product_name:     str  = Form(""),
     product_model:    str  = Form(""),
     spec_summary:     str  = Form(""),
-    target_price:     str  = Form(""),
-    annual_qty:       str  = Form(""),
     rfq_due_date:     str  = Form(""),
     bu:               str  = Form(""),
     sales_note:       str  = Form(""),
@@ -332,8 +327,6 @@ async def update_npi(
     if product_name: form.product_name = product_name
     form.product_model    = product_model or None
     form.spec_summary     = spec_summary or None
-    form.target_price     = float(target_price) if target_price else None
-    form.annual_qty       = int(annual_qty) if annual_qty.isdigit() else None
     form.rfq_due_date     = rfq_due_date or None
     form.bu               = bu or None
     form.sales_note       = sales_note or None
@@ -431,13 +424,15 @@ async def dispatch_quotes(
     if current_user.role not in _ENG_ROLES:
         raise HTTPException(status_code=403)
 
-    # 讀多列派發（process / supplier / material / qty / expected_lead_days）
+    # 讀整張單共用的材質 / 總需求量 + 多列製程派發
     fd = await request.form()
+    dispatch_material_raw = (fd.get("dispatch_material") or "").strip() or None
+    dispatch_qty_raw = (fd.get("dispatch_qty") or "").strip()
+    dispatch_qty = int(dispatch_qty_raw) if dispatch_qty_raw.isdigit() else None
+
     supplier_ids = fd.getlist("row_supplier_id")
     process_names = fd.getlist("row_process")
-    materials = fd.getlist("row_material")
-    qtys = fd.getlist("row_qty")
-    lead_days = fd.getlist("row_lead_days")
+    drawing_ids = fd.getlist("row_drawing_id")
 
     # 過濾無效列（未選供應商者略過）
     rows = []
@@ -445,12 +440,12 @@ async def dispatch_quotes(
         sid = supplier_ids[i].strip() if i < len(supplier_ids) else ""
         if not sid or not sid.isdigit():
             continue
+        draw_raw = drawing_ids[i].strip() if i < len(drawing_ids) else ""
+        draw_id = int(draw_raw) if draw_raw.isdigit() else None
         rows.append({
             "supplier_id": int(sid),
             "process_name": (process_names[i] if i < len(process_names) else "").strip() or None,
-            "material":     (materials[i]     if i < len(materials)     else "").strip() or None,
-            "qty":          int(qtys[i]) if i < len(qtys) and qtys[i].isdigit() else None,
-            "expected_lead_days": int(lead_days[i]) if i < len(lead_days) and lead_days[i].isdigit() else None,
+            "drawing_doc_id": draw_id,
         })
     if not rows:
         raise HTTPException(status_code=400, detail="請至少新增一列並指定供應商")
@@ -463,14 +458,15 @@ async def dispatch_quotes(
         raise HTTPException(status_code=400, detail="所選供應商無效或已停用")
 
     now = datetime.utcnow()
-    for r in rows:
+    # 材質與數量僅記錄於第一列（整張單共用語意），其他列留空
+    for idx, r in enumerate(rows):
         db.add(NPISupplierInvite(
             form_id_fk=form.id,
             supplier_id=r["supplier_id"],
             process_name=r["process_name"],
-            material=r["material"],
-            qty=r["qty"],
-            expected_lead_days=r["expected_lead_days"],
+            material=dispatch_material_raw if idx == 0 else None,
+            qty=dispatch_qty if idx == 0 else None,
+            drawing_doc_id=r["drawing_doc_id"],
             invited_at=now,
         ))
 
@@ -887,6 +883,8 @@ async def detail_npi(
     # 可選製程（ERP 連接口 — stub 模式回固定清單；未來從 ERP 讀）
     from app.services import erp_client as _erp
     erp_processes = _erp.fetch_processes_from_erp()
+    # 業務上傳的圖面附件（派發 modal 的「對應圖面」下拉來源）
+    drawings = [d for d in form.documents if (d.category or "") == "圖面"]
     erp_req_rows = []
     if form.erp_req_data:
         try:
@@ -915,6 +913,7 @@ async def detail_npi(
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
         "erp_req_rows": erp_req_rows,
         "erp_processes": erp_processes,
+        "drawings": drawings,
     })
 
 

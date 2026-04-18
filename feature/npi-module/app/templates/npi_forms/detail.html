@@ -120,8 +120,6 @@
             <div class="col-md-4"><strong>產品：</strong>{{ form.product_name }}</div>
             <div class="col-md-4"><strong>型號：</strong>{{ form.product_model or '—' }}</div>
             <div class="col-md-4"><strong>事業部：</strong>{{ form.bu or '—' }}</div>
-            <div class="col-md-4"><strong>目標單價：</strong>{{ form.target_price or '—' }}</div>
-            <div class="col-md-4"><strong>年需求量：</strong>{{ form.annual_qty or '—' }}</div>
             <div class="col-12"><strong>規格摘要：</strong><br>{{ form.spec_summary or '—' }}</div>
             <div class="col-12"><strong>業務補充：</strong><br>{{ form.sales_note or '—' }}</div>
           </div>
@@ -149,13 +147,21 @@
         </div>
         <div class="card-body p-0">
           {% if form.invites %}
+          {# 整張單共用的材質 / 總需求量（取第一筆有值的 invite）#}
+          {% set mat_inv = (form.invites | selectattr('material') | first) %}
+          {% set qty_inv = (form.invites | selectattr('qty') | first) %}
+          {% if mat_inv or qty_inv %}
+          <div class="px-3 pt-2 small text-muted d-flex flex-wrap gap-3 border-bottom pb-2">
+            <span><strong class="text-dark">材質：</strong>{{ mat_inv.material if mat_inv else '—' }}</span>
+            <span><strong class="text-dark">總需求量：</strong>{{ qty_inv.qty if qty_inv else '—' }}</span>
+          </div>
+          {% endif %}
           <table class="table mb-0 small align-middle">
             <thead class="table-light">
               <tr>
+                <th>對應圖面</th>
                 <th>製程</th>
                 <th>供應商</th>
-                <th>材質</th>
-                <th>數量</th>
                 <th>期望工作天</th>
                 <th>派發時間</th>
                 <th>跟催</th>
@@ -170,6 +176,19 @@
             <tbody>
               {% for inv in form.invites %}
               <tr class="{% if inv.is_selected %}table-success{% endif %}">
+                <td class="small">
+                  {% if inv.drawing %}
+                    <a href="#" class="doc-preview"
+                       data-url="/npi-forms/doc/preview/{{ inv.drawing.id }}"
+                       data-name="{{ inv.drawing.original_name }}"
+                       data-type="{{ 'image' if inv.drawing.original_name.split('.')[-1].lower() in ['png','jpg','jpeg','gif','webp'] else 'pdf' }}"
+                       title="{{ inv.drawing.original_name }}">
+                      <i class="bi bi-image me-1"></i>{{ inv.drawing.original_name | truncate(14, True) }}
+                    </a>
+                  {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary">共用</span>
+                  {% endif %}
+                </td>
                 <td class="small">{{ inv.process_name or '—' }}</td>
                 <td class="fw-semibold">
                   {{ inv.supplier.name if inv.supplier else '(未知)' }}
@@ -177,8 +196,6 @@
                     <span class="badge bg-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }}-subtle text-{{ 'info' if inv.supplier.type.value == '廠內' else 'warning' }} ms-1">{{ inv.supplier.type.value }}</span>
                   {% endif %}
                 </td>
-                <td class="small">{{ inv.material or '—' }}</td>
-                <td class="small">{{ inv.qty or '—' }}</td>
                 <td class="small">{{ (inv.expected_lead_days ~ ' 天') if inv.expected_lead_days else '—' }}</td>
                 <td>{{ inv.first_sent_at.strftime('%m-%d %H:%M') if inv.first_sent_at else '—' }}</td>
                 <td>{{ inv.reminder_count or 0 }}</td>
@@ -226,7 +243,6 @@
           <div class="row g-2 mt-2">
             <div class="col-md-4"><strong>業務決定報價單價：</strong>
               <span class="text-primary fw-bold fs-6">{{ form.quoted_unit_price or '—' }}</span>
-              {% if form.target_price %}<small class="text-muted">（客戶目標 {{ form.target_price }}）</small>{% endif %}
             </div>
             <div class="col-md-8"><strong>業務備註：</strong>{{ form.cost_analysis_note or '—' }}</div>
             {% if form.bu_quote_note %}
@@ -274,9 +290,16 @@
             html += fmtRow(`管銷 (${oh}%)`, 'overhead_amount');
             html += fmtRow(`品保運 (${qa}%)`, 'qa_ship_amount');
             html += fmtRow('成本合計', 'cost_total', 'table-light fw-bold');
-            // 利潤 %
-            let profitRow = '<tr><th class="text-start">利潤 %</th>';
-            cols.forEach(c => profitRow += `<td class="text-end">${c.profit_rate!=null?((c.profit_rate*100).toFixed(1)+'%'):'—'}</td>`);
+            // 利潤 — 左側標題顯示 rate，每欄顯示金額
+            const profitRatePct = (data.profit_rate != null)
+              ? (data.profit_rate*100).toFixed(1)
+              : ((cols[0] && cols[0].profit_rate != null) ? (cols[0].profit_rate*100).toFixed(1) : null);
+            let profitRow = `<tr><th class="text-start">利潤 (${profitRatePct != null ? profitRatePct+'%' : '—'})</th>`;
+            cols.forEach(c => {
+              let amt = c.profit_amount;
+              if (amt == null && c.profit_rate != null && c.cost_total != null) amt = c.cost_total * c.profit_rate;
+              profitRow += `<td class="text-end">${amt!=null?(typeof amt==='number'?amt.toFixed(2):amt):'—'}</td>`;
+            });
             profitRow += '</tr>';
             html += profitRow;
             html += fmtRow('最終報價單價', 'quote', 'table-warning fw-bold');
@@ -618,6 +641,62 @@
           尚無啟用中的供應商，請先至<a href="/suppliers/">供應商主檔</a>建立。
         </div>
         {% else %}
+        <div class="row g-2 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small">材質 <span class="text-muted">（整張單共用）</span></label>
+            <input name="dispatch_material" class="form-control" placeholder="例：SUS304 / AL6061 / ABS">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small">總需求量 <span class="text-muted">（整張單共用）</span></label>
+            <input name="dispatch_qty" type="number" min="0" class="form-control" placeholder="例：1000">
+          </div>
+        </div>
+
+        {# 業務上傳的圖面清單 + 快速動作 #}
+        {% if drawings %}
+        <div class="border rounded p-2 mb-3 bg-light-subtle">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-semibold small">
+              <i class="bi bi-images me-1"></i>業務已上傳圖面：{{ drawings|length }} 張
+              <span class="text-muted">— 每列可指定對應哪張圖，或選「共用/所有圖」</span>
+            </div>
+            <div class="btn-group btn-group-sm" role="group">
+              <button type="button" class="btn btn-outline-secondary" id="dispatchSharedMode"
+                      title="所有圖共用同一組製程（對應圖面欄留空）">
+                <i class="bi bi-grid-3x3-gap me-1"></i>共用模式
+              </button>
+              <button type="button" class="btn btn-outline-primary" id="dispatchPerDrawing"
+                      title="為每張圖自動建立一組空製程列">
+                <i class="bi bi-diagram-3 me-1"></i>每張圖獨立
+              </button>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for d in drawings %}
+            {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+            <div class="border rounded p-1 bg-white" style="width:110px">
+              {% if ext in ('png','jpg','jpeg','gif','webp') %}
+              <a href="#" class="doc-preview" data-url="/npi-forms/doc/preview/{{ d.id }}" data-name="{{ d.original_name }}" data-type="image">
+                <img src="/npi-forms/doc/preview/{{ d.id }}" class="w-100 rounded" style="height:70px; object-fit:cover">
+              </a>
+              {% else %}
+              <a href="#" class="doc-preview d-flex justify-content-center align-items-center"
+                 data-url="/npi-forms/doc/preview/{{ d.id }}" data-name="{{ d.original_name }}" data-type="pdf"
+                 style="height:70px">
+                <i class="bi bi-file-earmark-pdf text-danger" style="font-size:2rem"></i>
+              </a>
+              {% endif %}
+              <div class="small text-truncate text-center mt-1" title="{{ d.original_name }}"
+                   style="font-size:0.7rem">
+                <span class="badge bg-secondary-subtle text-secondary">#{{ loop.index }}</span>
+                {{ d.original_name }}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
         <div class="d-flex justify-content-between align-items-center mb-2">
           <div class="fw-semibold">依圖紙新增製程列 — 每列 = 一個製程 / 一家供應商</div>
           <button type="button" class="btn btn-sm btn-outline-primary" id="addDispatchRow">
@@ -628,11 +707,11 @@
           <table class="table table-sm table-bordered align-middle mb-0" id="dispatchTable">
             <thead class="table-light">
               <tr>
-                <th style="min-width:160px">製程</th>
+                {% if drawings %}
+                <th style="min-width:160px">對應圖面</th>
+                {% endif %}
+                <th style="min-width:140px">製程</th>
                 <th style="min-width:220px">外發供應商 <span class="text-danger">*</span></th>
-                <th style="min-width:120px">材質</th>
-                <th style="width:90px">數量</th>
-                <th style="width:100px">工作天</th>
                 <th style="width:40px"></th>
               </tr>
             </thead>
@@ -642,14 +721,25 @@
           </table>
         </div>
         <div class="small text-muted mt-2">
-          <i class="bi bi-info-circle me-1"></i>同一個製程可指定多家供應商做比價（多新增一列、製程相同但供應商不同即可）。
+          <i class="bi bi-info-circle me-1"></i>同一個製程可指定多家供應商做比價；
+          {% if drawings %}「對應圖面」留「共用」代表所有圖通用，選定某張圖則代表該製程只針對該圖。{% endif %}
         </div>
-        {# Hidden template (供 JS 複製) — 放在 modal 內避免 selector 衝到 inactive modals #}
+        {# Hidden template (供 JS 複製) #}
         <template id="dispatchRowTpl">
           <tr class="dispatch-row">
+            {% if drawings %}
+            <td>
+              <select name="row_drawing_id" class="form-select form-select-sm row-drawing">
+                <option value="">— 共用 / 所有圖 —</option>
+                {% for d in drawings %}
+                <option value="{{ d.id }}">#{{ loop.index }} {{ d.original_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            {% endif %}
             <td>
               <input list="processList" name="row_process" class="form-control form-control-sm"
-                     placeholder="例：CNC 加工">
+                     placeholder="例：CNC">
             </td>
             <td>
               <select name="row_supplier_id" class="form-select form-select-sm" required>
@@ -659,9 +749,6 @@
                 {% endfor %}
               </select>
             </td>
-            <td><input name="row_material" class="form-control form-control-sm" placeholder="例：SUS304"></td>
-            <td><input name="row_qty" type="number" min="0" class="form-control form-control-sm"></td>
-            <td><input name="row_lead_days" type="number" min="0" class="form-control form-control-sm"></td>
             <td class="text-center">
               <button type="button" class="btn btn-sm btn-outline-danger row-del"><i class="bi bi-x"></i></button>
             </td>
@@ -687,18 +774,44 @@
   const tpl = document.getElementById('dispatchRowTpl');
   const body = document.getElementById('dispatchRows');
   if (!tpl || !body) return;
-  function addRow() {
+  function addRow(drawingId) {
     const frag = tpl.content.cloneNode(true);
+    if (drawingId !== undefined) {
+      const sel = frag.querySelector('.row-drawing');
+      if (sel) sel.value = String(drawingId);
+    }
     body.appendChild(frag);
   }
-  document.getElementById('addDispatchRow').addEventListener('click', addRow);
+  document.getElementById('addDispatchRow').addEventListener('click', () => addRow());
   document.addEventListener('click', e => {
     if (e.target.closest('#dispatchTable .row-del')) {
       const tr = e.target.closest('tr.dispatch-row');
       if (tr && body.querySelectorAll('tr.dispatch-row').length > 1) tr.remove();
     }
   });
-  // 預設 2 列
+
+  // 共用模式：清掉所有既有列，新增 2 列（對應圖面留空＝共用）
+  const sharedBtn = document.getElementById('dispatchSharedMode');
+  if (sharedBtn) sharedBtn.addEventListener('click', () => {
+    body.innerHTML = '';
+    addRow(''); addRow('');
+  });
+
+  // 每張圖獨立：針對每張圖各開 1 列空白（對應圖面綁該圖）
+  const perBtn = document.getElementById('dispatchPerDrawing');
+  if (perBtn) perBtn.addEventListener('click', () => {
+    const firstSel = document.querySelector('#dispatchRows .row-drawing')
+                   || document.querySelector('#dispatchRowTpl').content.querySelector('.row-drawing');
+    // 從 template option 取得所有圖 id（排除共用）
+    const tplSel = document.getElementById('dispatchRowTpl').content.querySelector('.row-drawing');
+    if (!tplSel) return;
+    const ids = Array.from(tplSel.options).map(o => o.value).filter(v => v !== '');
+    if (!ids.length) return;
+    body.innerHTML = '';
+    ids.forEach(id => addRow(id));
+  });
+
+  // 預設 2 列共用
   if (!body.querySelector('tr.dispatch-row')) { addRow(); addRow(); }
 })();
 </script>
@@ -762,9 +875,9 @@
       </div>
       <div class="modal-body">
         <div class="alert alert-info small mb-2">
-          每欄代表一個報價方案（先以 5 欄為主，可 <kbd>+ 欄</kbd> / <kbd>− 欄</kbd> 增減）。
-          每列為一個製程，填入各方案單價。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品保運</strong>，
-          利潤由業務填寫，即產出該方案的「最終報價單價」。選擇一欄作為送 BU 審核的方案。
+          每欄對應一個 <strong>機種</strong>（預設帶入業務上傳的圖面檔名），可 <kbd>+ 欄</kbd> / <kbd>− 欄</kbd> 增減。
+          每列為一個製程，工程/採購已填的供應商單價會自動帶入。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品保運</strong>，
+          利潤由業務填寫，即產出每個機種的「最終報價單價」，全部一起送 BU 審核。
         </div>
         <div class="d-flex gap-2 mb-2">
           <button type="button" id="addProcRow" class="btn btn-sm btn-outline-primary">
@@ -776,8 +889,6 @@
           <button type="button" id="delCol" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-dash-lg"></i> 減欄
           </button>
-          <span class="ms-auto small text-muted align-self-center">客戶目標單價：
-            <strong class="text-dark">{{ form.target_price or '—' }}</strong></span>
         </div>
         <div class="table-responsive">
           <table class="table table-sm table-bordered align-middle mb-2" id="quoteSheetTable">
@@ -822,13 +933,15 @@
                 <th class="text-start">成本合計</th>
               </tr>
               <tr>
-                <th class="text-start">利潤 %（業務填）</th>
+                <th class="text-start">
+                  利潤
+                  <input type="number" step="0.1" id="profitRate" value="15"
+                         class="form-control form-control-sm d-inline-block align-middle"
+                         style="width:70px"> %
+                </th>
               </tr>
               <tr class="table-warning fw-bold">
                 <th class="text-start">最終報價單價</th>
-              </tr>
-              <tr>
-                <th class="text-start">採用此欄送審</th>
               </tr>
             </tfoot>
           </table>
@@ -864,32 +977,85 @@
   let initData = null;
   try { initData = (typeof old === 'string' && old) ? JSON.parse(old) : (typeof old === 'object' ? old : null); } catch(e) {}
 
-  let nCols = (initData && initData.columns && initData.columns.length) ? initData.columns.length : DEFAULT_COLS;
+  // 工程派發取 distinct 製程清單（保序）
+  const engProcesses = (function(){
+    const list = [];
+    {% for inv in form.invites %}
+      {% if inv.process_name %}
+      (function(p){ if (p && list.indexOf(p) === -1) list.push(p); })({{ inv.process_name | tojson }});
+      {% endif %}
+    {% endfor %}
+    return list;
+  })();
+  // 機種清單 = 業務上傳的圖面（每張圖 = 一個機種欄）
+  const drawingCols = [
+    {% for d in drawings or [] %}
+    { id: {{ d.id }}, label: {{ d.original_name | tojson }} },
+    {% endfor %}
+  ];
+  // 供應商報價對應表：key = `${drawing_id || 0}||${process_name}` → amount
+  const invitePrices = (function(){
+    const m = {};
+    {% for inv in form.invites %}
+      {% if inv.quote_amount and inv.process_name %}
+      m[`{{ inv.drawing_doc_id or 0 }}||{{ inv.process_name }}`] = {{ inv.quote_amount }};
+      {% endif %}
+    {% endfor %}
+    return m;
+  })();
+  const productModel = {{ (form.product_model or form.product_name or '') | tojson }};
+
+  let nCols;
+  if (initData && initData.columns && initData.columns.length) nCols = initData.columns.length;
+  else if (drawingCols.length) nCols = Math.max(drawingCols.length, 1);
+  else nCols = DEFAULT_COLS;
   if (nCols < MIN_COLS) nCols = MIN_COLS;
   if (nCols > MAX_COLS) nCols = MAX_COLS;
 
+  function colDrawingId(i) {
+    // 第 i 欄對應的 drawing_id（若該欄是從 drawingCols 來的）
+    return (i < drawingCols.length) ? drawingCols[i].id : null;
+  }
   function buildColLabels() {
-    // 移除原欄標題（保留第 1 格）
     while (labelRow.children.length > 1) labelRow.removeChild(labelRow.lastChild);
     for (let i = 0; i < nCols; i++) {
       const th = document.createElement('th');
-      th.style.minWidth = '130px';
-      const lbl = (initData && initData.columns && initData.columns[i]) ? (initData.columns[i].label || '') : '';
+      th.style.minWidth = '140px';
+      // 預設 label：有圖 → 用圖檔名；無圖 → 用機種名/方案
+      let defaultLabel;
+      if (i < drawingCols.length) defaultLabel = drawingCols[i].label;
+      else defaultLabel = productModel ? `${productModel} - 欄 ${i+1}` : `機種 ${i+1}`;
+      const lbl = (initData && initData.columns && initData.columns[i] && initData.columns[i].label)
+        ? initData.columns[i].label : defaultLabel;
       th.innerHTML = `<input class="form-control form-control-sm col-label" data-col="${i}"
-                           value="${lbl}" placeholder="方案 ${i+1}">`;
+                           value="${(lbl+'').replace(/"/g,'&quot;')}" placeholder="${defaultLabel}">`;
       labelRow.appendChild(th);
     }
+  }
+  function priceFor(drawingId, processName) {
+    // 先查 (drawing, process)；找不到則查 (0=共用, process)
+    if (!processName) return null;
+    if (drawingId != null) {
+      const k = `${drawingId}||${processName}`;
+      if (invitePrices[k] != null) return invitePrices[k];
+    }
+    const ks = `0||${processName}`;
+    return invitePrices[ks] != null ? invitePrices[ks] : null;
   }
   function buildProcRow(name, prices) {
     const tr = document.createElement('tr');
     tr.className = 'proc-row';
-    let html = `<td><input class="form-control form-control-sm p-name" value="${name||''}" placeholder="例：CNC 加工"></td>`;
+    let html = `<td><input class="form-control form-control-sm p-name" value="${(name||'').replace(/"/g,'&quot;')}" placeholder="例：CNC"></td>`;
     for (let i = 0; i < nCols; i++) {
-      const v = (prices && prices[i] != null) ? prices[i] : '';
+      let v = (prices && prices[i] != null) ? prices[i] : '';
+      // 無值時嘗試從 invitePrices 自動帶入
+      if (v === '' && name) {
+        const auto = priceFor(colDrawingId(i), name);
+        if (auto != null) v = auto;
+      }
       html += `<td><input type="number" step="any" class="form-control form-control-sm p-price" data-col="${i}" value="${v}"></td>`;
     }
     tr.innerHTML = html;
-    // 刪除列按鈕放最後一欄後方，但因欄位彈性改為在第一格右側加個「刪」（用 cell 1）— 這裡簡化：允許空白列自動忽略
     return tr;
   }
   function buildTfootCols() {
@@ -898,35 +1064,22 @@
       while (tr.children.length > 1) tr.removeChild(tr.lastChild);
     });
     const trs = tfoot.querySelectorAll('tr');
-    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品保運, 4: 成本合計, 5: 利潤%, 6: 最終報價, 7: 採用
+    // row 0: 製程小計, 1: 不良率, 2: 管銷, 3: 品保運, 4: 成本合計, 5: 利潤, 6: 最終報價
     for (let i = 0; i < nCols; i++) {
-      // 小計
       trs[0].insertAdjacentHTML('beforeend', `<td class="text-end sum-col" data-col="${i}">—</td>`);
-      // 不良率 amt
       trs[1].insertAdjacentHTML('beforeend', `<td class="text-end defect-col" data-col="${i}">—</td>`);
-      // 管銷 amt
       trs[2].insertAdjacentHTML('beforeend', `<td class="text-end oh-col" data-col="${i}">—</td>`);
-      // 品保運 amt
       trs[3].insertAdjacentHTML('beforeend', `<td class="text-end qa-col" data-col="${i}">—</td>`);
-      // 成本合計
       trs[4].insertAdjacentHTML('beforeend', `<td class="text-end cost-col" data-col="${i}">—</td>`);
-      // 利潤 %
-      const profit = (initData && initData.columns && initData.columns[i] && initData.columns[i].profit_rate != null)
-        ? (initData.columns[i].profit_rate * 100).toFixed(1) : '';
-      trs[5].insertAdjacentHTML('beforeend',
-        `<td><input type="number" step="0.1" class="form-control form-control-sm profit-col" data-col="${i}" value="${profit}"></td>`);
-      // 最終報價
+      trs[5].insertAdjacentHTML('beforeend', `<td class="text-end profit-col" data-col="${i}">—</td>`);
       trs[6].insertAdjacentHTML('beforeend', `<td class="text-end quote-col" data-col="${i}">—</td>`);
-      // radio 採用
-      const checked = (initData && initData.selected_col_idx === i) ? 'checked' : '';
-      trs[7].insertAdjacentHTML('beforeend',
-        `<td class="text-center"><input type="radio" name="useCol" value="${i}" ${checked}></td>`);
     }
   }
   function recalc() {
     const defect = (parseFloat(document.getElementById('defectRate').value)||0)/100;
     const oh = (parseFloat(document.getElementById('overheadRate').value)||0)/100;
     const qa = (parseFloat(document.getElementById('qaRate').value)||0)/100;
+    const profit = (parseFloat(document.getElementById('profitRate').value)||0)/100;
     const subtotals = new Array(nCols).fill(0);
     document.querySelectorAll('#procRows .proc-row').forEach(r => {
       r.querySelectorAll('.p-price').forEach(inp => {
@@ -941,27 +1094,24 @@
       const ohAmt = sub * oh;
       const qaAmt = sub * qa;
       const costTotal = sub + defectAmt + ohAmt + qaAmt;
-      const profitInp = document.querySelector(`.profit-col[data-col="${i}"]`);
-      const profit = profitInp ? (parseFloat(profitInp.value)||0)/100 : 0;
-      const quote = costTotal * (1 + profit);
+      const profitAmt = costTotal * profit;
+      const quote = costTotal + profitAmt;
       const fmt = v => v ? v.toFixed(2) : '—';
       document.querySelector(`.sum-col[data-col="${i}"]`).textContent = fmt(sub);
       document.querySelector(`.defect-col[data-col="${i}"]`).textContent = fmt(defectAmt);
       document.querySelector(`.oh-col[data-col="${i}"]`).textContent = fmt(ohAmt);
       document.querySelector(`.qa-col[data-col="${i}"]`).textContent = fmt(qaAmt);
       document.querySelector(`.cost-col[data-col="${i}"]`).textContent = fmt(costTotal);
+      document.querySelector(`.profit-col[data-col="${i}"]`).textContent = fmt(profitAmt);
       document.querySelector(`.quote-col[data-col="${i}"]`).textContent = fmt(quote);
     }
-    // 更新 hidden finalQuote
-    const chosen = document.querySelector('input[name="useCol"]:checked');
-    if (chosen) {
-      const idx = parseInt(chosen.value);
-      const quoteCell = document.querySelector(`.quote-col[data-col="${idx}"]`);
-      const q = parseFloat(quoteCell.textContent) || 0;
-      document.getElementById('finalQuote').value = q ? q.toFixed(2) : '';
-    } else {
-      document.getElementById('finalQuote').value = '';
+    // hidden finalQuote = 第一欄的最終報價（多機種一起送審，代表主報價）
+    for (let i = 0; i < nCols; i++) {
+      const cell = document.querySelector(`.quote-col[data-col="${i}"]`);
+      const q = cell ? parseFloat(cell.textContent) : 0;
+      if (q) { document.getElementById('finalQuote').value = q.toFixed(2); return; }
     }
+    document.getElementById('finalQuote').value = '';
   }
   function rebuildAll() {
     buildColLabels();
@@ -977,6 +1127,9 @@
       existingRows.forEach(r => procRows.appendChild(buildProcRow(r.name, r.prices)));
     } else if (initData && initData.rows && initData.rows.length) {
       initData.rows.forEach(r => procRows.appendChild(buildProcRow(r.process, r.prices)));
+    } else if (engProcesses.length) {
+      // 帶入工程派發製程（每個製程一列）
+      engProcesses.forEach(p => procRows.appendChild(buildProcRow(p, [])));
     } else {
       // 預設 3 列空白
       for (let k = 0; k < 3; k++) procRows.appendChild(buildProcRow('', []));
@@ -997,37 +1150,50 @@
   document.addEventListener('input', e => {
     if (e.target.closest('#submitQuoteBuModal')) recalc();
   });
-  document.addEventListener('change', e => {
-    if (e.target.name === 'useCol') recalc();
+  // Enter → 同欄下一列（連續輸入單價不觸發送出）
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    if (!t.classList.contains('p-price')) return;
+    if (!t.closest('#submitQuoteBuModal')) return;
+    e.preventDefault();
+    const col = t.dataset.col;
+    const inputs = Array.from(document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`));
+    const idx = inputs.indexOf(t);
+    if (idx < 0) return;
+    if (idx + 1 < inputs.length) {
+      inputs[idx + 1].focus();
+      inputs[idx + 1].select();
+    } else {
+      // 最後一列 → 自動加一列並 focus 新列同欄
+      procRows.appendChild(buildProcRow('', []));
+      const next = document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`);
+      if (next.length) { next[next.length - 1].focus(); }
+    }
   });
 
-  // 送出前序列化 JSON
+  // 送出前序列化 JSON（不再需要選單一欄，所有機種一起送審）
   document.querySelector('#submitQuoteBuModal form').addEventListener('submit', (ev) => {
-    const chosen = document.querySelector('input[name="useCol"]:checked');
-    if (!chosen) {
-      ev.preventDefault();
-      alert('請勾選一欄作為送 BU 審核的最終報價方案');
-      return;
-    }
     recalc();
     const defect = (parseFloat(document.getElementById('defectRate').value)||0)/100;
     const oh = (parseFloat(document.getElementById('overheadRate').value)||0)/100;
     const qa = (parseFloat(document.getElementById('qaRate').value)||0)/100;
-    const selected = parseInt(chosen.value);
+    const profit = (parseFloat(document.getElementById('profitRate').value)||0)/100;
     const columns = [];
     for (let i = 0; i < nCols; i++) {
       const label = document.querySelector(`.col-label[data-col="${i}"]`).value || `方案 ${i+1}`;
-      const profitInp = document.querySelector(`.profit-col[data-col="${i}"]`);
-      const profit = (parseFloat(profitInp.value)||0)/100;
       const sub = parseFloat(document.querySelector(`.sum-col[data-col="${i}"]`).textContent)||0;
       const costTotal = parseFloat(document.querySelector(`.cost-col[data-col="${i}"]`).textContent)||0;
+      const profitAmt = parseFloat(document.querySelector(`.profit-col[data-col="${i}"]`).textContent)||0;
       const quote = parseFloat(document.querySelector(`.quote-col[data-col="${i}"]`).textContent)||0;
       columns.push({
-        label, profit_rate: profit, subtotal: sub,
+        label, subtotal: sub,
         defect_amount: +(sub*defect).toFixed(2),
         overhead_amount: +(sub*oh).toFixed(2),
         qa_ship_amount: +(sub*qa).toFixed(2),
-        cost_total: costTotal, quote: quote
+        cost_total: costTotal,
+        profit_amount: profitAmt,
+        quote: quote
       });
     }
     const rows = [];
@@ -1042,7 +1208,7 @@
     document.getElementById('quoteCostData').value = JSON.stringify({
       columns, rows,
       defect_rate: defect, overhead_rate: oh, qa_ship_rate: qa,
-      selected_col_idx: selected
+      profit_rate: profit,
     });
   });
 
@@ -1050,6 +1216,10 @@
   if (initData && initData.defect_rate != null) document.getElementById('defectRate').value = (initData.defect_rate*100).toFixed(1);
   if (initData && initData.overhead_rate != null) document.getElementById('overheadRate').value = (initData.overhead_rate*100).toFixed(1);
   if (initData && initData.qa_ship_rate != null) document.getElementById('qaRate').value = (initData.qa_ship_rate*100).toFixed(1);
+  if (initData && initData.profit_rate != null) document.getElementById('profitRate').value = (initData.profit_rate*100).toFixed(1);
+  // 舊資料向下相容：若存在 columns[0].profit_rate，帶入共用 profitRate
+  else if (initData && initData.columns && initData.columns[0] && initData.columns[0].profit_rate != null)
+    document.getElementById('profitRate').value = (initData.columns[0].profit_rate*100).toFixed(1);
   rebuildAll();
 })();
 </script>

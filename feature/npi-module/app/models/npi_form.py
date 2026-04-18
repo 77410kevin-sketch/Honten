@@ -102,6 +102,7 @@ class NPISupplierInvite(Base):
     material           = Column(String(100), nullable=True)   # 例：SUS304、鋁 6061
     qty                = Column(Integer, nullable=True)       # 派發數量
     expected_lead_days = Column(Integer, nullable=True)       # 工程期望工作天
+    drawing_doc_id     = Column(Integer, ForeignKey("npi_documents.id"), nullable=True)  # 對應圖面（null=共用/所有圖）
 
     invited_at     = Column(DateTime, default=datetime.utcnow)
     first_sent_at  = Column(DateTime, nullable=True)    # 第一次寄信時間
@@ -116,6 +117,7 @@ class NPISupplierInvite(Base):
 
     form           = relationship("NPIForm", back_populates="invites")
     supplier       = relationship("Supplier", foreign_keys=[supplier_id])
+    drawing        = relationship("NPIDocument", foreign_keys=[drawing_doc_id])
 
 
 class NPIDocument(Base):
