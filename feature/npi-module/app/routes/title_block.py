@@ -26,6 +26,21 @@ OUTPUT_DIR = Path("uploads/title_block")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _build_detection_message(logs, add_block: bool) -> str:
+    parts = []
+    for i, log in enumerate(logs):
+        if log.get("detected"):
+            ori = log.get("orientation") or "—"
+            bb = log.get("bbox") or [0, 0, 0, 0]
+            parts.append(
+                f"第{i+1}頁：偵測到{ori}標題欄 ({bb[0]:.0f},{bb[1]:.0f})→({bb[2]:.0f},{bb[3]:.0f})"
+            )
+        else:
+            parts.append(f"第{i+1}頁：未偵測到標題欄關鍵字，已退回預設位置")
+    tail = "已加入鴻騰標題欄" if add_block else "僅清除客戶 LOGO，維持原圖格式"
+    return " ／ ".join(parts) + "　·　" + tail
+
+
 def _require_engineer(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=403, detail="僅限工程師或管理員存取")
@@ -144,15 +159,118 @@ _TITLE_KEYWORDS = [
 ]
 
 
+def _detect_by_drawing_density(page):
+    """
+    後備偵測（文字抽取失敗時使用）：
+    5×5 網格計算小尺寸矩形密度，找出所有高密度叢集；
+    回傳最大叢集的 bbox + orientation，額外回傳其他叢集 list 供清除。
+    """
+    import fitz
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return None, None, []
+
+    small_rects = []
+    for d in drawings:
+        r = d.get("rect")
+        if r is None:
+            continue
+        w, h = r.width, r.height
+        if 3 < w < 180 and 3 < h < 80:
+            small_rects.append(fitz.Rect(r))
+
+    if len(small_rects) < 8:
+        return None, None, []
+
+    page_rect = page.rect
+    GX, GY = 6, 6
+    cw = page_rect.width / GX
+    ch = page_rect.height / GY
+    grid = [[[] for _ in range(GX)] for _ in range(GY)]
+    for r in small_rects:
+        cx = (r.x0 + r.x1) / 2
+        cy = (r.y0 + r.y1) / 2
+        i = min(GX - 1, max(0, int(cx / cw)))
+        j = min(GY - 1, max(0, int(cy / ch)))
+        grid[j][i].append(r)
+
+    counts = [[len(grid[j][i]) for i in range(GX)] for j in range(GY)]
+    max_val = max(max(row) for row in counts)
+    if max_val < 4:
+        return None, None, []
+
+    # 門檻：至少為最大值 20%，至少 3 個小矩形
+    threshold = max(3, int(max_val * 0.20))
+
+    def is_edge(i, j):
+        return i == 0 or i == GX - 1 or j == 0 or j == GY - 1
+
+    # flood-fill 找出所有叢集（4-connected）
+    # 限制：叢集必須至少有一個 cell 位於頁面邊緣，避免把中央圖面內容當成標題欄
+    visited = [[False] * GX for _ in range(GY)]
+    clusters = []
+    for j0 in range(GY):
+        for i0 in range(GX):
+            if visited[j0][i0] or counts[j0][i0] < threshold:
+                continue
+            stack = [(i0, j0)]
+            cells = []
+            touches_edge = False
+            while stack:
+                i, j = stack.pop()
+                if visited[j][i]:
+                    continue
+                visited[j][i] = True
+                cells.append((i, j))
+                if is_edge(i, j):
+                    touches_edge = True
+                for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    ni, nj = i + di, j + dj
+                    if (0 <= ni < GX and 0 <= nj < GY
+                            and not visited[nj][ni]
+                            and counts[nj][ni] >= threshold):
+                        stack.append((ni, nj))
+            if not touches_edge:
+                # 中央叢集視為圖面內容，跳過
+                continue
+            all_r = []
+            for (i, j) in cells:
+                all_r.extend(grid[j][i])
+            if not all_r:
+                continue
+            bb = all_r[0]
+            for r in all_r[1:]:
+                bb = bb | r
+            clusters.append((len(all_r), bb))
+
+    if not clusters:
+        return None, None, []
+
+    clusters.sort(key=lambda x: x[0], reverse=True)
+    main_bbox = clusters[0][1]
+    other_bboxes = [c[1] for c in clusters[1:]]
+
+    w, h = main_bbox.width, main_bbox.height
+    if h >= w * 1.8:
+        orientation = "vertical"
+    elif w >= h * 1.8:
+        orientation = "horizontal"
+    else:
+        orientation = "corner"
+    return main_bbox, orientation, other_bboxes
+
+
 def _detect_customer_logo_region(page):
     """
     偵測客戶 LOGO / 標題欄所在區域。
     策略：
-      1. 抽取所有 text block
-      2. 對含有標題欄關鍵字的文字 block 收集 bbox
-      3. 以「密度群聚」合併 bbox，得出最大群聚作為 LOGO 區
-      4. 判斷方向：直式（vertical）、橫式（horizontal）、角落（corner）
-    回傳 (bbox: fitz.Rect | None, orientation: str | None)。
+      1. 先嘗試用文字關鍵字 (TITLE / DRAWING / 公司 等)
+      2. 若無文字，退回繪圖密度偵測
+    回傳 (bbox, orientation, extra_bboxes)：
+      - bbox: 主標題欄位置
+      - orientation: vertical / horizontal / corner
+      - extra_bboxes: 其他需一併清除的次要 bbox list
     """
     import fitz
     try:
@@ -181,7 +299,9 @@ def _detect_customer_logo_region(page):
             matched.append(fitz.Rect(x0, y0, x1, y1))
 
     if not matched:
-        return None, None
+        # 文字抽取無結果 → 改走繪圖密度偵測
+        return _detect_by_drawing_density(page)
+    # 以下走關鍵字路徑
 
     # 以最大連通群聚合併 bbox：相距 <60pt 的視為同一群
     def _close(a, b, gap=60):
@@ -207,11 +327,19 @@ def _detect_customer_logo_region(page):
             bb = bb | x
         return bb
 
-    best = max(clusters, key=lambda c: (len(c),
-                                         cluster_bbox(c).width * cluster_bbox(c).height))
-    bbox = cluster_bbox(best)
+    # 按成員多寡排序
+    clusters_sorted = sorted(
+        clusters, key=lambda c: len(c), reverse=True,
+    )
+    main = clusters_sorted[0]
+    bbox = cluster_bbox(main)
 
-    # 判斷方向
+    # 其他叢集（至少有 2 個匹配 keyword）→ 一併清除
+    extra_bboxes = []
+    for c in clusters_sorted[1:]:
+        if len(c) >= 2:
+            extra_bboxes.append(cluster_bbox(c))
+
     w, h = bbox.width, bbox.height
     if h >= w * 1.8:
         orientation = "vertical"
@@ -220,7 +348,7 @@ def _detect_customer_logo_region(page):
     else:
         orientation = "corner"
 
-    return bbox, orientation
+    return bbox, orientation, extra_bboxes
 
 
 def _draw_honten_title_block(page, width: float, height: float,
@@ -237,34 +365,52 @@ def _draw_honten_title_block(page, width: float, height: float,
     回傳 dict: {detected, bbox, orientation} 供上層記錄。
     """
     import fitz
-    cjk_path = _find_cjk_font()
-    cjk_name = "cjk"
-    if cjk_path:
-        try:
-            page.insert_font(fontname=cjk_name, fontfile=cjk_path)
-        except Exception:
-            cjk_path = None
-    font_for = (lambda _txt: cjk_name) if cjk_path else (lambda _txt: "helv")
-
     HT_BLUE = (0.05, 0.18, 0.43)
     HT_FILL = (0.05, 0.16, 0.38)
 
+    # 字型策略：
+    #   - 英文標籤 (DRAWING NO, TITLE…) 一律用 helv（無需嵌入，檔案小）
+    #   - 值欄位若含 CJK 才嵌入 CJK 字型（僅在 add_ht_block=True 且有中文值時）
+    cjk_path = None
+    cjk_name = "cjk"
+
+    def _has_cjk(s):
+        return any(ord(c) >= 0x3400 for c in (s or ""))
+
+    need_cjk = add_ht_block and any(
+        _has_cjk(v) for v in (drawing_no, title, material, drawer)
+    )
+    if need_cjk:
+        cjk_path = _find_cjk_font()
+        if cjk_path:
+            try:
+                page.insert_font(fontname=cjk_name, fontfile=cjk_path)
+            except Exception:
+                cjk_path = None
+
+    def font_for(txt):
+        if cjk_path and _has_cjk(txt):
+            return cjk_name
+        return "helv"
+
     # ── Step 1：偵測客戶 LOGO 區 ─────────────────────────────
-    logo_bbox, orientation = _detect_customer_logo_region(page)
+    detection = _detect_customer_logo_region(page)
+    logo_bbox, orientation, extra_bboxes = detection
     detected = logo_bbox is not None
 
     info = {
         "detected": detected,
         "bbox": list(logo_bbox) if logo_bbox else None,
         "orientation": orientation,
+        "extra_count": len(extra_bboxes or []),
     }
 
     if not detected:
-        # 無法偵測：保守退回右下角 30% × 20%
         logo_bbox = fitz.Rect(width * 0.60, height * 0.78, width - 20, height - 20)
         orientation = "corner"
+        extra_bboxes = []
 
-    # ── Step 2：精準清除客戶標題欄區域（含 12pt 膨脹以涵蓋框線）──
+    # ── Step 2：精準清除客戶標題欄（主區 + 次要叢集）────────────
     pad = 12
     clear_rect = fitz.Rect(
         max(0, logo_bbox.x0 - pad),
@@ -273,6 +419,17 @@ def _draw_honten_title_block(page, width: float, height: float,
         min(height, logo_bbox.y1 + pad),
     )
     page.draw_rect(clear_rect, color=(1, 1, 1), fill=(1, 1, 1), width=0)
+
+    # 清除其他次要叢集（如 REV 表、DWG.DATE 欄、表格編號區）
+    for eb in extra_bboxes or []:
+        ep = 20
+        page.draw_rect(
+            fitz.Rect(
+                max(0, eb.x0 - ep), max(0, eb.y0 - ep),
+                min(width, eb.x1 + ep), min(height, eb.y1 + ep),
+            ),
+            color=(1, 1, 1), fill=(1, 1, 1), width=0,
+        )
 
     if not add_ht_block:
         # 使用者選擇不加鴻騰標題欄：僅清除客戶 LOGO，結束
@@ -321,13 +478,14 @@ def _draw_ht_block(page, rect, rotate, HT_BLUE, HT_FILL, font_for,
     page.draw_rect(rect, color=HT_BLUE, fill=(1, 1, 1), width=1.3)
 
     labels = [
-        ("DRAWING NO 圖號",   drawing_no),
-        ("TITLE       品名",  title),
-        ("MATERIAL    材質",  material),
-        ("SCALE       比例",  scale or "N.T.S."),
-        ("DATE        日期",  datetime.now().strftime("%Y-%m-%d")),
-        ("DRAWN BY    繪圖者",drawer),
+        ("DRAWING NO",   drawing_no),
+        ("TITLE",        title),
+        ("MATERIAL",     material),
+        ("SCALE",        scale or "N.T.S."),
+        ("DATE",         datetime.now().strftime("%Y-%m-%d")),
+        ("DRAWN BY",     drawer),
     ]
+    header_text = "HonTen Electronic Co., Ltd."
 
     if rotate == 90:
         # 直式：標題列在左，文字旋轉 90°
@@ -336,8 +494,8 @@ def _draw_ht_block(page, rect, rotate, HT_BLUE, HT_FILL, font_for,
         page.draw_rect(title_bar, color=HT_BLUE, fill=HT_FILL, width=0)
         page.insert_textbox(
             fitz.Rect(title_bar.x0 + 4, title_bar.y0 + 8, title_bar.x1 - 4, title_bar.y1 - 8),
-            "HonTen Electronic   鴻騰電子股份有限公司",
-            fontsize=10, fontname=font_for("header"),
+            header_text,
+            fontsize=10, fontname="helv",
             color=(1, 1, 1), align=1, rotate=90,
         )
         # 資訊格：6 格縱向排列（1 欄 × 6 列）於標題列右方
@@ -365,8 +523,8 @@ def _draw_ht_block(page, rect, rotate, HT_BLUE, HT_FILL, font_for,
         page.draw_rect(title_bar, color=HT_BLUE, fill=HT_FILL, width=0)
         page.insert_textbox(
             fitz.Rect(title_bar.x0 + 8, title_bar.y0 + 5, title_bar.x1 - 8, title_bar.y1 - 5),
-            "HonTen Electronic   鴻騰電子股份有限公司",
-            fontsize=10, fontname=font_for("header"),
+            header_text,
+            fontsize=10, fontname="helv",
             color=(1, 1, 1), align=0,
         )
         area = fitz.Rect(rect.x0, title_bar.y1, rect.x1, rect.y1)
@@ -401,8 +559,10 @@ async def convert(
     material: str = Form(""),
     scale: str = Form(""),
     drawer: str = Form(""),
+    add_ht_block: str = Form("1"),  # "1" = 加鴻騰標題欄；"0" = 僅清除
     current_user: User = Depends(_require_engineer),
 ):
+    add_block = add_ht_block not in ("0", "false", "False", "")
     filename = file.filename or "upload"
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -425,18 +585,21 @@ async def convert(
 
         try:
             doc = fitz.open(str(src_path))
+            detection_logs = []
             for page in doc:
                 rect = page.rect
-                _draw_honten_title_block(
+                info = _draw_honten_title_block(
                     page, rect.width, rect.height,
                     drawing_no=drawing_no, title=title,
                     material=material, scale=scale,
                     drawer=drawer or current_user.display_name,
+                    add_ht_block=add_block,
                 )
+                detection_logs.append(info)
             out_name = f"HT_{os.path.splitext(filename)[0]}.pdf"
             out_path = job_dir / out_name
-            # 保留原始品質：不壓縮、不刪除未引用物件、不重寫內容
-            doc.save(str(out_path), garbage=0, deflate=False, clean=False)
+            # 向量完全保留；garbage=4 清除未使用資源、deflate=True 壓縮、clean=True 去重
+            doc.save(str(out_path), garbage=4, deflate=True, clean=True)
             total_pages = len(doc)
             doc.close()
 
@@ -463,7 +626,8 @@ async def convert(
                 "download_url": f"/title-block/download/{job_id}/{out_name}",
                 "preview_urls": preview_urls,
                 "pages": total_pages,
-                "message": "已套用鴻騰電子圖框（預設版本）— 預覽為 PNG 圖片，下載檔為高解析度向量 PDF",
+                "detection": detection_logs,
+                "message": _build_detection_message(detection_logs, add_block),
             })
         except Exception as e:
             return JSONResponse({"ok": False, "error": f"PDF 處理失敗：{e}"}, status_code=500)

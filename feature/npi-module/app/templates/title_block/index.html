@@ -61,6 +61,13 @@
             <input type="text" id="tb-drawer" class="form-control form-control-sm" value="{{ user.display_name }}">
           </div>
 
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="tb-add-ht" checked>
+            <label class="form-check-label small" for="tb-add-ht">
+              清除後加入鴻騰標題欄（取消勾選 = 只清除客戶 LOGO）
+            </label>
+          </div>
+
           <button id="convert-btn" class="btn btn-primary w-100" disabled>
             <i class="bi bi-arrow-repeat me-1"></i>套用鴻騰電子圖框
           </button>
@@ -209,6 +216,7 @@
     fd.append('material',   document.getElementById('tb-material').value);
     fd.append('scale',      document.getElementById('tb-scale').value);
     fd.append('drawer',     document.getElementById('tb-drawer').value);
+    fd.append('add_ht_block', document.getElementById('tb-add-ht').checked ? '1' : '0');
 
     try {
       const res = await fetch('/title-block/convert', { method:'POST', body: fd });
@@ -243,6 +251,12 @@
         }
         imgWrap.style.display = '';
         meta.textContent = `（共 ${data.pages || urls.length} 頁 · 200 DPI 預覽）`;
+        if (data.message) {
+          const banner = document.createElement('div');
+          banner.className = 'alert alert-info small py-2 mb-2';
+          banner.innerHTML = '<i class="bi bi-info-circle me-1"></i>' + data.message;
+          imgWrap.insertBefore(banner, imgWrap.firstChild);
+        }
       } else {
         cadName.textContent = data.filename;
         cadMsg.textContent  = data.message;
