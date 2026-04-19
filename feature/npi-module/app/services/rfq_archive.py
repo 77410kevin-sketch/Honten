@@ -330,6 +330,264 @@ def archive_filename(form_id, quote_data):
     return f"REF-{_safe_filename(first_label)}.pdf"
 
 
+def _sale_cost_table(q, bargain):
+    """議價前後利潤 KPI 對照表（無售價欄，僅呈現利潤%變化供採購 KPI 統計）。
+
+    假設：業務報價給客戶的 quote（售價）已鎖定不變。採購議價讓成本下降，
+    → 議價後利潤 % = (原 quote - 議價後 cost_total) / 議價後 cost_total。
+    """
+    cols = q.get("columns", []) or []
+    rows = q.get("rows", []) or []
+    defect = q.get("defect_rate", 0) or 0
+    oh = q.get("overhead_rate", 0) or 0
+    qa = q.get("qa_ship_rate", 0) or 0
+    bprices = (bargain or {}).get("prices") or {}
+    btool = (bargain or {}).get("tooling") or {}
+    bflags = (bargain or {}).get("flags") or {}
+
+    def eff_price(ri, ci, orig):
+        key = f"r{ri}_c{ci}"
+        fl = bflags.get(key)
+        if fl in ("no_bargain", "no_room"):
+            return float(orig) if orig is not None else 0.0
+        v = bprices.get(key)
+        if v is None:
+            return float(orig) if orig is not None else 0.0
+        try:
+            return float(v)
+        except Exception:
+            return float(orig) if orig is not None else 0.0
+
+    def L(text, bold=False, align=0):
+        return _P(text, 8.5, bold, align)
+    def N(v):
+        return _P(_fmt(v), 8.5, align=2)
+
+    header = [L("項目 / 製程", True, 1)] + [
+        L(c.get("label") or f"方案{i+1}", True, 1) for i, c in enumerate(cols)
+    ]
+    data = [header]
+    # 內容列：原 / 議價後（若相同只顯示原）
+    for ri, r in enumerate(rows):
+        line = [L(r.get("process", ""))]
+        for ci, p in enumerate(r.get("prices", [])):
+            ep = eff_price(ri, ci, p)
+            if p is None:
+                line.append(L("—", align=2))
+            elif abs(ep - (p or 0)) < 1e-6:
+                line.append(N(ep))
+            else:
+                line.append(_P(f"原 {_fmt(p)}<br/>議價 {_fmt(ep)}", 8.5, align=2))
+        data.append(line)
+
+    # 計算欄位
+    subtotals, cost_totals = [], []
+    orig_profit_rates, new_profit_rates = [], []
+    orig_tool_rates, new_tool_rates = [], []
+    tool_origs, tool_effs = [], []
+    for ci, c in enumerate(cols):
+        # 製程成本（議價後）
+        sub = 0.0
+        for ri, r in enumerate(rows):
+            prices_ = r.get("prices") or []
+            orig = prices_[ci] if ci < len(prices_) else None
+            sub += eff_price(ri, ci, orig)
+        cost_total = sub * (1 + defect + oh + qa)
+        subtotals.append(sub); cost_totals.append(cost_total)
+
+        # 原利潤 / 議價後利潤（以業務原 quote 為鎖定售價）
+        orig_profit_rate = c.get("profit_rate") or 0
+        orig_quote = c.get("quote")
+        if orig_quote is None:
+            orig_cost = c.get("cost_total") or 0
+            orig_quote = orig_cost * (1 + orig_profit_rate)
+        if cost_total > 0:
+            new_pr = (orig_quote - cost_total) / cost_total
+        else:
+            new_pr = 0
+        orig_profit_rates.append(orig_profit_rate)
+        new_profit_rates.append(new_pr)
+
+        # 模治具（column 層級）
+        torig = c.get("tooling_cost") or 0
+        tool_origs.append(torig)
+        # 議價後模治具：匯總 bargain.tooling 中所有 proc 的覆寫 / 對應 rows 的原值
+        # 因為成本表 column=供應商，tooling per supplier；這裡先用 column tooling_cost 做基準
+        teff = torig
+        # 若有 per-proc 議價覆寫且該製程屬於此 column（簡化：使用 sum over processes of override）
+        if btool:
+            # 匯總覆寫：key 格式 p_{process_key}，不分 column（簡化處理）
+            # 如 bargain.tooling 給出，則以所有覆寫加總取代原 torig
+            ov_sum = 0.0
+            for k, v in btool.items():
+                try: ov_sum += float(v)
+                except Exception: pass
+            if ov_sum > 0:
+                teff = ov_sum / max(len(cols), 1)  # 平均攤到每欄
+        tool_effs.append(teff)
+        # 模治具原利潤率
+        otpr = c.get("tooling_profit_rate")
+        if otpr is None:
+            otpr = orig_profit_rate
+        orig_tool_rates.append(otpr)
+        # 議價後模治具利潤率：鎖定原售價 (torig*(1+otpr))，成本降為 teff
+        otool_sale = torig * (1 + otpr)
+        if teff > 0:
+            ntpr = (otool_sale - teff) / teff
+        else:
+            ntpr = 0
+        new_tool_rates.append(ntpr)
+
+    def pct(v):
+        return f"{v*100:.1f}%"
+
+    data.append([L("製程成本小計（議價後）", True)] + [N(v) for v in subtotals])
+    data.append([L(f"不良率 ({defect*100:.1f}%)")] + [N(v*defect) for v in subtotals])
+    data.append([L(f"管銷 ({oh*100:.1f}%)")] + [N(v*oh) for v in subtotals])
+    data.append([L(f"品包運 ({qa*100:.1f}%)")] + [N(v*qa) for v in subtotals])
+    data.append([L("成本合計（不含模治具）", True)] + [N(v) for v in cost_totals])
+    # KPI：原利潤% vs 議價後利潤%
+    data.append([L("原利潤%（業務報價時）")] + [L(pct(v), align=2) for v in orig_profit_rates])
+    data.append([L("議價後利潤%（採購 KPI）", True)] + [
+        _P(pct(v), 8.5, True, 2,
+           color=(colors.HexColor("#198754") if v > orig_profit_rates[i] else colors.HexColor("#dc3545")))
+        for i, v in enumerate(new_profit_rates)
+    ])
+    # 模治具
+    data.append([L("模治具成本（原）")] + [N(v) for v in tool_origs])
+    data.append([L("模治具成本（議價後）")] + [N(v) for v in tool_effs])
+    data.append([L("模治具原利潤%")] + [L(pct(v), align=2) for v in orig_tool_rates])
+    data.append([L("模治具議價後利潤%", True)] + [
+        _P(pct(v), 8.5, True, 2,
+           color=(colors.HexColor("#198754") if v > orig_tool_rates[i] else colors.HexColor("#dc3545")))
+        for i, v in enumerate(new_tool_rates)
+    ])
+
+    ncols = len(cols)
+    label_w = 55 * mm
+    remaining = 180 * mm - label_w
+    col_w = [label_w] + [remaining / max(ncols, 1) for _ in range(ncols)]
+    t = Table(data, colWidths=col_w)
+
+    body_end = len(rows)
+    sub_row = body_end + 1
+    cost_row = sub_row + 4
+    kpi_row = cost_row + 2
+    tool_kpi_row = kpi_row + 4
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9ecef")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("BACKGROUND", (0, sub_row), (-1, sub_row), colors.HexColor("#dee2e6")),
+        ("BACKGROUND", (0, cost_row), (-1, cost_row), colors.HexColor("#e7f1ff")),
+        ("BACKGROUND", (0, kpi_row), (-1, kpi_row), colors.HexColor("#d1f2eb")),
+        ("BACKGROUND", (0, tool_kpi_row), (-1, tool_kpi_row), colors.HexColor("#d1f2eb")),
+    ]))
+    return t
+
+
+def _t1_plan_table(t1_plan):
+    """T1 計畫表：圖面 / 客戶需求 T1 / 實際開模 T1（晚於客戶需求時標紅字）。"""
+    import re
+    def _md(s):
+        if not s: return None
+        m = re.search(r'(\d{1,2})\s*[\/\-月]\s*(\d{1,2})', str(s))
+        if not m: return None
+        mm, dd = int(m.group(1)), int(m.group(2))
+        if mm < 1 or mm > 12 or dd < 1 or dd > 31: return None
+        return mm * 100 + dd
+    header = [_P(x, 9, True, align=1) for x in ["圖面", "客戶需求 T1 與樣品提供時間", "實際開模 T1 時間"]]
+    data = [header]
+    for row in (t1_plan or []):
+        need = row.get("t1_date") or ""
+        actual = row.get("actual_t1_date") or ""
+        nN, aN = _md(need), _md(actual)
+        is_late = (nN is not None and aN is not None and aN > nN)
+        actual_cell = _P(
+            (actual + (" ⚠ 晚於需求" if is_late else "")) if actual else "—",
+            9, bold=is_late, align=1,
+            color=(colors.HexColor("#dc3545") if is_late else (colors.HexColor("#198754") if actual else colors.black))
+        )
+        data.append([
+            _P(row.get("drawing_name") or "—", 9, align=1),
+            _P(need or "—", 9, align=1),
+            actual_cell,
+        ])
+    t = Table(data, colWidths=[60 * mm, 60 * mm, 60 * mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9ecef")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
+
+
+def build_sale_cost_analysis_pdf(form, invites, quote_data, bargain_data,
+                                  creator_name, bu_head_name, out_path,
+                                  t1_plan=None):
+    """產出「售價成本分析表」PDF（議價前後利潤 KPI 對照 + T1 計畫）。
+
+    t1_plan: list[dict] with drawing_name / t1_date / actual_t1_date
+    """
+    _ensure_fonts()
+    if os.path.dirname(out_path):
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    doc = SimpleDocTemplate(
+        out_path, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm,
+        topMargin=15 * mm, bottomMargin=15 * mm,
+        title=f"{form.get('form_id')} 售價成本分析表",
+    )
+    story = []
+    story.append(Paragraph(f"售價成本分析表 — {form.get('form_id')}",
+                           _style("h", 14, True, color=colors.HexColor("#0d6efd"))))
+    story.append(Paragraph(
+        f"產出日期：{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}  ｜ "
+        f"ERP 採購單：{(bargain_data or {}).get('erp_po_no') or '—'}",
+        _style("sub", 8, color=colors.grey)))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_section_title("① 客戶 / 產品資訊"))
+    story.append(Spacer(1, 2 * mm))
+    story.append(_header_table(form, creator_name, bu_head_name))
+    story.append(Spacer(1, 4 * mm))
+
+    # ② T1 計畫（採購/BU 都需要）
+    story.append(_section_title("② T1 計畫與實際開模時間"))
+    story.append(Spacer(1, 2 * mm))
+    if t1_plan:
+        story.append(_t1_plan_table(t1_plan))
+    else:
+        story.append(Paragraph("（尚未提供 T1 計畫）", _style("na", 9, color=colors.grey)))
+    story.append(Spacer(1, 4 * mm))
+
+    story.append(_section_title("③ 議價前後利潤% KPI 對照"))
+    story.append(Spacer(1, 2 * mm))
+    if (quote_data or {}).get("columns"):
+        story.append(_sale_cost_table(quote_data, bargain_data or {}))
+    else:
+        story.append(Paragraph("（無成本試算資料）", _style("na", 9, color=colors.grey)))
+    story.append(Spacer(1, 4 * mm))
+    note = (bargain_data or {}).get("note")
+    if note:
+        story.append(_section_title("④ 議價備註"))
+        story.append(Paragraph(str(note).replace("\n", "<br/>"), _style("note", 9, leading=13)))
+    # ERP 回 keyin 勾選（單一提醒）
+    bd = bargain_data or {}
+    if bd.get("erp_keyin_all"):
+        story.append(Spacer(1, 3 * mm))
+        story.append(_section_title("⑤ ERP 回 keyin 狀態"))
+        story.append(Paragraph("✓ 所有單價（含模治具）皆已回 keyin 至 ERP。",
+                               _style("k", 9, leading=13, color=colors.HexColor("#198754"))))
+    doc.build(story)
+    return out_path
+
+
 def build_archive_pdf(form, invites, quote_data, creator_name, bu_head_name, out_path):
     """產出歸檔 PDF 到 out_path。
 

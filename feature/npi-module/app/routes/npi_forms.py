@@ -8,7 +8,7 @@
   purchase    → 採購議價回填
   admin       → 全權限
 """
-import os, uuid, json, mimetypes
+import os, uuid, json, mimetypes, logging
 from urllib.parse import quote as urlquote
 from datetime import datetime
 from typing import List
@@ -824,6 +824,66 @@ def _rfq_archive_path(form: NPIForm, quote_data: dict) -> str:
     return os.path.join(notif.NAS_ROOT, form.form_id, "RFQ_Archive", fname)
 
 
+async def _build_sale_cost_analysis_pdf(form: NPIForm, db: AsyncSession, out_path: str) -> str:
+    """售價成本分析表 PDF = 議價後成本 + 原報價利潤 → 售價。"""
+    creator_name = form.creator.display_name if form.creator else None
+    bu_head_name = None
+    if form.bu:
+        try:
+            q = select(User).where(User.role == Role.BU, User.bu == form.bu, User.is_active == True)
+            bu_head = (await db.execute(q)).scalars().first()
+            if bu_head:
+                bu_head_name = bu_head.display_name
+        except Exception:
+            bu_head_name = None
+    quote_data = {}
+    if form.quote_cost_data:
+        try: quote_data = json.loads(form.quote_cost_data)
+        except Exception: pass
+    bargain_data = {}
+    if form.bargain_data:
+        try: bargain_data = json.loads(form.bargain_data)
+        except Exception: pass
+    form_dict = {
+        "form_id": form.form_id,
+        "customer_name": form.customer_name,
+        "customer_contact": form.customer_contact,
+        "customer_email": form.customer_email,
+        "product_name": form.product_name,
+        "product_model": form.product_model,
+        "spec_summary": form.spec_summary,
+        "bu": (form.bu.value if hasattr(form.bu, "value") else form.bu) if form.bu else None,
+        "sales_note": form.sales_note,
+    }
+    invites_list = [{
+        "supplier_name": inv.supplier.name if inv.supplier else None,
+        "process_name": inv.process_name,
+    } for inv in (form.invites or [])]
+    # T1 計畫：對應每張圖面，含客戶需求 + 實際開模
+    t1_map = {}
+    if form.t1_plan_data:
+        try: t1_map = json.loads(form.t1_plan_data) or {}
+        except Exception: t1_map = {}
+    t1_plan = []
+    for d in (form.documents or []):
+        if d.category == "圖面":
+            row = t1_map.get(str(d.id)) or t1_map.get(d.id) or {}
+            t1_plan.append({
+                "drawing_name": d.original_name,
+                "t1_date":      row.get("t1_date") or "",
+                "actual_t1_date": row.get("actual_t1_date") or "",
+            })
+    return rfq_archive.build_sale_cost_analysis_pdf(
+        form_dict, invites_list, quote_data, bargain_data,
+        creator_name, bu_head_name, out_path,
+        t1_plan=t1_plan,
+    )
+
+
+def _sale_cost_analysis_path(form: NPIForm) -> str:
+    return os.path.join(notif.NAS_ROOT, form.form_id, "NPI_Closure", "售價成本分析表.pdf")
+
+
 @router.post("/{form_id}/send-customer-quote")
 async def send_customer_quote(
     form_id: str,
@@ -879,56 +939,51 @@ async def save_t1_plan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """業務儲存每張圖的 T1 試模計畫（預計 T1 時間 + 樣品提供時間）;
-    儲存後通知工程接手推進。
+    """儲存每張圖的 T1 計畫：
+      • 業務 → 更新 `t1_date`（客戶需求 T1 與樣品提供時間）
+      • 採購 → 更新 `actual_t1_date`（實際開模 T1 時間）
+      同一張 JSON，按角色只覆寫該角色允許的欄位，其他欄位保留。
     """
     form = await _get_form_or_404(form_id, db)
-    if current_user.role not in (*_SALES_ROLES, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="僅業務可維護 T1 計畫")
+    is_sales = current_user.role in (*_SALES_ROLES, Role.ADMIN)
+    is_purch = current_user.role in (Role.PURCHASE, Role.ADMIN)
+    if not (is_sales or is_purch):
+        raise HTTPException(status_code=403, detail="僅業務 / 採購可維護 T1 計畫")
     form_data = await request.form()
     ids = form_data.getlist("drawing_id")
     t1_dates = form_data.getlist("t1_date")
-    notes = form_data.getlist("t1_note")
-    plan = {}
+    actual_dates = form_data.getlist("actual_t1_date")
+
+    # 先載入現有計畫，逐欄位覆寫以保留他角色的資料
+    try:
+        existing = json.loads(form.t1_plan_data) if form.t1_plan_data else {}
+    except Exception:
+        existing = {}
+
     for i, did in enumerate(ids):
         if not did:
             continue
-        plan[str(did)] = {
-            "t1_date": (t1_dates[i] if i < len(t1_dates) else "") or "",
-            "note":    (notes[i] if i < len(notes) else "") or "",
-        }
-    form.t1_plan_data = json.dumps(plan, ensure_ascii=False) if plan else None
+        key = str(did)
+        row = dict(existing.get(key) or {})
+        if is_sales and i < len(t1_dates):
+            row["t1_date"] = (t1_dates[i] or "").strip()
+        if is_purch and i < len(actual_dates):
+            row["actual_t1_date"] = (actual_dates[i] or "").strip()
+        existing[key] = row
+
+    form.t1_plan_data = json.dumps(existing, ensure_ascii=False) if existing else None
     form.updated_at = datetime.utcnow()
-    # 客戶通知開案憑證 — 每張圖獨立 file input，name=kickoff_cert_{drawing_id}
-    upload_dir = _upload_dir(form.id)
-    for did in ids:
-        if not did:
-            continue
-        for up in form_data.getlist(f"kickoff_cert_{did}"):
-            if not hasattr(up, "filename") or not up.filename:
-                continue
-            content = await up.read()
-            if not content:
-                continue
-            ext = os.path.splitext(up.filename)[1] or ".bin"
-            saved_name = f"{uuid.uuid4().hex}{ext}"
-            with open(os.path.join(upload_dir, saved_name), "wb") as fh:
-                fh.write(content)
-            db.add(NPIDocument(
-                form_id_fk    = form.id,
-                filename      = saved_name,
-                original_name = f"[DRAW:{did}] {up.filename}",
-                category      = "客戶通知開案憑證",
-                uploaded_by   = current_user.id,
-            ))
     await db.commit()
-    try:
-        await notif._notify_roles(
-            db, [Role.ENGINEER],
-            f"【NPI 業務已提供 T1 計畫】{form.form_id} - 預計 T1 / 樣品時間已填寫，請工程接手推進",
-        )
-    except Exception:
-        pass
+
+    # 只有業務儲存時才通知工程接手；採購的實際日期屬後段資訊
+    if is_sales and not is_purch:
+        try:
+            await notif._notify_roles(
+                db, [Role.ENGINEER],
+                f"【NPI 業務已提供 T1 計畫】{form.form_id} - 客戶需求 T1 / 樣品時間已填寫，請工程接手推進",
+            )
+        except Exception:
+            pass
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
@@ -1070,9 +1125,11 @@ async def save_bargain(
             except (TypeError, ValueError): pass
     note = (form_data.get("note") or "").strip() or None
     erp_po_no = (form_data.get("erp_po_no") or "").strip() or None
+    erp_keyin_all = bool(form_data.get("erp_keyin_all"))
     form.bargain_data = json.dumps(
         {"prices": prices, "tooling": tooling, "flags": flags,
-         "note": note, "erp_po_no": erp_po_no},
+         "note": note, "erp_po_no": erp_po_no,
+         "erp_keyin_all": erp_keyin_all},
         ensure_ascii=False,
     )
 
@@ -1118,7 +1175,90 @@ async def save_bargain(
 
     form.updated_at = datetime.utcnow()
     await db.commit()
+
+    # 自動將「售價成本分析表」PDF 輸出到 NAS 結案資料夾（不開窗，後台執行）
+    try:
+        await db.refresh(form)
+        out_path = _sale_cost_analysis_path(form)
+        await _build_sale_cost_analysis_pdf(form, db, out_path)
+        form.nas_folder = os.path.dirname(out_path)
+        await db.commit()
+    except Exception as e:
+        logging.getLogger(__name__).warning("售價成本分析表 PDF 產出失敗：%s", e)
+
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/close-npi")
+async def close_npi(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """採購結案 — 產出售價成本分析表 PDF 到 NAS + 狀態切到 CLOSED + 通知業務 / BU。"""
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (Role.PURCHASE, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅採購可結案")
+    if form.stage != NPIStage.NPI:
+        raise HTTPException(status_code=400, detail="需進入 NPI 階段")
+    if form.status not in (NPIFormStatus.NPI_PENDING_PURCHASE,):
+        raise HTTPException(status_code=400, detail="目前狀態不允許結案")
+
+    out_path = _sale_cost_analysis_path(form)
+    try:
+        await _build_sale_cost_analysis_pdf(form, db, out_path)
+    except Exception as e:
+        logging.getLogger(__name__).exception("結案 PDF 產出失敗")
+        raise HTTPException(status_code=500, detail=f"PDF 產出失敗：{e}")
+
+    form.nas_folder = os.path.dirname(out_path)
+    old = form.status
+    form.status = NPIFormStatus.CLOSED
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "CLOSE_NPI",
+                         old, NPIFormStatus.CLOSED,
+                         f"議價結案，PDF → {out_path}"))
+    await db.commit()
+    try:
+        await notif._notify_roles(
+            db, [Role.SALES, Role.BU],
+            f"【NPI 結案】{form.form_id} - 已產出售價成本分析表，請至 NAS 查看。",
+        )
+    except Exception:
+        pass
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+@router.get("/{form_id}/cost-analysis.pdf")
+async def download_sale_cost_analysis(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """售價成本分析表 PDF — 採購/BU/管理員。"""
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (Role.PURCHASE, *_BU_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    out_path = _sale_cost_analysis_path(form)
+    try:
+        await _build_sale_cost_analysis_pdf(form, db, out_path)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logging.getLogger(__name__).exception("售價成本分析表 PDF 產出失敗")
+        return HTMLResponse(
+            content=(
+                f"<html><body style='font-family:monospace;padding:20px;'>"
+                f"<h3>PDF 產出失敗</h3><pre>{tb}</pre></body></html>"
+            ),
+            status_code=500,
+        )
+    fname = os.path.basename(out_path)
+    return FileResponse(
+        out_path, media_type="application/pdf",
+        filename=fname,
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{urlquote(fname)}"},
+    )
 
 
 @router.get("/{form_id}/archive.pdf")
