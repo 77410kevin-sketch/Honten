@@ -1,0 +1,63 @@
+{
+  "form_id": "RFQ-20260418-008",
+  "customer_name": "Dynapack International Technology Corp.",
+  "product_name": "UPS 鉛金件",
+  "product_model": "DG110U",
+  "quoted_unit_price": 79.35,
+  "cost_analysis_note": null,
+  "bu_quote_note": "核准報價",
+  "quote_cost_data": {
+    "columns": [
+      {
+        "label": "IMG_3366.PNG",
+        "subtotal": 60,
+        "defect_amount": 3,
+        "overhead_amount": 4.2,
+        "qa_ship_amount": 1.8,
+        "tooling_cost": 3000,
+        "tooling_profit_rate": 0.15,
+        "tooling_profit_amount": 450,
+        "tooling_quote": 3450,
+        "cost_total": 69,
+        "profit_rate": 0.15,
+        "profit_amount": 10.35,
+        "quote": 79.35
+      },
+      {
+        "label": "IMG_3366.PNG",
+        "subtotal": 60,
+        "defect_amount": 3,
+        "overhead_amount": 4.2,
+        "qa_ship_amount": 1.8,
+        "tooling_cost": 28000,
+        "tooling_profit_rate": 0.15,
+        "tooling_profit_amount": 4200,
+        "tooling_quote": 32200,
+        "cost_total": 69,
+        "profit_rate": 0.15,
+        "profit_amount": 10.35,
+        "quote": 79.35
+      }
+    ],
+    "rows": [
+      {
+        "process": "CNC",
+        "prices": [
+          30,
+          30
+        ]
+      },
+      {
+        "process": "噴砂",
+        "prices": [
+          30,
+          30
+        ]
+      }
+    ],
+    "defect_rate": 0.05,
+    "overhead_rate": 0.07,
+    "qa_ship_rate": 0.03
+  },
+  "approved_at": "2026-04-23T14:36:30.122096"
+}
