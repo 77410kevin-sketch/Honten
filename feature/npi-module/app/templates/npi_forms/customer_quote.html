@@ -53,7 +53,7 @@
     <input type="radio" class="btn-check" name="currency" id="curNTD" autocomplete="off" checked>
     <label class="btn btn-outline-light" for="curNTD">NTD</label>
     <input type="radio" class="btn-check" name="currency" id="curUSD" autocomplete="off">
-    <label class="btn btn-outline-light" for="curUSD">USD (匯率 32)</label>
+    <label class="btn btn-outline-light" for="curUSD">USD (匯率 29.5)</label>
   </div>
   <span class="text-info small ms-3">
     <i class="bi bi-pencil-square me-1"></i>所有藍色虛線框（hover 顯示）均可點擊直接編輯；列印時框線自動隱藏
@@ -222,7 +222,7 @@
 
 <script>
 (function(){
-  const USD_RATE = 32;
+  const USD_RATE = 29.5;
   const labels = document.querySelectorAll('.currency-label');
   const cells  = document.querySelectorAll('.money');
   const termCur = document.querySelector('.term-currency');

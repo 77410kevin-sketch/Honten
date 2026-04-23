@@ -1696,6 +1696,11 @@
               <small class="text-muted">（推薦；關閉則每個製程各寄一封）</small>
             </label>
           </div>
+          <div class="alert alert-info small py-2 mb-0 mt-2">
+            <i class="bi bi-hand-index me-1"></i>
+            <strong>Tip：</strong>若已知某幾張圖的製程 / 供應商完全一致，可直接
+            <strong>拖曳其他圖紙到主圖區塊</strong>合併 → 這些圖會隨主圖的供應商設定一起寄出（一封信 N 個附件）。
+          </div>
         </div>
         {% if not suppliers %}
         <div class="alert alert-warning small">
@@ -1718,8 +1723,15 @@
         </div>
         {% for d in drawings %}
         {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
-        <div class="border rounded p-3 mb-3 drawing-block" data-drawing-id="{{ d.id }}">
+        <div class="border rounded p-3 mb-3 drawing-block"
+             data-drawing-id="{{ d.id }}"
+             data-drawing-idx="{{ loop.index }}"
+             data-drawing-name="{{ d.original_name }}"
+             draggable="true">
           <div class="d-flex align-items-center gap-3 mb-2">
+            <div class="drag-handle text-muted" style="cursor:grab;font-size:1.25rem" title="拖曳此圖到其他圖紙以合併">
+              <i class="bi bi-grip-vertical"></i>
+            </div>
             <div style="width:80px">
               {% if ext in ('png','jpg','jpeg','gif','webp') %}
               <a href="#" class="doc-preview" data-url="/npi-forms/doc/preview/{{ d.id }}"
@@ -1889,6 +1901,193 @@
       addRowToBlock(block); addRowToBlock(block);
     }
   });
+
+  // ──────────────────────────────────────────
+  // 拖曳合併：把其他圖紙拖到「主圖」區塊 →
+  // 該圖自動共用主圖的（材質 / MOQ / 製程 / 供應商）設定
+  // 送信時以 merge_mail 合併成同一封信（多張圖附件）
+  // ──────────────────────────────────────────
+  let draggingId = null;
+
+  function getBlock(id) {
+    return document.querySelector(`#dispatchModal .drawing-block[data-drawing-id="${id}"]`);
+  }
+  function isMerged(block) {
+    return block.dataset.mergedInto && block.dataset.mergedInto !== '';
+  }
+  function isTarget(block) {
+    return !!block.querySelector(':scope > .merged-chips');
+  }
+
+  function ensureMergedArea(targetBlock) {
+    let area = targetBlock.querySelector(':scope > .merged-chips');
+    if (!area) {
+      area = document.createElement('div');
+      area.className = 'merged-chips alert alert-success py-2 mb-2 small';
+      area.innerHTML = '<strong><i class="bi bi-paperclip me-1"></i>已合併以下圖紙（共用本圖的製程/供應商設定）：</strong><div class="mt-1 chip-list"></div>';
+      // 插到 row meta（material/MOQ）之後、table 之前
+      const table = targetBlock.querySelector('table');
+      if (table) targetBlock.insertBefore(area, table);
+      else targetBlock.appendChild(area);
+    }
+    return area;
+  }
+
+  function mergeInto(targetId, srcId) {
+    if (!targetId || !srcId || targetId === srcId) return;
+    const target = getBlock(targetId);
+    const src = getBlock(srcId);
+    if (!target || !src) return;
+    // 若來源本身已是主圖（有子合併），先一併移到新主圖
+    const srcMergedArea = src.querySelector(':scope > .merged-chips');
+    const carryIds = srcMergedArea
+      ? [...srcMergedArea.querySelectorAll('[data-merged-id]')].map(c => c.dataset.mergedId)
+      : [];
+    // 目標不能為已被合併中的圖
+    if (isMerged(target)) return;
+
+    // 隱藏來源
+    src.style.display = 'none';
+    src.dataset.mergedInto = targetId;
+
+    // 清空 src 原本的列，避免 display:none 下 <select required> 觸發驗證
+    const srcTbody0 = src.querySelector('.drawing-rows');
+    if (srcTbody0) srcTbody0.innerHTML = '';
+
+    // 在 target 加 chip
+    const area = ensureMergedArea(target);
+    const list = area.querySelector('.chip-list');
+    const srcIdx = src.dataset.drawingIdx || '?';
+    const srcName = src.dataset.drawingName || ('圖 #' + srcIdx);
+    const chip = document.createElement('span');
+    chip.className = 'badge bg-primary me-1 mt-1 py-2';
+    chip.dataset.mergedId = srcId;
+    chip.innerHTML = `<i class="bi bi-file-earmark-image me-1"></i>#${srcIdx} ${srcName}
+      <button type="button" class="btn-close btn-close-white ms-2 unmerge-btn"
+              style="font-size:.6rem;vertical-align:middle" aria-label="取消合併"></button>`;
+    list.appendChild(chip);
+
+    // 若 src 以前是主圖，把它的子合併也搬過來
+    carryIds.forEach(cid => {
+      const cblock = getBlock(cid);
+      if (cblock) cblock.dataset.mergedInto = targetId;
+      const cchip = srcMergedArea.querySelector(`[data-merged-id="${cid}"]`);
+      if (cchip) list.appendChild(cchip);
+    });
+    if (srcMergedArea) srcMergedArea.remove();
+
+    // 確保 merge_mail 勾起
+    const mm = document.getElementById('mergeMail');
+    if (mm && !mm.checked) mm.checked = true;
+  }
+
+  function unmergeChip(chip) {
+    const srcId = chip.dataset.mergedId;
+    const src = getBlock(srcId);
+    if (src) {
+      src.style.display = '';
+      delete src.dataset.mergedInto;
+      // 還原預設 2 列空白
+      const tbody = src.querySelector('.drawing-rows');
+      if (tbody && !tbody.querySelector('tr.dispatch-row')) {
+        addRowToBlock(src); addRowToBlock(src);
+      }
+    }
+    const area = chip.closest('.merged-chips');
+    chip.remove();
+    if (area && !area.querySelector('.badge')) area.remove();
+  }
+
+  // ── 拖曳事件 ──
+  document.querySelectorAll('#dispatchModal .drawing-block').forEach(block => {
+    block.addEventListener('dragstart', e => {
+      // 互動元素（input/select/button）起始拖曳則略過，避免誤觸
+      if (e.target.closest('input, select, textarea, button')) {
+        e.preventDefault();
+        return;
+      }
+      draggingId = block.dataset.drawingId;
+      block.classList.add('opacity-50');
+      try { e.dataTransfer.setData('text/plain', draggingId); } catch(_) {}
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    block.addEventListener('dragend', () => {
+      block.classList.remove('opacity-50');
+      document.querySelectorAll('#dispatchModal .drawing-block.drop-target').forEach(b => {
+        b.classList.remove('drop-target');
+        b.style.outline = '';
+      });
+      draggingId = null;
+    });
+    block.addEventListener('dragover', e => {
+      if (!draggingId || draggingId === block.dataset.drawingId) return;
+      if (isMerged(block)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      block.classList.add('drop-target');
+      block.style.outline = '2px dashed #198754';
+    });
+    block.addEventListener('dragleave', () => {
+      block.classList.remove('drop-target');
+      block.style.outline = '';
+    });
+    block.addEventListener('drop', e => {
+      e.preventDefault();
+      block.classList.remove('drop-target');
+      block.style.outline = '';
+      const srcId = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || draggingId;
+      mergeInto(block.dataset.drawingId, srcId);
+    });
+  });
+
+  // 點擊 chip 的 × → 取消合併
+  document.addEventListener('click', e => {
+    const x = e.target.closest('#dispatchModal .unmerge-btn');
+    if (x) {
+      e.preventDefault();
+      unmergeChip(x.closest('.badge'));
+    }
+  });
+
+  // ── 送出前：把合併來源的材質/MOQ/rows 同步為主圖內容 ──
+  const dispatchFormEl = document.querySelector('#dispatchModal form');
+  if (dispatchFormEl) {
+    dispatchFormEl.addEventListener('submit', () => {
+      document.querySelectorAll('#dispatchModal .merged-chips .badge[data-merged-id]').forEach(chip => {
+        const srcId = chip.dataset.mergedId;
+        const target = chip.closest('.drawing-block');
+        const src = getBlock(srcId);
+        if (!target || !src) return;
+        // 同步材質/MOQ
+        const tMat = target.querySelector('input[name=drawing_material]');
+        const tQty = target.querySelector('input[name=drawing_qty]');
+        const sMat = src.querySelector('input[name=drawing_material]');
+        const sQty = src.querySelector('input[name=drawing_qty]');
+        if (tMat && sMat) sMat.value = tMat.value;
+        if (tQty && sQty) sQty.value = tQty.value;
+        // 用主圖的有效列（製程+供應商都有）複製到 src，覆蓋掉原本的列
+        const srcTbody = src.querySelector('.drawing-rows');
+        if (!srcTbody) return;
+        srcTbody.innerHTML = '';
+        target.querySelectorAll('.dispatch-row').forEach(row => {
+          const procEl = row.querySelector('input[name=row_process]');
+          const supEl  = row.querySelector('select[name=row_supplier_id]');
+          const procV = procEl ? (procEl.value || '') : '';
+          const sidV  = supEl  ? (supEl.value  || '') : '';
+          if (!procV.trim() || !sidV) return;
+          const clone = row.cloneNode(true);
+          // 注意：cloneNode(true) 不會複製 select 的 currentValue / input 的 value property，需手動同步
+          const cHid = clone.querySelector('input.row-drawing-id');
+          if (cHid) cHid.value = srcId;
+          const cProc = clone.querySelector('input[name=row_process]');
+          if (cProc && procEl) cProc.value = procEl.value;
+          const cSup = clone.querySelector('select[name=row_supplier_id]');
+          if (cSup) cSup.value = supEl.value;
+          srcTbody.appendChild(clone);
+        });
+      });
+    });
+  }
 })();
 </script>
 {% endif %}
@@ -1976,6 +2175,56 @@
           每列為一個製程，工程/採購已填的供應商單價會自動帶入。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品包運</strong>，
           利潤由業務填寫，即產出每個機種的「最終報價單價」，全部一起送 BU 審核。
         </div>
+
+        {# ── 報價附件預覽（左右切換） ── #}
+        {% set quote_docs = form.documents | selectattr('invite_id_fk') | list %}
+        <div class="card border-secondary mb-3" id="quoteDocViewer">
+          <div class="card-header bg-light d-flex align-items-center gap-2 py-2 flex-wrap">
+            <i class="bi bi-images text-primary"></i>
+            <strong class="small">供應商報價附件</strong>
+            <span class="text-muted small" id="quoteDocCounter">
+              {% if quote_docs %}(1 / {{ quote_docs|length }}){% else %}(無附件){% endif %}
+            </span>
+            <div class="ms-auto d-flex align-items-center gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="quoteDocPrev"
+                      {% if quote_docs|length < 2 %}disabled{% endif %} title="上一張 (←)">
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="quoteDocNext"
+                      {% if quote_docs|length < 2 %}disabled{% endif %} title="下一張 (→)">
+                <i class="bi bi-chevron-right"></i>
+              </button>
+              <a href="#" target="_blank" class="btn btn-sm btn-outline-primary" id="quoteDocOpen"
+                 {% if not quote_docs %}style="display:none"{% endif %}>
+                <i class="bi bi-box-arrow-up-right me-1"></i>開新分頁
+              </a>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="quoteDocToggle"
+                      title="收合/展開">
+                <i class="bi bi-chevron-up"></i>
+              </button>
+            </div>
+          </div>
+          <div class="card-body p-0 bg-light position-relative" id="quoteDocBody"
+               style="height:320px;overflow:hidden">
+            {% if not quote_docs %}
+            <div class="d-flex align-items-center justify-content-center h-100 text-muted small">
+              <i class="bi bi-info-circle me-1"></i>目前尚無供應商報價附件
+            </div>
+            {% else %}
+            <iframe id="quoteDocFrame" class="w-100 h-100 border-0 bg-white d-none"></iframe>
+            <img id="quoteDocImg" class="d-none" alt=""
+                 style="max-width:100%;max-height:100%;display:block;margin:auto;position:absolute;inset:0">
+            {% endif %}
+          </div>
+          {% if quote_docs %}
+          <div class="card-footer py-2 small" id="quoteDocMeta">
+            <i class="bi bi-paperclip me-1"></i>
+            <strong id="quoteDocName">—</strong>
+            <span class="text-muted ms-2" id="quoteDocSupplier"></span>
+          </div>
+          {% endif %}
+        </div>
+
         <div class="d-flex gap-2 mb-2">
           <button type="button" id="addProcRow" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-plus"></i> 新增製程列
@@ -2075,6 +2324,90 @@
     </form>
   </div>
 </div>
+<script>
+// ── 報價附件預覽：左右切換 + 鍵盤方向鍵 ─────────
+(function() {
+  const modal = document.getElementById('submitQuoteBuModal');
+  if (!modal) return;
+  const docs = [
+    {% for d in form.documents if d.invite_id_fk %}
+    {% set inv = form.invites | selectattr('id', 'equalto', d.invite_id_fk) | first %}
+    {
+      id: {{ d.id }},
+      name: {{ d.original_name | tojson }},
+      ext: {{ (d.original_name.rsplit('.',1)[-1] | lower) | tojson }},
+      supplier: {{ ((inv.supplier.name if inv and inv.supplier else '—')) | tojson }},
+      process: {{ ((inv.process_name if inv and inv.process_name else '—')) | tojson }},
+      amount: {{ ((inv.quote_amount if inv and inv.quote_amount is not none else None)) | tojson }}
+    },
+    {% endfor %}
+  ];
+  if (!docs.length) return;
+
+  const imgEl = document.getElementById('quoteDocImg');
+  const frameEl = document.getElementById('quoteDocFrame');
+  const counter = document.getElementById('quoteDocCounter');
+  const nameEl = document.getElementById('quoteDocName');
+  const supEl  = document.getElementById('quoteDocSupplier');
+  const openA  = document.getElementById('quoteDocOpen');
+  const prevBtn = document.getElementById('quoteDocPrev');
+  const nextBtn = document.getElementById('quoteDocNext');
+  const toggleBtn = document.getElementById('quoteDocToggle');
+  const body = document.getElementById('quoteDocBody');
+
+  let idx = 0;
+  function render(i) {
+    idx = ((i % docs.length) + docs.length) % docs.length;
+    const d = docs[idx];
+    const url = '/npi-forms/doc/preview/' + d.id;
+    const isImg = ['png','jpg','jpeg','gif','webp','bmp'].indexOf(d.ext) >= 0;
+    if (isImg) {
+      frameEl.classList.add('d-none'); frameEl.src = '';
+      imgEl.classList.remove('d-none'); imgEl.src = url;
+    } else {
+      imgEl.classList.add('d-none'); imgEl.src = '';
+      frameEl.classList.remove('d-none'); frameEl.src = url;
+    }
+    counter.textContent = `(${idx+1} / ${docs.length})`;
+    nameEl.textContent = d.name;
+    const parts = [];
+    if (d.supplier && d.supplier !== '—') parts.push('供應商：' + d.supplier);
+    if (d.process  && d.process  !== '—') parts.push('製程：' + d.process);
+    if (d.amount !== null && d.amount !== undefined) parts.push('單價：' + d.amount);
+    supEl.textContent = parts.join(' · ');
+    openA.href = url;
+  }
+  prevBtn.addEventListener('click', () => render(idx - 1));
+  nextBtn.addEventListener('click', () => render(idx + 1));
+
+  // 展開/收合
+  let collapsed = false;
+  toggleBtn.addEventListener('click', () => {
+    collapsed = !collapsed;
+    body.style.display = collapsed ? 'none' : '';
+    toggleBtn.querySelector('i').className = collapsed ? 'bi bi-chevron-down' : 'bi bi-chevron-up';
+  });
+
+  // modal 開啟時渲染第一張
+  modal.addEventListener('shown.bs.modal', () => {
+    render(0);
+  });
+
+  // 鍵盤方向鍵（不干擾 input/textarea 輸入）
+  document.addEventListener('keydown', e => {
+    if (!modal.classList.contains('show')) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); render(idx - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); render(idx + 1); }
+  });
+
+  // modal 關閉時清空 iframe
+  modal.addEventListener('hidden.bs.modal', () => {
+    frameEl.src = ''; imgEl.src = '';
+  });
+})();
+</script>
 <script>
 (function() {
   const MAX_COLS = 8, MIN_COLS = 1, DEFAULT_COLS = 5;

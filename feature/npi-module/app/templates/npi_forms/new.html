@@ -4,32 +4,107 @@
 <div class="container py-4" style="max-width: 960px">
   <h4 class="mb-3"><i class="bi bi-plus-circle me-2 text-primary"></i>新建 NPI/RFQ 單（業務詢價）</h4>
 
-  {# ── 🧠 AI 智慧解析詢價信 ── #}
+  {# ── 🧠 AI 智慧解析詢價信（支援貼上截圖 / 拖曳 / 檔案） ── #}
   <div class="card shadow-sm mb-3 border-primary">
     <div class="card-header bg-primary text-white fw-semibold">
       <i class="bi bi-stars me-2"></i>🧠 智慧解析詢價信（AI 自動填欄位）
     </div>
     <div class="card-body">
       <p class="small text-muted mb-2">
-        上傳客戶寄來的詢價信（<strong>.txt / .pdf / .eml</strong>）或 <strong>截圖（.png / .jpg）</strong>，
-        AI 會自動擷取客戶、產品、規格、數量、期限等欄位填入下方表格，業務確認後再送出。
+        可 <strong>貼上截圖（Ctrl+V / ⌘V）</strong>、拖曳檔案，或點擊選擇。支援
+        <strong>.txt / .pdf / .eml / .png / .jpg</strong>，AI 會自動擷取客戶、產品、規格、數量、期限等欄位。
       </p>
-      <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
-        <label class="btn btn-outline-primary mb-0">
-          <i class="bi bi-upload me-1"></i>選擇詢價信檔案 / 截圖
-          <input type="file" id="aiInquiryFile" class="d-none"
-                 accept=".txt,.pdf,.eml,.msg,.png,.jpg,.jpeg,.gif,.webp,image/*">
-        </label>
-        <span class="file-picker-name text-muted small flex-grow-1">（尚未選擇）</span>
-        <button type="button" class="btn btn-primary" id="aiParseBtn">
+
+      <div id="aiDropZone"
+           class="border border-primary border-2 rounded-3 text-center p-3 mb-2"
+           style="border-style:dashed !important;background:#eef7ff;cursor:pointer;transition:.2s"
+           tabindex="0">
+        <div style="font-size:2rem;color:#2196f3">
+          <i class="bi bi-clipboard-check"></i>
+        </div>
+        <div class="fw-semibold mt-1">
+          拖曳檔案至此 · 點擊選擇 · 或 <kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>V</kbd> 貼上截圖
+        </div>
+        <div class="small text-muted mt-1">單檔最大 15MB</div>
+        <input type="file" id="aiInquiryFile" class="d-none"
+               accept=".txt,.pdf,.eml,.msg,.png,.jpg,.jpeg,.gif,.webp,image/*">
+      </div>
+
+      <div id="aiPreview" class="d-flex align-items-center gap-2 mb-2 p-2 border rounded bg-light" style="display:none !important">
+        <img id="aiPreviewImg" src="" alt="preview"
+             style="max-height:80px;max-width:160px;border-radius:4px;border:1px solid #dee2e6;display:none">
+        <div class="small flex-grow-1">
+          <div class="fw-semibold text-truncate" id="aiPreviewName" style="max-width:420px"></div>
+          <div class="text-muted" id="aiPreviewSize"></div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="aiClearBtn">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <div class="small flex-grow-1" id="aiStatus"></div>
+        <button type="button" class="btn btn-primary" id="aiParseBtn" disabled>
           <i class="bi bi-magic me-1"></i>解析並填入
         </button>
       </div>
-      <div id="aiStatus" class="small mt-2"></div>
     </div>
   </div>
 
   <form method="post" action="/npi-forms/new" enctype="multipart/form-data" id="npiForm">
+
+    {# ── 附件上傳（已移到智慧解析下方，支援拖曳） ── #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件上傳</div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">
+          送審時須至少包含【客戶詢價信】與【圖面】。可一次拖曳多個檔案批次上傳，再逐列選擇類別。
+        </p>
+
+        <div id="attach-drop"
+             class="border border-2 rounded-3 text-center p-3 mb-3"
+             style="border-style:dashed !important;border-color:#adb5bd;background:#f8f9fa;cursor:pointer;transition:.2s">
+          <i class="bi bi-cloud-arrow-up" style="font-size:1.8rem;color:#6c757d"></i>
+          <div class="fw-semibold mt-1">拖曳檔案至此（可多選）或點擊選擇</div>
+          <div class="small text-muted mt-1">每個檔案會新增一列，可分別設定類別</div>
+          <input type="file" id="attach-bulk" class="d-none" multiple>
+        </div>
+
+        <div id="attach-rows"></div>
+
+        <button type="button" id="add-attach" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-plus"></i>手動新增一列
+        </button>
+
+        {# 隱藏模板，cloneNode 用 #}
+        <template id="attach-row-tpl">
+          <div class="row g-2 mb-2 attach-row align-items-center">
+            <div class="col-md-3">
+              <select name="attach_categories" class="form-select">
+                <option selected>圖面</option>
+                <option>客戶詢價信</option>
+                <option>其它</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
+                <label class="btn btn-outline-secondary btn-sm mb-0">
+                  <i class="bi bi-paperclip me-1"></i>選擇檔案
+                  <input type="file" name="attach_files" class="d-none">
+                </label>
+                <span class="file-picker-name text-muted small">（尚未選擇）</span>
+              </div>
+            </div>
+            <div class="col-md-1">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-row">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div class="card shadow-sm mb-3">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-person-lines-fill me-2"></i>客戶資訊</div>
       <div class="card-body row g-3">
@@ -99,43 +174,6 @@
       </div>
     </div>
 
-    <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件上傳</div>
-      <div class="card-body">
-        <p class="small text-muted mb-3">
-          送審時須至少包含【客戶詢價信】與【圖面】。
-        </p>
-        <div id="attach-rows">
-          <div class="row g-2 mb-2 attach-row align-items-center">
-            <div class="col-md-3">
-              <select name="attach_categories" class="form-select">
-                <option selected>圖面</option>
-                <option>客戶詢價信</option>
-                <option>其它</option>
-              </select>
-            </div>
-            <div class="col-md-8">
-              <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
-                <label class="btn btn-outline-secondary btn-sm mb-0">
-                  <i class="bi bi-paperclip me-1"></i>選擇檔案
-                  <input type="file" name="attach_files" class="d-none">
-                </label>
-                <span class="file-picker-name text-muted small">（尚未選擇）</span>
-              </div>
-            </div>
-            <div class="col-md-1">
-              <button type="button" class="btn btn-sm btn-outline-danger remove-row">
-                <i class="bi bi-x"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-        <button type="button" id="add-attach" class="btn btn-sm btn-outline-primary">
-          <i class="bi bi-plus"></i>增加一筆附件
-        </button>
-      </div>
-    </div>
-
     <div class="d-flex justify-content-end gap-2">
       <a href="/npi-forms/" class="btn btn-outline-secondary">取消</a>
       <button class="btn btn-primary">儲存草稿</button>
@@ -144,79 +182,229 @@
 </div>
 
 <script>
-document.getElementById("add-attach").addEventListener("click", () => {
-  const first = document.querySelector(".attach-row");
-  const clone = first.cloneNode(true);
-  const fInput = clone.querySelector('input[type=file]');
-  if (fInput) fInput.value = "";
-  const nm = clone.querySelector('.file-picker-name');
-  if (nm) nm.textContent = '（尚未選擇）';
-  document.getElementById("attach-rows").appendChild(clone);
-});
-document.addEventListener("click", (e) => {
-  if (e.target.closest(".remove-row")) {
-    const rows = document.querySelectorAll(".attach-row");
-    if (rows.length > 1) e.target.closest(".attach-row").remove();
-  }
-});
-
-// ── 🧠 AI 智慧解析詢價信 ──
-document.getElementById("aiParseBtn").addEventListener("click", async () => {
-  const fileInput = document.getElementById("aiInquiryFile");
-  const status = document.getElementById("aiStatus");
-  const btn = document.getElementById("aiParseBtn");
-  if (!fileInput.files.length) {
-    status.innerHTML = '<span class="text-danger">請先選擇詢價信檔案</span>';
-    return;
-  }
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 解析中…';
-  status.innerHTML = '<span class="text-muted">AI 正在讀取內容並擷取欄位（約 2-5 秒）…</span>';
-
-  const fd = new FormData();
-  fd.append("inquiry_file", fileInput.files[0]);
-  try {
-    const resp = await fetch("/npi-forms/_parse-inquiry", { method: "POST", body: fd });
-    const j = await resp.json();
-    if (!resp.ok) throw new Error(j.detail || resp.statusText);
-    fillFields(j.data);
-    status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>解析完成！已自動填入欄位，請確認後送出。</span>';
-  } catch (err) {
-    status.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>' + err.message + '</span>';
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-magic me-1"></i>解析並填入';
-  }
-});
-
-function fillFields(data) {
-  const map = {
-    customer_name: data.customer_name,
-    customer_contact: data.customer_contact,
-    customer_email: data.customer_email,
-    product_name: data.product_name,
-    product_model: data.product_model,
-    spec_summary: data.spec_summary,
-    rfq_due_date: data.rfq_due_date,
-    sales_note: data.sales_note,
-  };
-  Object.entries(map).forEach(([k, v]) => {
-    if (v === null || v === undefined || v === "UNKNOWN") return;
-    const el = document.querySelector(`[name="${k}"]`);
-    if (el) {
-      el.value = v;
-      el.classList.add("border-primary"); // 標示被 AI 填入
-      setTimeout(() => el.classList.remove("border-primary"), 3000);
-    }
-  });
-  // 事業部 select
-  if (data.bu) {
-    const buSel = document.querySelector('[name="bu"]');
-    if (buSel) buSel.value = data.bu;
-  }
+// ══════════════════════════════════════════
+// 共用：檔案大小格式化
+// ══════════════════════════════════════════
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/1024/1024).toFixed(2) + ' MB';
 }
 
-// 客戶 datalist：選中客戶時自動填聯絡人/email/BU
+// ══════════════════════════════════════════
+// 🧠 AI 智慧解析 — 支援貼上 / 拖曳 / 檔案
+// ══════════════════════════════════════════
+(function() {
+  const zone   = document.getElementById('aiDropZone');
+  const input  = document.getElementById('aiInquiryFile');
+  const btn    = document.getElementById('aiParseBtn');
+  const status = document.getElementById('aiStatus');
+  const prev   = document.getElementById('aiPreview');
+  const prevImg= document.getElementById('aiPreviewImg');
+  const prevName = document.getElementById('aiPreviewName');
+  const prevSize = document.getElementById('aiPreviewSize');
+  const clearBtn = document.getElementById('aiClearBtn');
+
+  function setFile(f) {
+    if (!f) return;
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    input.files = dt.files;
+    prev.style.display = '';
+    prevName.textContent = f.name;
+    prevSize.textContent = '（' + fmtSize(f.size) + ' · ' + (f.type || '未知類型') + '）';
+    if (f.type && f.type.startsWith('image/')) {
+      prevImg.src = URL.createObjectURL(f);
+      prevImg.style.display = '';
+    } else {
+      prevImg.style.display = 'none';
+    }
+    btn.disabled = false;
+    status.innerHTML = '';
+  }
+
+  function clearFile() {
+    input.value = '';
+    prev.style.display = 'none';
+    prevImg.src = '';
+    btn.disabled = true;
+    status.innerHTML = '';
+  }
+
+  // 點擊 / 鍵盤選檔
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener('change', (e) => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+
+  // 拖曳
+  ['dragover', 'dragenter'].forEach(ev =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.style.background = '#d0e9fa'; })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    zone.addEventListener(ev, (e) => { e.preventDefault(); zone.style.background = '#eef7ff'; })
+  );
+  zone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+
+  // 貼上（整頁監聽，截圖貼任何地方都收到）
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        const raw = it.getAsFile();
+        if (!raw) continue;
+        const ext = (raw.type.split('/')[1] || 'png').split(';')[0];
+        const ts  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const f   = new File([raw], `clipboard-${ts}.${ext}`, { type: raw.type });
+        setFile(f);
+        status.innerHTML = '<span class="text-info"><i class="bi bi-clipboard-check me-1"></i>已從剪貼簿貼上截圖</span>';
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  clearBtn.addEventListener('click', clearFile);
+
+  btn.addEventListener('click', async () => {
+    if (!input.files.length) { status.innerHTML = '<span class="text-danger">請先選擇或貼上檔案</span>'; return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>AI 解析中…';
+    status.innerHTML = '<span class="text-muted">AI 正在讀取內容並擷取欄位（約 2-5 秒）…</span>';
+
+    const fd = new FormData();
+    fd.append('inquiry_file', input.files[0]);
+    try {
+      const resp = await fetch('/npi-forms/_parse-inquiry', { method: 'POST', body: fd });
+      const j = await resp.json();
+      if (!resp.ok) throw new Error(j.detail || resp.statusText);
+      fillFields(j.data);
+      status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>解析完成！已自動填入欄位，請確認後送出。</span>';
+    } catch (err) {
+      status.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>' + err.message + '</span>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-magic me-1"></i>解析並填入';
+    }
+  });
+
+  function fillFields(data) {
+    const map = {
+      customer_name: data.customer_name,
+      customer_contact: data.customer_contact,
+      customer_email: data.customer_email,
+      product_name: data.product_name,
+      product_model: data.product_model,
+      spec_summary: data.spec_summary,
+      rfq_due_date: data.rfq_due_date,
+      sales_note: data.sales_note,
+    };
+    Object.entries(map).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === 'UNKNOWN') return;
+      const el = document.querySelector(`[name="${k}"]`);
+      if (el) {
+        el.value = v;
+        el.classList.add('border-primary');
+        setTimeout(() => el.classList.remove('border-primary'), 3000);
+      }
+    });
+    if (data.bu) {
+      const buSel = document.querySelector('[name="bu"]');
+      if (buSel) buSel.value = data.bu;
+    }
+  }
+})();
+
+// ══════════════════════════════════════════
+// 📎 附件上傳 — 支援批次拖曳
+// ══════════════════════════════════════════
+(function() {
+  const dropZone = document.getElementById('attach-drop');
+  const bulkInp  = document.getElementById('attach-bulk');
+  const rowsWrap = document.getElementById('attach-rows');
+  const tpl      = document.getElementById('attach-row-tpl');
+
+  // 依副檔名猜類別
+  function guessCategory(name) {
+    const n = (name || '').toLowerCase();
+    if (/\.(pdf|dwg|dxf|step|stp|igs|iges)$/.test(n)) return '圖面';
+    if (/(inquiry|rfq|詢價|報價|quote)/.test(n)) return '客戶詢價信';
+    return '圖面';
+  }
+
+  function addRow(file) {
+    const node = tpl.content.cloneNode(true);
+    const row = node.querySelector('.attach-row');
+    const fInput = row.querySelector('input[type=file]');
+    const nameEl = row.querySelector('.file-picker-name');
+    const sel    = row.querySelector('select[name=attach_categories]');
+
+    if (file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fInput.files = dt.files;
+      nameEl.textContent = file.name + '（' + fmtSize(file.size) + '）';
+      nameEl.classList.remove('text-muted');
+      const g = guessCategory(file.name);
+      [...sel.options].forEach(o => { if (o.value === g) o.selected = true; });
+    }
+    rowsWrap.appendChild(row);
+  }
+
+  function addFiles(files) {
+    [...files].forEach(f => addRow(f));
+  }
+
+  // 初始預設一列（無檔案）
+  addRow(null);
+
+  // 點擊拖曳區 → 開檔案選擇
+  dropZone.addEventListener('click', () => bulkInp.click());
+  bulkInp.addEventListener('change', (e) => {
+    if (e.target.files.length) { addFiles(e.target.files); bulkInp.value = ''; }
+  });
+
+  // 拖曳
+  ['dragover', 'dragenter'].forEach(ev =>
+    dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.style.background = '#e9ecef'; dropZone.style.borderColor = '#0d6efd'; })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.style.background = '#f8f9fa'; dropZone.style.borderColor = '#adb5bd'; })
+  );
+  dropZone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+
+  // 手動新增
+  document.getElementById('add-attach').addEventListener('click', () => addRow(null));
+
+  // 刪除一列
+  rowsWrap.addEventListener('click', (e) => {
+    const btn = e.target.closest('.remove-row');
+    if (!btn) return;
+    const rows = rowsWrap.querySelectorAll('.attach-row');
+    if (rows.length > 1) btn.closest('.attach-row').remove();
+    else {
+      // 最後一列：清空但保留
+      const row = btn.closest('.attach-row');
+      const fInput = row.querySelector('input[type=file]');
+      const nameEl = row.querySelector('.file-picker-name');
+      fInput.value = '';
+      nameEl.textContent = '（尚未選擇）';
+      nameEl.classList.add('text-muted');
+    }
+  });
+})();
+
+// ══════════════════════════════════════════
+// 客戶 datalist 自動補欄位
+// ══════════════════════════════════════════
 (function(){
   const nameInp = document.getElementById('customerName');
   const listEl = document.getElementById('customerList');
@@ -224,11 +412,8 @@ function fillFields(data) {
   nameInp.addEventListener('change', () => {
     const opt = [...listEl.options].find(o => o.value === nameInp.value);
     if (!opt) return;
-    const fill = (id, attr) => {
-      const el = document.getElementById(id) || document.querySelector(`[name="${id}"]`);
-      if (el && !el.value) el.value = opt.dataset[attr] || '';
-    };
-    fill('customerContact', 'contact');
+    const contactEl = document.getElementById('customerContact');
+    if (contactEl && !contactEl.value) contactEl.value = opt.dataset.contact || '';
     const emailEl = document.querySelector('[name="customer_email"]');
     if (emailEl && !emailEl.value) emailEl.value = opt.dataset.email || '';
     const buSel = document.querySelector('[name="bu"]');
