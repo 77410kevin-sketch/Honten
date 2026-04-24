@@ -8,3 +8,6 @@ itsdangerous==2.2.0
 aiofiles==24.1.0
 reportlab
 Pillow
+python-dotenv
+anthropic
+httpx
