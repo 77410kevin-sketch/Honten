@@ -1132,23 +1132,21 @@
           // 呼叫渲染
           renderCostTable();
 
-          // 工程：新增製程
-          function addProcessRow() {
+          // 掛到 window，讓 onclick 可以呼叫
+          window.addProcessRow = function() {
             const name = document.getElementById('newProcName')?.value?.trim();
             if (!name) { alert('請填寫製程名稱'); return; }
             const priceInputs = document.querySelectorAll('.new-proc-price');
             const prices = Array.from(priceInputs).map(i => parseFloat(i.value) || null);
             editData.rows.push({ process: name, prices });
             renderCostTable();
-          }
-          // 工程：新增供應商欄
-          function addSupplierCol() {
+          };
+          window.addSupplierCol = function() {
             editData.columns.push({ label: '新供應商', subtotal: 0, cost_total: 0, quote: 0 });
             editData.rows.forEach(r => r.prices.push(null));
             renderCostTable();
-          }
-          // 工程：儲存成本表
-          async function saveCostData() {
+          };
+          window.saveCostData = async function() {
             const btn = document.getElementById('saveCostDataBtn');
             const orig = btn.innerHTML;
             btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>儲存中…';
@@ -1166,7 +1164,7 @@
               alert('儲存失敗：' + e.message);
               btn.disabled = false; btn.innerHTML = orig;
             }
-          }
+          };
 
           // 工程模式：渲染後加儲存按鈕
           if (engView) {
