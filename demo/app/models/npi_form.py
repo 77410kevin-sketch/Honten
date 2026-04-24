@@ -55,6 +55,7 @@ class NPIForm(Base):
     quote_cost_data  = Column(Text, nullable=True)   # 業務試算 JSON（明細/管銷/毛利/建議售價）
     quoted_unit_price= Column(Float, nullable=True)  # 業務決定給客戶的報價單價
     bu_quote_note    = Column(Text, nullable=True)   # BU 對報價的核准/退回評語
+    bargain_data     = Column(Text, nullable=True)   # 採購議價覆寫 JSON（prices/tooling/note）
     selected_quote_supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
 
     # NPI 階段（ERP 模具請購單）
@@ -63,6 +64,8 @@ class NPIForm(Base):
     mould_cost_est   = Column(Float, nullable=True)  # 工程估算成本
     mould_cost_final = Column(Float, nullable=True)  # 採購議價後實際成本
     purchase_note    = Column(Text, nullable=True)   # 採購議價備註
+    t1_plan_data     = Column(Text, nullable=True)   # 每張圖客戶 T1 試模日期+備註 JSON
+    eng_process_data = Column(Text, nullable=True)   # NPI 工程填寫：{process_name:{part_no, need_routing}} JSON
     nas_folder       = Column(String(300), nullable=True)
 
     # 退回控制
@@ -97,6 +100,13 @@ class NPISupplierInvite(Base):
     form_id_fk     = Column(Integer, ForeignKey("npi_forms.id"), nullable=False)
     supplier_id    = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
 
+    # 工程派發時填寫：每列 = 一個製程 / 一家供應商
+    process_name       = Column(String(100), nullable=True)   # 例：CNC 加工、表面處理
+    material           = Column(String(100), nullable=True)   # 例：SUS304、鋁 6061
+    qty                = Column(Integer, nullable=True)       # 派發數量
+    expected_lead_days = Column(Integer, nullable=True)       # 工程期望工作天
+    drawing_doc_id     = Column(Integer, ForeignKey("npi_documents.id"), nullable=True)  # 對應圖面（null=共用/所有圖）
+
     invited_at     = Column(DateTime, default=datetime.utcnow)
     first_sent_at  = Column(DateTime, nullable=True)    # 第一次寄信時間
     last_reminder_at = Column(DateTime, nullable=True)  # 最近一次跟催時間
@@ -104,12 +114,14 @@ class NPISupplierInvite(Base):
 
     replied_at     = Column(DateTime, nullable=True)
     quote_amount   = Column(Float, nullable=True)
+    tooling_cost   = Column(Float, nullable=True)       # 模治具費用（獨立計價，不計入單價）
     lead_time_days = Column(Integer, nullable=True)
     quote_comment  = Column(Text, nullable=True)
     is_selected    = Column(Boolean, default=False)     # NPI 最終選用
 
     form           = relationship("NPIForm", back_populates="invites")
     supplier       = relationship("Supplier", foreign_keys=[supplier_id])
+    drawing        = relationship("NPIDocument", foreign_keys=[drawing_doc_id])
 
 
 class NPIDocument(Base):
