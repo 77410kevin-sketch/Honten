@@ -987,6 +987,24 @@ async def save_t1_plan(
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
+@router.post("/{form_id}/save-cost-data")
+async def save_cost_data(
+    form_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """工程師直接編輯成本表（新增/修改製程、供應商）並儲存 quote_cost_data。"""
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (*_ENG_ROLES, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    body = await request.json()
+    form.quote_cost_data = json.dumps(body, ensure_ascii=False)
+    form.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/{form_id}/submit-mould-requisition")
 async def submit_mould_requisition(
     form_id: str,
