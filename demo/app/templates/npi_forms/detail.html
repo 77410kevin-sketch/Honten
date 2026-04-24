@@ -665,46 +665,20 @@
             const defect = ((data.defect_rate||0)*100).toFixed(1);
             const oh = ((data.overhead_rate||0)*100).toFixed(1);
             const qa = ((data.qa_ship_rate||0)*100).toFixed(1);
-            // 工程可編輯的 cost data（本地副本）
-            let editData = JSON.parse(JSON.stringify(data));
-
-            function renderCostTable() {
-              const eCols = editData.columns || [];
-              const eRows = editData.rows || [];
-              const eSelIdx = editData.selected_col_idx;
-              const eDefect = ((editData.defect_rate||0)*100).toFixed(1);
-              const eOh = ((editData.overhead_rate||0)*100).toFixed(1);
-              const eQa = ((editData.qa_ship_rate||0)*100).toFixed(1);
-
-              let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="min-width:500px">';
+            let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="min-width:500px">';
               html += '<thead class="table-light"><tr>';
               html += '<th style="min-width:90px">項目 / 製程</th>';
               if (engView || buView || pcView) html += '<th style="min-width:110px">供應商</th>';
               if (buView || pcView) html += '<th style="width:120px;white-space:nowrap">廠內料號</th>';
-              eCols.forEach((c, i) => {
-                const badge = (i === eSelIdx) ? ' <span class="badge bg-warning text-dark">採用</span>' : '';
-                const full = c.label || ('機種 '+(i+1));
+              cols.forEach((c, i) => {
+                const badge = (i === selIdx) ? ' <span class="badge bg-warning text-dark">採用</span>' : '';
+                const full = c.label || ('方案 '+(i+1));
                 const short = full.length > 20 ? full.slice(0,18)+'…' : full;
-                if (engView) {
-                  html += `<th class="text-center" style="min-width:120px" title="${full}">
-                    <div class="d-flex align-items-center gap-1">
-                      <input type="text" class="form-control form-control-sm text-center flex-grow-1"
-                             value="${full}"
-                             onchange="editData.columns[${i}].label=this.value"
-                             placeholder="機種名稱">
-                      <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 flex-shrink-0"
-                              onclick="removeCol(${i})" title="刪除此機種欄">✕</button>
-                    </div>${badge}</th>`;
-                } else {
-                  html += `<th class="text-center" style="min-width:90px" title="${full}">${short}${badge}</th>`;
-                }
+                html += `<th class="text-center" style="min-width:90px" title="${full}">${short}${badge}</th>`;
               });
               if (engView) {
-                html += `<th class="text-center" style="width:60px">
-                  <button type="button" class="btn btn-outline-success btn-sm py-0 px-1 w-100" title="新增機種成本欄"
-                          onclick="addModelCol()">＋機種</button></th>`;
                 html += '<th class="text-end" style="width:100px;white-space:nowrap">站別模治具</th>';
-                html += '<th style="width:120px;white-space:nowrap">模具料號</th>';
+                html += '<th style="width:130px;white-space:nowrap">模具料號</th>';
               }
               if (buView || pcView) {
                 html += '<th class="text-end" style="width:110px;white-space:nowrap">站別模治具</th>';
@@ -712,21 +686,11 @@
               }
               html += '</tr></thead><tbody>';
 
-              eRows.forEach((r, rowIdx) => {
+              rows.forEach((r, rowIdx) => {
                 const procName = r.process || '';
                 const saved = engProcMap[procName] || {};
                 html += `<tr>`;
-                if (engView) {
-                  html += `<td>
-                    <input type="text" class="form-control form-control-sm"
-                           value="${procName.replace(/"/g,'&quot;')}"
-                           onchange="editData.rows[${rowIdx}].process=this.value"
-                           placeholder="製程名稱">
-                    <input type="hidden" name="process_name" form="engProcForm" value="${procName.replace(/"/g,'&quot;')}">
-                  </td>`;
-                } else {
-                  html += `<td style="white-space:nowrap">${procName}</td>`;
-                }
+                html += `<td style="white-space:nowrap">${procName}</td>`;
                 if (engView || buView || pcView) html += `<td class="small text-muted" style="white-space:normal;word-break:break-word">${procSupplier[procName]||'—'}</td>`;
                 if (buView || pcView) {
                   const pn = (saved.part_no || '').replace(/"/g,'&quot;');
@@ -755,13 +719,6 @@
                         ${flag?renderFlagBadge(flag):''}
                       </td>`;
                     }
-                  } else if (engView) {
-                    html += `<td class="text-end">
-                      <input type="number" step="0.01" class="form-control form-control-sm text-end"
-                             value="${p ?? ''}"
-                             onchange="editData.rows[${rowIdx}].prices[${ci}]=parseFloat(this.value)||null"
-                             placeholder="—">
-                    </td>`;
                   } else {
                     if (p == null) {
                       html += `<td class="text-end">—</td>`;
@@ -827,33 +784,15 @@
                   const tBadge = tpn ? `<span class="badge bg-info-subtle text-info">${tpn}</span>` : '<span class="text-muted">—</span>';
                   html += `<td>${tBadge}</td>`;
                 }
-                if (engView) {
-                  html += `<td>
-                    <button type="button" class="btn btn-outline-danger btn-sm py-0 w-100"
-                            onclick="removeRow(${rowIdx})" title="刪除此製程列">✕ 刪除</button>
-                  </td>`;
-                }
                 html += '</tr>';
               });
-
-              // 工程：新增製程列
-              if (engView) {
-                const newColCount = eCols.length;
-                html += `<tr class="table-success">
-                  <td><input type="text" id="newProcName" class="form-control form-control-sm" placeholder="新製程名稱"></td>
-                  <td class="text-muted small">—</td>
-                  ${Array(newColCount).fill('<td><input type="number" step="0.01" class="new-proc-price form-control form-control-sm text-end" placeholder="—"></td>').join('')}
-                  <td></td><td><input type="text" id="newProcToolPn" class="form-control form-control-sm" placeholder="模具料號"></td>
-                  <td><button type="button" class="btn btn-success btn-sm w-100" onclick="addProcessRow()">＋ 新增製程</button></td>
-                </tr>`;
-              }
 
               html += '</tbody><tfoot>';
               // footer
               const footLabelSpan = engView ? 3 : ((buView || pcView) ? 3 : 1);
             const fmtRow = (label, key, klass) => {
               let h = `<tr class="${klass||''}"><th class="text-start" colspan="${footLabelSpan}">${label}</th>`;
-              eCols.forEach(c => h += `<td class="text-end">${c[key]!=null?(typeof c[key]==='number'?c[key].toFixed(2):c[key]):'—'}</td>`);
+              cols.forEach(c => h += `<td class="text-end">${c[key]!=null?(typeof c[key]==='number'?c[key].toFixed(2):c[key]):'—'}</td>`);
               if (engView || buView || pcView) h += '<td></td><td></td>';
               h += '</tr>';
               return h;
@@ -861,19 +800,19 @@
             // 採購視圖特製：製程成本小計可被即時覆寫（id="pc-sub-${ci}"），送出時由 JS 計算
             const fmtRowPc = (label, ids, klass) => {
               let h = `<tr class="${klass||''}"><th class="text-start" colspan="${footLabelSpan}">${label}</th>`;
-              eCols.forEach((c, ci) => h += `<td class="text-end" id="${ids[ci]}">—</td>`);
+              cols.forEach((c, ci) => h += `<td class="text-end" id="${ids[ci]}">—</td>`);
               h += '<td></td><td></td></tr>';
               return h;
             };
             if (pcView) {
-              html += fmtRowPc('製程成本小計', eCols.map((c,i)=>`pc-sub-${i}`), 'table-secondary fw-semibold');
-              html += fmtRowPc(`不良率 (${defect}%)`, eCols.map((c,i)=>`pc-defect-${i}`));
-              html += fmtRowPc(`管銷 (${oh}%)`, eCols.map((c,i)=>`pc-oh-${i}`));
-              html += fmtRowPc(`品包運 (${qa}%)`, eCols.map((c,i)=>`pc-qa-${i}`));
-              html += fmtRowPc('成本合計（不含模治具）', eCols.map((c,i)=>`pc-cost-${i}`), 'table-light fw-bold');
+              html += fmtRowPc('製程成本小計', cols.map((c,i)=>`pc-sub-${i}`), 'table-secondary fw-semibold');
+              html += fmtRowPc(`不良率 (${defect}%)`, cols.map((c,i)=>`pc-defect-${i}`));
+              html += fmtRowPc(`管銷 (${oh}%)`, cols.map((c,i)=>`pc-oh-${i}`));
+              html += fmtRowPc(`品包運 (${qa}%)`, cols.map((c,i)=>`pc-qa-${i}`));
+              html += fmtRowPc('成本合計（不含模治具）', cols.map((c,i)=>`pc-cost-${i}`), 'table-light fw-bold');
               // ERP 回 keyin 提醒 — 單一勾選（提醒所有單價已回 keyin 至 ERP）
               const keyinAll = (bargain && (bargain.erp_keyin_all === true || bargain.erp_keyin_all === 'true')) ? 'checked' : '';
-              const totalCells = footLabelSpan + eCols.length + 2;
+              const totalCells = footLabelSpan + cols.length + 2;
               html += `<tr class="table-info">
                 <td colspan="${totalCells}">
                   <div class="form-check mb-0">
@@ -896,7 +835,7 @@
               html += fmtRow('成本合計（不含模治具）', 'cost_total', 'table-light fw-bold');
               // 利潤 — 每欄獨立 %（顯示 rate + amount）
               let profitRow = `<tr><th class="text-start" colspan="${footLabelSpan}">利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small></th>`;
-              eCols.forEach(c => {
+              cols.forEach(c => {
                 let rate = c.profit_rate;
                 if (rate == null && data.profit_rate != null) rate = data.profit_rate;
                 let amt = c.profit_amount;
@@ -919,9 +858,9 @@
                 const rawOh     = data.overhead_rate || 0;
                 const rawQa     = data.qa_ship_rate || 0;
                 const newSubs = [], newCosts = [], newProfitRates = [];
-                eCols.forEach((c, ci) => {
+                cols.forEach((c, ci) => {
                   let s = 0;
-                  eRows.forEach((r, ri) => {
+                  rows.forEach((r, ri) => {
                     const orig = (r.prices || [])[ci];
                     if (orig == null) return;
                     const key = `r${ri}_c${ci}`;
@@ -950,7 +889,7 @@
                 html += mkRow('議價後成本合計（不含模治具）', newCosts, v => v.toFixed(2), 'table-info fw-semibold');
                 html += mkRow('議價後利潤%（鎖定原報價）',
                   newProfitRates.map((v, i) => {
-                    const orig = (eCols[i].profit_rate || 0);
+                    const orig = (cols[i].profit_rate || 0);
                     const diff = v - orig;
                     const arrow = diff > 0 ? ' ↑' : (diff < 0 ? ' ↓' : '');
                     return { r: v, diff: diff, arrow: arrow };
@@ -962,12 +901,12 @@
             }
             // 模治具費用 — 工程/採購視圖已於每列顯示「站別模治具」，footer 不再重複
             let hasTooling = false;
-            eCols.forEach(c => { if (c.tooling_cost && c.tooling_cost > 0) hasTooling = true; });
+            cols.forEach(c => { if (c.tooling_cost && c.tooling_cost > 0) hasTooling = true; });
             if (hasTooling && !engView && !pcView) {
               html += fmtRow('模治具成本（供應商加總）', 'tooling_cost', 'table-info');
               if (!engView) {
                 let tProfitRow = `<tr class="table-info"><th class="text-start" colspan="${footLabelSpan}">模治具利潤 <small class="text-muted fw-normal">（每欄獨立 %）</small></th>`;
-                eCols.forEach(c => {
+                cols.forEach(c => {
                   let rate = c.tooling_profit_rate;
                   if (rate == null) rate = c.profit_rate;
                   let amt = c.tooling_profit_amount;
@@ -991,16 +930,16 @@
                     return h;
                   };
                   // 以製程名匯總採購議價覆寫總值
-                  const newToolSums = eCols.map((c, ci) => {
+                  const newToolSums = cols.map((c, ci) => {
                     const orig = c.tooling_cost || 0;
                     let sum = 0, hit = false;
                     Object.keys(bargain.tooling || {}).forEach(k => {
                       const v = parseFloat((bargain.tooling || {})[k]);
                       if (!isNaN(v)) { sum += v; hit = true; }
                     });
-                    return hit ? (sum / Math.max(eCols.length, 1)) : orig;
+                    return hit ? (sum / Math.max(cols.length, 1)) : orig;
                   });
-                  const newToolProfitRates = eCols.map((c, ci) => {
+                  const newToolProfitRates = cols.map((c, ci) => {
                     const tq = c.tooling_quote != null ? c.tooling_quote
                               : (c.tooling_cost || 0) * (1 + (c.tooling_profit_rate || c.profit_rate || 0));
                     const nc = newToolSums[ci];
@@ -1010,7 +949,7 @@
                                         v => v.toFixed(2), 'table-info');
                   html += mkToolingRow('議價後模治具利潤%',
                     newToolProfitRates.map((v, i) => {
-                      const orig = (eCols[i].tooling_profit_rate || eCols[i].profit_rate || 0);
+                      const orig = (cols[i].tooling_profit_rate || cols[i].profit_rate || 0);
                       const diff = v - orig;
                       const arrow = diff > 0 ? ' ↑' : (diff < 0 ? ' ↓' : '');
                       return { r: v, diff, arrow };
@@ -1034,7 +973,7 @@
               };
               const effectivePrice = (rowIdx, colIdx) => {
                 const key = `r${rowIdx}_c${colIdx}`;
-                const orig = (eRows[rowIdx].prices || [])[colIdx];
+                const orig = (rows[rowIdx].prices || [])[colIdx];
                 const flag = getFlag(key);
                 // no_bargain / no_room → 用原價；confirmed 或 空：用輸入值或原價
                 if (flag === 'no_bargain' || flag === 'no_room') {
@@ -1046,9 +985,9 @@
                 return (orig != null) ? parseFloat(orig) : 0;
               };
               const recompute = () => {
-                eCols.forEach((c, ci) => {
+                cols.forEach((c, ci) => {
                   let sub = 0;
-                  eRows.forEach((r, ri) => { sub += effectivePrice(ri, ci); });
+                  rows.forEach((r, ri) => { sub += effectivePrice(ri, ci); });
                   const defect = sub * defectR;
                   const oh     = sub * ohR;
                   const qa     = sub * qaR;
@@ -1111,8 +1050,8 @@
                 const box = document.getElementById('pcConfirmedUploadBox');
                 if (!box) return;
                 const items = [];
-                eRows.forEach((r, ri) => {
-                  eCols.forEach((c, ci) => {
+                rows.forEach((r, ri) => {
+                  cols.forEach((c, ci) => {
                     const key = `r${ri}_c${ci}`;
                     if (getFlag(key) === 'confirmed') {
                       items.push({ key, label: `${r.process || '—'} · ${c.label || '方案'+(ci+1)}` });
@@ -1136,66 +1075,7 @@
               }
               recompute();
             }
-            return html;
-          } // end renderCostTable
-
-          // 呼叫渲染
-          renderCostTable();
-
-          // 掛到 window，讓 onclick 可以呼叫
-          window.addProcessRow = function() {
-            const name = document.getElementById('newProcName')?.value?.trim();
-            if (!name) { alert('請填寫製程名稱'); return; }
-            const priceInputs = document.querySelectorAll('.new-proc-price');
-            const prices = Array.from(priceInputs).map(i => parseFloat(i.value) || null);
-            editData.rows.push({ process: name, prices });
-            renderCostTable();
-          };
-          window.addModelCol = function() {
-            editData.columns.push({ label: '新機種', subtotal: 0, cost_total: 0, quote: 0 });
-            editData.rows.forEach(r => r.prices.push(null));
-            renderCostTable();
-          };
-          window.removeCol = function(ci) {
-            if (editData.columns.length <= 1) { alert('至少需保留一個機種欄'); return; }
-            editData.columns.splice(ci, 1);
-            editData.rows.forEach(r => { if (r.prices) r.prices.splice(ci, 1); });
-            renderCostTable();
-          };
-          window.removeRow = function(ri) {
-            editData.rows.splice(ri, 1);
-            renderCostTable();
-          };
-          window.saveCostData = async function() {
-            const btn = document.getElementById('saveCostDataBtn');
-            const orig = btn.innerHTML;
-            btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>儲存中…';
-            try {
-              const resp = await fetch(`/npi-forms/{{ form.form_id }}/save-cost-data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(editData),
-              });
-              if (!resp.ok) throw new Error((await resp.json()).detail || '儲存失敗');
-              btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>已儲存';
-              btn.className = 'btn btn-success btn-sm mt-2';
-              setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; btn.className = 'btn btn-primary btn-sm mt-2'; }, 2000);
-            } catch(e) {
-              alert('儲存失敗：' + e.message);
-              btn.disabled = false; btn.innerHTML = orig;
-            }
-          };
-
-          // 工程模式：渲染後加儲存按鈕
-          if (engView) {
-            const saveBtn = document.createElement('div');
-            saveBtn.className = 'text-end mt-2';
-            saveBtn.innerHTML = `<button id="saveCostDataBtn" type="button" class="btn btn-primary btn-sm mt-2" onclick="saveCostData()">
-              <i class="bi bi-save me-1"></i>儲存廠內料號 / 途程
-            </button>`;
-            target.after(saveBtn);
-          }
-          return;
+            return;
           }
           // 舊 schema（items）— 向下相容
           if (data.items && data.items.length) {
