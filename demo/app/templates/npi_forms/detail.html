@@ -670,26 +670,28 @@
             const defect = ((data.defect_rate||0)*100).toFixed(1);
             const oh = ((data.overhead_rate||0)*100).toFixed(1);
             const qa = ((data.qa_ship_rate||0)*100).toFixed(1);
-            let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
+            let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="min-width:600px">';
             html += '<thead class="table-light"><tr>';
             if (engView) {
-              html += '<th class="text-start" style="width:120px">廠內料號</th>';
-              html += '<th class="text-center" style="width:70px">走途程</th>';
+              html += '<th style="width:130px;white-space:nowrap">廠內料號</th>';
+              html += '<th class="text-center" style="width:60px">走途程</th>';
             }
-            html += '<th class="text-start">項目 / 製程</th>';
-            if (engView || buView || pcView) html += '<th class="text-start">供應商</th>';
-            if (buView || pcView) html += '<th class="text-start" style="width:120px">廠內料號</th>';
+            html += '<th style="width:100px;white-space:nowrap">項目 / 製程</th>';
+            if (engView || buView || pcView) html += '<th style="min-width:120px">供應商</th>';
+            if (buView || pcView) html += '<th style="width:120px;white-space:nowrap">廠內料號</th>';
             cols.forEach((c, i) => {
               const badge = (i === selIdx) ? ' <span class="badge bg-warning text-dark">採用</span>' : '';
-              html += `<th class="text-center">${c.label||('方案 '+(i+1))}${badge}</th>`;
+              const full = c.label || ('方案 '+(i+1));
+              const short = full.length > 20 ? full.slice(0,18)+'…' : full;
+              html += `<th class="text-center" style="min-width:90px" title="${full}">${short}${badge}</th>`;
             });
             if (engView) {
-              html += '<th class="text-end" style="width:90px">站別模治具</th>';
-              html += '<th style="width:130px">模具料號</th>';
+              html += '<th class="text-end" style="width:100px;white-space:nowrap">站別模治具</th>';
+              html += '<th style="width:130px;white-space:nowrap">模具料號</th>';
             }
             if (buView || pcView) {
-              html += '<th class="text-end" style="width:140px">站別模治具</th>';
-              html += '<th style="width:130px">模具料號</th>';
+              html += '<th class="text-end" style="width:110px;white-space:nowrap">站別模治具</th>';
+              html += '<th style="width:130px;white-space:nowrap">模具料號</th>';
             }
             html += '</tr></thead><tbody>';
             rows.forEach((r, rowIdx) => {
@@ -713,8 +715,8 @@
                           class="form-check-input" value="${escName}"${ckd}>
                  </td>`;
               }
-              html += `<td>${procName}</td>`;
-              if (engView || buView || pcView) html += `<td class="small text-muted">${procSupplier[procName]||'—'}</td>`;
+              html += `<td style="white-space:nowrap">${procName}</td>`;
+              if (engView || buView || pcView) html += `<td class="small text-muted" style="white-space:normal;word-break:break-word">${procSupplier[procName]||'—'}</td>`;
               if (buView || pcView) {
                 const pn = (saved.part_no || '').replace(/"/g,'&quot;');
                 const badge = pn ? `<span class="badge bg-primary-subtle text-primary">${pn}</span>` : '<span class="text-muted">—</span>';
@@ -1128,10 +1130,9 @@
       </script>
       {% endif %}
 
-      {# 模治具請購單（工程 NPI 階段）— 彙整有模治具的站別；BU/採購 NPI view 唯讀檢視 #}
-      {% if _eng_npi_view or _bu_like_view %}
+      {# 模治具請購單 + ERP 請購單查詢（合併卡片）#}
+      {% if _eng_npi_view or _bu_like_view or user.role.value in ('purchase','admin') %}
       {% set _eng_map = form.eng_process_data | fromjson if form.eng_process_data else {} %}
-      {% set _tool_rows = [] %}
       {% set _ns = namespace(procs=[]) %}
       {% for inv in form.invites %}
         {% if inv.tooling_cost and inv.tooling_cost > 0 and inv.process_name and inv.process_name not in _ns.procs %}
@@ -1140,23 +1141,28 @@
       {% endfor %}
       {% set _mould_docs = form.documents | selectattr('category', 'equalto', '模具請購單') | list %}
       <div class="card shadow-sm mb-3">
+        {# 卡片標頭 #}
         <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-          <span><i class="bi bi-file-earmark-ruled me-2"></i>模治具請購單</span>
+          <span><i class="bi bi-file-earmark-ruled me-2 text-primary"></i>模治具請購單</span>
           {% if form.erp_req_no %}
-          <span class="badge bg-success"><i class="bi bi-check2-circle me-1"></i>已送出 · ERP {{ form.erp_req_no }}</span>
+          <span class="badge bg-success fs-6 px-3 py-2">
+            <i class="bi bi-check2-circle me-1"></i>已送出 · ERP {{ form.erp_req_no }}
+          </span>
           {% endif %}
         </div>
         <div class="card-body small">
+
+          {# ① 模治具明細表 #}
           {% if _ns.procs %}
           <form method="post" action="/npi-forms/{{ form.form_id }}/submit-mould-requisition"
                 enctype="multipart/form-data" id="mouldReqForm">
-            <table class="table table-sm table-bordered align-middle">
+            <table class="table table-sm table-bordered align-middle mb-0">
               <thead class="table-light">
                 <tr>
-                  <th style="width:18%">製程（站別）</th>
-                  <th style="width:22%">模具料號</th>
+                  <th style="width:15%">製程（站別）</th>
+                  <th style="width:18%">模具料號</th>
                   <th>供應商</th>
-                  <th class="text-end" style="width:15%">模治具金額</th>
+                  <th class="text-end" style="width:14%">模治具金額</th>
                 </tr>
               </thead>
               <tbody>
@@ -1178,7 +1184,7 @@
                       {% if _saved.tool_part_no %}
                         <span class="badge bg-primary-subtle text-primary">{{ _saved.tool_part_no }}</span>
                       {% else %}
-                        <span class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>未填模具料號</span>
+                        <span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>未填模具料號</span>
                       {% endif %}
                     </td>
                     <td>{{ _suppliers | join(' / ') or '—' }}</td>
@@ -1191,36 +1197,50 @@
                 </tr>
               </tbody>
             </table>
-            <div class="row g-3 mt-1">
-              <div class="col-md-5">
-                <label class="form-label">ERP 模具請購單號 {% if _eng_npi_view %}<span class="text-danger">*</span>{% endif %}</label>
-                <input type="text" name="erp_req_no" class="form-control form-control-sm"
-                       value="{{ form.erp_req_no or '' }}" placeholder="例：MR-20260419-001"
+
+            <hr class="my-3">
+
+            {# ② ERP 請購單號 + 即時查詢（整合在同一行）#}
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-md-4">
+                <label class="form-label mb-1 fw-semibold">
+                  ERP 模具請購單號
+                  {% if _eng_npi_view and not form.erp_req_no %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <input type="text" name="erp_req_no" id="erpReqInput"
+                       class="form-control form-control-sm"
+                       value="{{ form.erp_req_no or '' }}"
+                       placeholder="例：MR-20260419-001"
                        {% if form.erp_req_no or not _eng_npi_view %}readonly{% endif %}>
+              </div>
+              <div class="col-auto">
+                <button type="button" class="btn btn-outline-primary btn-sm"
+                        onclick="lookupErpReqFromInput()">
+                  <i class="bi bi-search me-1"></i>從 ERP 查詢
+                </button>
               </div>
               {% if _pc_npi_view %}
               {% set _bd_po = form.bargain_data | fromjson if form.bargain_data else {} %}
-              <div class="col-md-7">
-                <label class="form-label">ERP 模具採購單號</label>
+              <div class="col-md-4">
+                <label class="form-label mb-1 fw-semibold">ERP 模具採購單號</label>
                 <input type="text" name="erp_po_no" form="pcBargainForm"
                        class="form-control form-control-sm"
                        value="{{ _bd_po.erp_po_no or '' }}"
                        placeholder="例：MP-20260419-001">
-                <div class="form-text small">
-                  <i class="bi bi-info-circle me-1"></i>請於上方「成本表 / 議價」底下的「儲存議價結果」按鈕一併儲存。
-                </div>
               </div>
               {% else %}
-              <div class="col-md-7">
-                <label class="form-label">附件（ERP 請購單截圖 / 廠商報價單 PDF）<span class="text-danger">*</span></label>
+              <div class="col">
+                <label class="form-label mb-1 fw-semibold">
+                  附件（ERP 截圖 / 廠商報價 PDF）
+                  {% if not form.erp_req_no %}<span class="text-danger">*</span>{% endif %}
+                </label>
                 <input type="hidden" name="attach_categories" value="模具請購單">
                 <input type="file" name="attach_files" class="form-control form-control-sm"
                        {% if form.erp_req_no %}disabled{% endif %}>
                 {% if _mould_docs %}
-                <div class="mt-2 small">
-                  已上傳：
+                <div class="mt-1">
                   {% for d in _mould_docs %}
-                  <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="me-2">
+                  <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="me-2 small">
                     <i class="bi bi-paperclip"></i>{{ d.original_name | truncate(22, True) }}
                   </a>
                   {% endfor %}
@@ -1229,66 +1249,77 @@
               </div>
               {% endif %}
             </div>
-            {% if not form.erp_req_no and _eng_npi_view %}
-            <div class="alert alert-info small mt-3 mb-0">
-              <i class="bi bi-info-circle me-1"></i>
-              請先於上方「成本表」確認所有有模治具的站別都已填妥<strong>模具料號</strong>，
-              再填入 ERP 單號與附件後送出。
+
+            {# ③ ERP 即時查詢結果（展開於卡片內）#}
+            <div id="erpReqResult" style="display:none" class="mb-3">
+              <div class="d-flex align-items-center mb-2 bg-primary-subtle rounded px-2 py-1">
+                <i class="bi bi-table me-2 text-primary"></i>
+                <strong class="text-primary me-2">ERP 請購單明細</strong>
+                <span class="badge bg-success" id="erpReqBadge"></span>
+                <button type="button" class="btn-close btn-close-sm ms-auto"
+                        onclick="document.getElementById('erpReqResult').style.display='none'"></button>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0 align-middle">
+                  <thead class="table-primary" id="erpReqHead"><tr></tr></thead>
+                  <tbody id="erpReqBody"></tbody>
+                </table>
+              </div>
             </div>
-            <div class="text-end mt-2">
+            <div id="erpReqError" class="text-danger small mb-2" style="display:none">
+              <i class="bi bi-exclamation-triangle me-1"></i><span id="erpReqErrorMsg"></span>
+            </div>
+
+            {# ④ 狀態提示 + 送出按鈕 #}
+            {% if not form.erp_req_no and _eng_npi_view %}
+            <div class="alert alert-info small mb-2 py-2">
+              <i class="bi bi-info-circle me-1"></i>
+              請先於上方「成本表」填妥所有站別的<strong>模具料號</strong>，再填入 ERP 單號與附件後送出。
+            </div>
+            <div class="text-end">
               <button class="btn btn-success btn-sm">
                 <i class="bi bi-send-check me-1"></i>送出模治具請購單
               </button>
             </div>
             {% elif form.erp_req_no %}
-            <div class="alert alert-success small mt-3 mb-0">
-              <i class="bi bi-check-circle me-1"></i>已送出 ERP 請購單 {{ form.erp_req_no }}。
+            <div class="alert alert-success small mb-0 py-2">
+              <i class="bi bi-check-circle me-1"></i>已送出 ERP 請購單 <strong>{{ form.erp_req_no }}</strong>。
             </div>
-            {% else %}
-            <div class="alert alert-warning small mt-3 mb-0">
+            {% elif _bu_like_view %}
+            <div class="alert alert-warning small mb-0 py-2">
               <i class="bi bi-hourglass-split me-1"></i>工程尚未送出模治具請購單。
             </div>
             {% endif %}
           </form>
           {% else %}
-          <div class="text-muted"><i class="bi bi-info-circle me-1"></i>目前沒有任何站別有模治具費用，不需請購單。</div>
+          {# 無模治具但仍顯示 ERP 查詢功能 #}
+          <div class="text-muted mb-3"><i class="bi bi-info-circle me-1"></i>目前沒有任何站別有模治具費用，不需請購單。</div>
           {% endif %}
-        </div>
-      </div>
-      {% endif %}
 
-      {# ERP 請購單即時查詢（採購 / 工程 / admin 皆可用）#}
-      {% if user.role.value in ('purchase', 'engineer', 'admin') %}
-      <div class="card shadow-sm mb-3 border-primary">
-        <div class="card-header bg-primary text-white fw-semibold">
-          <i class="bi bi-search me-2"></i>ERP 請購單查詢
-        </div>
-        <div class="card-body">
+          {# 無 procs 時也顯示 ERP 查詢（admin/採購 always visible）#}
+          {% if not _ns.procs and user.role.value in ('purchase','admin') %}
+          <hr class="my-2">
           <div class="row g-2 align-items-end">
-            <div class="col-md-5">
-              <label class="form-label small mb-1">請購單號</label>
+            <div class="col-md-4">
+              <label class="form-label mb-1 fw-semibold">ERP 請購單查詢</label>
               <input type="text" id="erpReqInput" class="form-control form-control-sm"
-                     placeholder="例：260105001"
-                     value="{{ form.erp_req_no or '' }}">
+                     placeholder="例：260105001" value="{{ form.erp_req_no or '' }}">
             </div>
             <div class="col-auto">
-              <button type="button" class="btn btn-primary btn-sm" onclick="lookupErpReqFromInput()">
+              <button type="button" class="btn btn-outline-primary btn-sm" onclick="lookupErpReqFromInput()">
                 <i class="bi bi-search me-1"></i>從 ERP 查詢
               </button>
             </div>
-            <div class="col-auto">
-              <span class="text-muted small">輸入 ERP 請購單號，即時查詢鼎新明細</span>
-            </div>
           </div>
-
-          <div id="erpReqResult" class="mt-3" style="display:none">
-            <div class="d-flex align-items-center mb-2">
-              <strong class="me-2 text-primary"><i class="bi bi-table me-1"></i>查詢結果</strong>
+          <div id="erpReqResult" style="display:none" class="mt-2">
+            <div class="d-flex align-items-center mb-1">
+              <strong class="text-primary me-2 small"><i class="bi bi-table me-1"></i>ERP 明細</strong>
               <span class="badge bg-success" id="erpReqBadge"></span>
-              <button type="button" class="btn-close ms-auto" onclick="document.getElementById('erpReqResult').style.display='none'"></button>
+              <button type="button" class="btn-close btn-close-sm ms-auto"
+                      onclick="document.getElementById('erpReqResult').style.display='none'"></button>
             </div>
             <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0 align-middle">
+              <table class="table table-sm table-bordered mb-0">
                 <thead class="table-primary" id="erpReqHead"><tr></tr></thead>
                 <tbody id="erpReqBody"></tbody>
               </table>
@@ -1298,9 +1329,11 @@
           <div id="erpReqError" class="mt-2 text-danger small" style="display:none">
             <i class="bi bi-exclamation-triangle me-1"></i><span id="erpReqErrorMsg"></span>
           </div>
-        </div>
-      </div>
-      {% endif %}
+          {% endif %}{# end: not _ns.procs #}
+
+        </div>{# end card-body #}
+      </div>{# end card #}
+      {% endif %}{# end: eng/bu/purchase/admin #}
 
       {# NPI 模具成本與 ERP 請購單 #}
       {% if (form.erp_req_no or form.mould_cost_est or form.mould_cost_final) and not _eng_npi_view %}
