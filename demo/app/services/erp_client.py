@@ -198,12 +198,15 @@ class _SQLServerBackend:
             ORDER BY order_date DESC
         """)
 
-    def query_purchase_requisition(self, req_no: str) -> list[dict]:
-        """依請購單號查詢 ERP 請購單明細。"""
+    def query_purchase_requisition(self, req_no: str, doc_type: str = "3105") -> list[dict]:
+        """依請購單號查詢 ERP 請購單明細，預設只撈模治具請購單（doc_type=3105）。"""
         safe_no = req_no.strip().replace("'", "''")
+        safe_type = doc_type.strip().replace("'", "''")
+        type_clause = f"AND doc_type = '{safe_type}'" if safe_type else ""
         return self._query(f"""
             SELECT
                 req_no          AS 請購單號,
+                doc_type        AS 單別,
                 req_date        AS 請購日期,
                 req_dept        AS 請購部門,
                 product_code    AS 品號,
@@ -216,6 +219,7 @@ class _SQLServerBackend:
                 purchase_order_no AS 對應採購單
             FROM v_ht_purchase_requisition
             WHERE RTRIM(req_no) = N'{safe_no}'
+            {type_clause}
             ORDER BY req_no
         """)
 
@@ -320,11 +324,11 @@ def erp_query_manufacturing_orders(part_no: str = "") -> list[dict]:
     return []
 
 
-def erp_query_purchase_requisition(req_no: str) -> list[dict]:
-    """查單一請購單明細，回傳 list[dict]（每列一個品項）。"""
+def erp_query_purchase_requisition(req_no: str, doc_type: str = "3105") -> list[dict]:
+    """查單一請購單明細，回傳 list[dict]（每列一個品項）。預設只撈模治具 3105。"""
     if isinstance(_BACKEND, _SQLServerBackend):
         try:
-            rows = _BACKEND.query_purchase_requisition(req_no)
+            rows = _BACKEND.query_purchase_requisition(req_no, doc_type)
             # 將 Decimal 轉 float 方便 JSON 序列化
             result = []
             for row in rows:

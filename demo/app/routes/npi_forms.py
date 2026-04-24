@@ -1487,16 +1487,17 @@ async def purchase_close(
 @router.get("/erp-req-lookup")
 async def erp_req_lookup(
     req_no: str,
+    doc_type: str = "3105",
     current_user: User = Depends(get_current_user),
 ):
-    """依請購單號即時查詢 ERP 明細，回 JSON 供前端渲染。"""
+    """依請購單號即時查詢 ERP 明細，預設只撈模治具請購單（doc_type=3105）。"""
     from app.services.erp_client import erp_query_purchase_requisition
     if not req_no or not req_no.strip():
         raise HTTPException(status_code=400, detail="請填寫請購單號")
-    rows = erp_query_purchase_requisition(req_no.strip())
+    rows = erp_query_purchase_requisition(req_no.strip(), doc_type)
     if not rows:
-        raise HTTPException(status_code=404, detail=f"ERP 找不到請購單：{req_no}")
-    return {"ok": True, "req_no": req_no.strip(), "rows": rows}
+        raise HTTPException(status_code=404, detail=f"ERP 找不到 {doc_type} 類型請購單：{req_no}")
+    return {"ok": True, "req_no": req_no.strip(), "doc_type": doc_type, "rows": rows}
 
 
 # ── 詳細頁（必須放最後，避免 path 衝突）─────
