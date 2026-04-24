@@ -1324,39 +1324,32 @@ async def submit_bu(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    selected_invite_id: int = Form(...),
-    erp_req_no:     str  = Form(""),
-    erp_req_data:   str  = Form(""),   # JSON snapshot
-    mould_cost_est: str  = Form(""),
+    selected_invite_id: int = Form(0),
     comment:        str  = Form(""),
-    attach_files:      List[UploadFile] = File(default=[]),
-    attach_categories: List[str] = Form(default=[]),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.NPI_STARTED:
         raise HTTPException(status_code=400)
     if current_user.role not in _ENG_ROLES:
         raise HTTPException(status_code=403)
-    inv = next((i for i in form.invites if i.id == selected_invite_id), None)
-    if not inv or not inv.replied_at:
-        raise HTTPException(status_code=400, detail="請選擇一家已報價的供應商")
-    if attach_files:
-        await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
-        await db.commit()
-        db.expire_all()
-        form = await _get_form_or_404(form_id, db)
-        inv = next((i for i in form.invites if i.id == selected_invite_id), None)
-    # 送審前驗證附件
-    cats = {d.category for d in form.documents}
-    if "模具請購單" not in cats:
-        raise HTTPException(status_code=400, detail="請上傳【模具請購單】")
+
+    # 決定選用供應商：明確傳入 > 已報價中唯一一家 > 第一家已報價
+    replied = [i for i in form.invites if i.replied_at]
+    if selected_invite_id:
+        inv = next((i for i in replied if i.id == selected_invite_id), None)
+    elif len(replied) == 1:
+        inv = replied[0]
+    elif replied:
+        inv = replied[0]
+    else:
+        inv = None
+
+    if not inv:
+        raise HTTPException(status_code=400, detail="尚無已報價的供應商，無法送 BU")
 
     for i in form.invites:
-        i.is_selected = (i.id == selected_invite_id)
+        i.is_selected = (i.id == inv.id)
     form.selected_quote_supplier_id = inv.supplier_id
-    form.erp_req_no     = erp_req_no or None
-    form.erp_req_data   = erp_req_data or None
-    form.mould_cost_est = float(mould_cost_est) if mould_cost_est else None
 
     old = form.status
     form.status = NPIFormStatus.NPI_PENDING_BU

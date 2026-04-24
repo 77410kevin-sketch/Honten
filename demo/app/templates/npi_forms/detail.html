@@ -1589,11 +1589,26 @@
           </form>
           {% endif %}
 
-          {# 工程：送 BU #}
+          {# 工程：送 BU（直接送出，多家時顯示供應商選擇）#}
           {% if form.status.value == 'NPI_STARTED' and user.role.value in ('engineer','admin') %}
-          <button class="btn btn-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#submitBuModal">
-            <i class="bi bi-send-check me-1"></i>選供應商 + 送 BU 核准
-          </button>
+          {% set _replied_invites = form.invites | selectattr('replied_at') | list %}
+          <form method="post" action="/npi-forms/{{ form.form_id }}/submit-bu" class="mb-2">
+            {% if _replied_invites | length > 1 %}
+            <select name="selected_invite_id" class="form-select form-select-sm mb-2" required>
+              <option value="">— 選用供應商 —</option>
+              {% for inv in _replied_invites %}
+              <option value="{{ inv.id }}">
+                {{ inv.supplier.name if inv.supplier else '' }}
+                ／報價 {{ inv.quote_amount or '—' }}
+                ／交期 {{ inv.lead_time_days or '—' }} 天
+              </option>
+              {% endfor %}
+            </select>
+            {% endif %}
+            <button class="btn btn-primary w-100">
+              <i class="bi bi-send-check me-1"></i>送 BU 核准
+            </button>
+          </form>
           {% endif %}
 
           {# BU 核准 / 退回 #}
@@ -2911,67 +2926,7 @@
 
 {# 結案按鈕已改為直接送出，不再使用 modal #}
 
-{# 工程選供應商 + 送 BU #}
-{% if form.status.value == 'NPI_STARTED' and user.role.value in ('engineer','admin') %}
-<div class="modal fade" id="submitBuModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <form class="modal-content" method="post" enctype="multipart/form-data"
-          action="/npi-forms/{{ form.form_id }}/submit-bu">
-      <div class="modal-header">
-        <h5 class="modal-title">選供應商 + 開 ERP 模具請購單 + 送 BU 核准</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body row g-3">
-        <div class="col-12">
-          <label class="form-label">選用供應商 <span class="text-danger">*</span></label>
-          <select name="selected_invite_id" class="form-select" required>
-            <option value="">— 請選擇 —</option>
-            {% for inv in form.invites %}
-              {% if inv.replied_at %}
-              <option value="{{ inv.id }}">
-                {{ inv.supplier.name if inv.supplier else '' }} / 報價 {{ inv.quote_amount or '—' }} / 交期 {{ inv.lead_time_days or '—' }} 天
-              </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">ERP 模具請購單號</label>
-          <input name="erp_req_no" class="form-control" placeholder="例：MR-20260418-001">
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">工程估算模具成本</label>
-          <input name="mould_cost_est" type="number" step="0.01" class="form-control">
-        </div>
-        <div class="col-12">
-          <label class="form-label">ERP 明細 JSON 快照（選填）</label>
-          <textarea name="erp_req_data" rows="3" class="form-control font-monospace small"
-                    placeholder='[{"料號":"M001","品名":"下模","數量":1,"單價":50000}]'></textarea>
-        </div>
-        <div class="col-12">
-          <label class="form-label">模具請購單（必要附件）</label>
-          <input type="hidden" name="attach_categories" value="模具請購單">
-          <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
-            <label class="btn btn-outline-primary mb-0">
-              <i class="bi bi-paperclip me-1"></i>選擇檔案
-              <input type="file" name="attach_files" class="d-none">
-            </label>
-            <span class="file-picker-name text-muted small">（尚未選擇）</span>
-          </div>
-        </div>
-        <div class="col-12">
-          <label class="form-label">備註</label>
-          <textarea name="comment" rows="2" class="form-control"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
-        <button class="btn btn-primary">送 BU 核准</button>
-      </div>
-    </form>
-  </div>
-</div>
-{% endif %}
+{# submitBuModal 已移除，改為直接送出 #}
 
 {# BU 退回 #}
 {% if form.status.value == 'NPI_PENDING_BU' and user.role.value in ('bu','admin') %}
