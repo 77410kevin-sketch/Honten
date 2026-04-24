@@ -1257,6 +1257,51 @@
       </div>
       {% endif %}
 
+      {# ERP 請購單即時查詢（採購 / 工程 / admin 皆可用）#}
+      {% if user.role.value in ('purchase', 'engineer', 'admin') %}
+      <div class="card shadow-sm mb-3 border-primary">
+        <div class="card-header bg-primary text-white fw-semibold">
+          <i class="bi bi-search me-2"></i>ERP 請購單查詢
+        </div>
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label small mb-1">請購單號</label>
+              <input type="text" id="erpReqInput" class="form-control form-control-sm"
+                     placeholder="例：260105001"
+                     value="{{ form.erp_req_no or '' }}">
+            </div>
+            <div class="col-auto">
+              <button type="button" class="btn btn-primary btn-sm" onclick="lookupErpReqFromInput()">
+                <i class="bi bi-search me-1"></i>從 ERP 查詢
+              </button>
+            </div>
+            <div class="col-auto">
+              <span class="text-muted small">輸入 ERP 請購單號，即時查詢鼎新明細</span>
+            </div>
+          </div>
+
+          <div id="erpReqResult" class="mt-3" style="display:none">
+            <div class="d-flex align-items-center mb-2">
+              <strong class="me-2 text-primary"><i class="bi bi-table me-1"></i>查詢結果</strong>
+              <span class="badge bg-success" id="erpReqBadge"></span>
+              <button type="button" class="btn-close ms-auto" onclick="document.getElementById('erpReqResult').style.display='none'"></button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="table-primary" id="erpReqHead"><tr></tr></thead>
+                <tbody id="erpReqBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="erpReqError" class="mt-2 text-danger small" style="display:none">
+            <i class="bi bi-exclamation-triangle me-1"></i><span id="erpReqErrorMsg"></span>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       {# NPI 模具成本與 ERP 請購單 #}
       {% if (form.erp_req_no or form.mould_cost_est or form.mould_cost_final) and not _eng_npi_view %}
       <div class="card shadow-sm mb-3">
@@ -2950,11 +2995,22 @@
 </script>
 
 <script>
+async function lookupErpReqFromInput() {
+  const input = document.getElementById('erpReqInput');
+  const reqNo = (input?.value || '').trim();
+  if (!reqNo) { alert('請先輸入 ERP 請購單號'); return; }
+  await _doErpLookup(reqNo, event.target.closest('button'));
+}
+
 async function lookupErpReq(reqNo) {
-  const btn = event.target.closest('button');
+  await _doErpLookup(reqNo, event.target.closest('button'));
+}
+
+async function _doErpLookup(reqNo, btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>查詢中…';
+  document.getElementById('erpReqError').style.display = 'none';
 
   try {
     const resp = await fetch(`/npi-forms/erp-req-lookup?req_no=${encodeURIComponent(reqNo)}`);
@@ -2962,22 +3018,24 @@ async function lookupErpReq(reqNo) {
     if (!resp.ok) throw new Error(json.detail || '查詢失敗');
 
     const rows = json.rows;
-    const head = document.getElementById('erpReqHead');
-    const body = document.getElementById('erpReqBody');
-    const badge = document.getElementById('erpReqBadge');
+    const head = document.getElementById('erpReqHead').querySelector('tr') || document.getElementById('erpReqHead');
+    const headRow = document.getElementById('erpReqHead');
+    const body   = document.getElementById('erpReqBody');
+    const badge  = document.getElementById('erpReqBadge');
 
-    // 表頭
-    head.innerHTML = Object.keys(rows[0]).map(k => `<th>${k}</th>`).join('');
-    // 表身
+    headRow.innerHTML = '<tr>' + Object.keys(rows[0]).map(k => `<th>${k}</th>`).join('') + '</tr>';
     body.innerHTML = rows.map(row =>
       '<tr>' + Object.values(row).map(v => `<td>${v ?? '—'}</td>`).join('') + '</tr>'
     ).join('');
 
-    badge.textContent = `${rows.length} 筆品項`;
+    badge.textContent = `共 ${rows.length} 筆品項`;
     document.getElementById('erpReqResult').style.display = '';
     document.getElementById('erpReqResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch(e) {
-    alert('ERP 查詢失敗：' + e.message);
+    const errDiv = document.getElementById('erpReqError');
+    document.getElementById('erpReqErrorMsg').textContent = e.message;
+    errDiv.style.display = '';
+    document.getElementById('erpReqResult').style.display = 'none';
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
