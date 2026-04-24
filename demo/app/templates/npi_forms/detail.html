@@ -676,13 +676,8 @@
                 const short = full.length > 20 ? full.slice(0,18)+'…' : full;
                 html += `<th class="text-center" style="min-width:90px" title="${full}">${short}${badge}</th>`;
               });
-              if (engView) {
-                html += '<th class="text-end" style="width:100px;white-space:nowrap">站別模治具</th>';
-                html += '<th style="width:130px;white-space:nowrap">模具料號</th>';
-              }
-              if (buView || pcView) {
+              if (engView || buView || pcView) {
                 html += '<th class="text-end" style="width:110px;white-space:nowrap">站別模治具</th>';
-                html += '<th style="width:130px;white-space:nowrap">模具料號</th>';
               }
               html += '</tr></thead><tbody>';
 
@@ -739,12 +734,6 @@
                 if (engView) {
                   const t = procTooling[procName];
                   html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
-                  const toolPn = (saved.tool_part_no||'').replace(/"/g,'&quot;');
-                  const tpCls = saved.tool_part_no ? 'eng-saved-cell' : 'eng-unsaved-cell';
-                  html += `<td class="${tpCls}">
-                     <input type="text" name="tool_part_no" form="engProcForm" class="form-control form-control-sm"
-                            value="${toolPn}" placeholder="例:MOLD-001">
-                   </td>`;
                 }
                 if (buView) {
                   const t = procTooling[procName];
@@ -757,9 +746,6 @@
                   } else {
                     html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
                   }
-                  const tpn = (saved.tool_part_no || '').replace(/"/g,'&quot;');
-                  const tBadge = tpn ? `<span class="badge bg-info-subtle text-info">${tpn}</span>` : '<span class="text-muted">—</span>';
-                  html += `<td>${tBadge}</td>`;
                 }
                 if (pcView) {
                   const tOrig = procTooling[procName] || 0;
@@ -780,9 +766,6 @@
                        ${tFlag?renderFlagBadge(tFlag):''}
                      </td>`;
                   }
-                  const tpn = (saved.tool_part_no || '').replace(/"/g,'&quot;');
-                  const tBadge = tpn ? `<span class="badge bg-info-subtle text-info">${tpn}</span>` : '<span class="text-muted">—</span>';
-                  html += `<td>${tBadge}</td>`;
                 }
                 html += '</tr>';
               });
@@ -793,7 +776,7 @@
             const fmtRow = (label, key, klass) => {
               let h = `<tr class="${klass||''}"><th class="text-start" colspan="${footLabelSpan}">${label}</th>`;
               cols.forEach(c => h += `<td class="text-end">${c[key]!=null?(typeof c[key]==='number'?c[key].toFixed(2):c[key]):'—'}</td>`);
-              if (engView || buView || pcView) h += '<td></td><td></td>';
+              if (engView || buView || pcView) h += '<td></td>';
               h += '</tr>';
               return h;
             };
@@ -812,7 +795,7 @@
               html += fmtRowPc('成本合計（不含模治具）', cols.map((c,i)=>`pc-cost-${i}`), 'table-light fw-bold');
               // ERP 回 keyin 提醒 — 單一勾選（提醒所有單價已回 keyin 至 ERP）
               const keyinAll = (bargain && (bargain.erp_keyin_all === true || bargain.erp_keyin_all === 'true')) ? 'checked' : '';
-              const totalCells = footLabelSpan + cols.length + 2;
+              const totalCells = footLabelSpan + cols.length + 1;
               html += `<tr class="table-info">
                 <td colspan="${totalCells}">
                   <div class="form-check mb-0">
