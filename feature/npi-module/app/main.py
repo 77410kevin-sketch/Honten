@@ -127,6 +127,38 @@ async def run_migrations():
         # QC 異常表新增欄位
         "ALTER TABLE qc_exceptions ADD COLUMN doc_type VARCHAR(20)",
         "ALTER TABLE qc_exceptions ADD COLUMN event_date_type VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN dispositions_json TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_to TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_cc TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_subject VARCHAR(200)",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_body TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_sent_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_conditions TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_due_date VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN linked_sample_request_no VARCHAR(50)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_need_sorting BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_need_rework BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_station VARCHAR(50)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_defect_handling TEXT",
+        # 立即處理 v2 欄位
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_target_type VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_replenish_note TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_subtype VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_pass_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_fail_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_note TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_customer_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_inhouse_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_supplier_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_decision TEXT",
+        # 立即處理 v3 — SA 多選 + 生管/sorting 回填 + 橫向展開盤點單
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_subtypes_json TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sent_to_prod_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_filled_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_result TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_filled_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_inventory_data TEXT",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

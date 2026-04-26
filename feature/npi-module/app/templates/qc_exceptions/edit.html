@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}編輯 {{ form.form_id }}{% endblock %}
+{% block content %}
+{% set _stage_labels = {
+  'IQC':'IQC（進料檢驗）','IPQC':'IPQC（製程檢驗）','OQC':'OQC（出貨檢驗）',
+  'INSPECTION':'品檢','LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'
+} %}
+{% set _doc_labels = {
+  'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'
+} %}
+{% set _date_labels = {
+  'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'
+} %}
+
+<div class="container py-4" style="max-width:960px">
+  <h4 class="mb-3">
+    <i class="bi bi-pencil-square text-warning me-2"></i>補件修改 — {{ form.form_id }}
+    <span class="badge bg-secondary ms-2">{{ form.status.value }}</span>
+  </h4>
+
+  <div class="alert alert-warning small">
+    <i class="bi bi-info-circle me-1"></i>
+    本單已由品保退回要求補件。請修正內容 / 補上附件後，按下方<strong>「補件完成 → 重送品保判斷」</strong>把單子送回品保。
+  </div>
+
+  <form method="post" action="/qc-exceptions/{{ form.form_id }}/edit"
+        enctype="multipart/form-data">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">IPC 異常資訊</div>
+      <div class="card-body row g-3">
+        <div class="col-md-4">
+          <label class="form-label">品號 <span class="text-danger">*</span></label>
+          <input name="part_no" class="form-control" required value="{{ form.part_no }}">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">單號</label>
+          <div class="input-group">
+            <select name="doc_type" class="form-select" style="max-width:140px">
+              {% for v, lbl in _doc_labels.items() %}
+              <option value="{{ v }}"{% if form.doc_type and form.doc_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="receive_doc_no" class="form-control" value="{{ form.receive_doc_no or '' }}">
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">日期</label>
+          <div class="input-group">
+            <select name="event_date_type" class="form-select" style="max-width:120px">
+              {% for v, lbl in _date_labels.items() %}
+              <option value="{{ v }}"{% if form.event_date_type and form.event_date_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="receive_date" class="form-control" value="{{ form.receive_date or '' }}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">工段</label>
+          <select name="stage" class="form-select">
+            {% for st in QCExceptionStage %}
+            <option value="{{ st.value }}"{% if form.stage and form.stage.value == st.value %} selected{% endif %}>
+              {{ _stage_labels.get(st.value, st.value) }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">廠商</label>
+          <input name="supplier_name" class="form-control" value="{{ form.supplier_name or '' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">數量</label>
+          <input name="receive_qty" type="number" min="0" class="form-control" value="{{ form.receive_qty or '' }}">
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">異常原因 <span class="text-danger">*</span></label>
+          <input name="defect_cause" class="form-control" required value="{{ form.defect_cause }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">量測數據</label>
+          <input name="measurement_data" class="form-control" value="{{ form.measurement_data or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">不良數量</label>
+          <input name="defect_qty" type="number" min="0" class="form-control" value="{{ form.defect_qty or '' }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">抽樣數量</label>
+          <input name="sample_qty" type="number" min="0" class="form-control" value="{{ form.sample_qty or '' }}">
+        </div>
+      </div>
+    </div>
+
+    {# 已上傳附件 + 刪除 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">已上傳附件</div>
+      <div class="card-body">
+        {% for cat, docs in docs_by_cat.items() %}
+        <div class="mb-2">
+          <div class="small fw-semibold text-primary mb-1">{{ cat }}</div>
+          {% for d in docs %}
+          <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+            <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank" class="small">
+              <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-danger del-doc-btn"
+                    data-doc-id="{{ d.id }}" data-name="{{ d.original_name }}">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-muted small">尚未上傳附件</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# 新增附件 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">補上附件</div>
+      <div class="card-body">
+        <div id="attach-rows">
+          <div class="row g-2 mb-2 attach-row align-items-center">
+            <div class="col-md-3">
+              <select name="attach_categories" class="form-select form-select-sm">
+                {% for c in ATTACH_CATEGORIES %}
+                <option{% if c == '異常照片' %} selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-8">
+              <input type="file" name="attach_files" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-1">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-row">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="add-attach" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-plus"></i>增加一筆
+        </button>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2">
+      <a href="/qc-exceptions/{{ form.form_id }}" class="btn btn-outline-secondary">取消</a>
+      <button name="submit_action" value="save" class="btn btn-secondary">
+        <i class="bi bi-save me-1"></i>儲存（不送出）
+      </button>
+      <button name="submit_action" value="resubmit" class="btn btn-warning fw-semibold">
+        <i class="bi bi-send me-1"></i>補件完成 → 重送品保判斷
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.getElementById("add-attach").addEventListener("click", () => {
+  const first = document.querySelector(".attach-row");
+  const clone = first.cloneNode(true);
+  const fInput = clone.querySelector('input[type=file]');
+  if (fInput) fInput.value = "";
+  document.getElementById("attach-rows").appendChild(clone);
+});
+document.addEventListener("click", async (e) => {
+  if (e.target.closest(".remove-row")) {
+    const rows = document.querySelectorAll(".attach-row");
+    if (rows.length > 1) e.target.closest(".attach-row").remove();
+  }
+  const btn = e.target.closest('.del-doc-btn');
+  if (!btn) return;
+  if (!confirm(`刪除「${btn.dataset.name}」？`)) return;
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    const resp = await fetch(`/qc-exceptions/{{ form.form_id }}/delete-doc/${btn.dataset.docId}`,
+                             { method:'POST', body: fd, redirect:'manual' });
+    if (resp.ok || resp.type === 'opaqueredirect') {
+      btn.closest('.border-bottom').remove();
+    } else {
+      throw new Error('狀態 ' + resp.status);
+    }
+  } catch(err) {
+    alert('刪除失敗：' + err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

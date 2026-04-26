@@ -15,9 +15,10 @@ class QCExceptionStatus(str, enum.Enum):
 
 
 class QCDisposition(str, enum.Enum):
-    RETURN_TO_SUPPLIER  = "RETURN_TO_SUPPLIER"   # 退貨
-    LAB_TEST            = "LAB_TEST"             # 實驗測試
-    SPECIAL_ACCEPT      = "SPECIAL_ACCEPT"       # 特採允收
+    RETURN_TO_SUPPLIER   = "RETURN_TO_SUPPLIER"    # 退貨
+    LAB_TEST             = "LAB_TEST"              # 實驗測試（舊版相容，新版併入 SA Rework）
+    SPECIAL_ACCEPT       = "SPECIAL_ACCEPT"        # 特採允收（含 NO_ACTION / SORTING / REWORK 子類）
+    HORIZONTAL_EXPANSION = "HORIZONTAL_EXPANSION"  # 橫向展開（盤點 + 判定）
 
 
 class QCExceptionStage(str, enum.Enum):
@@ -77,10 +78,53 @@ class QCException(Base):
     defect_rate       = Column(Float,       nullable=True)    # 不良率 0.126
 
     # ── 品保處理判斷 ────────────────────────────────
-    disposition       = Column(Enum(QCDisposition), nullable=True)
-    disposition_note  = Column(Text, nullable=True)            # 處理判斷說明
+    disposition       = Column(Enum(QCDisposition), nullable=True)   # 主要處理（向下相容）
+    dispositions_json = Column(Text, nullable=True)                  # 多選 JSON list
+    disposition_note  = Column(Text, nullable=True)                  # 處理判斷說明
     disposition_at    = Column(DateTime, nullable=True)
     disposition_by    = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # 立即處理 — 通知信（對象可為「供應商」或「工站」）
+    rts_target_type        = Column(String(20), nullable=True)   # SUPPLIER | STATION
+    rts_replenish_note     = Column(Text, nullable=True)         # 補貨資訊請求（給採購/生管）
+    supplier_mail_to       = Column(Text, nullable=True)
+    supplier_mail_cc       = Column(Text, nullable=True)
+    supplier_mail_subject  = Column(String(200), nullable=True)
+    supplier_mail_body     = Column(Text, nullable=True)
+    supplier_mail_sent_at  = Column(DateTime, nullable=True)
+
+    # 實驗測試（舊欄位保留，新版併入 SA Rework 流程）
+    lab_test_qty          = Column(Integer, nullable=True)
+    lab_test_conditions   = Column(Text, nullable=True)
+    lab_test_due_date     = Column(String(20), nullable=True)
+    linked_sample_request_no = Column(String(50), nullable=True)
+
+    # 特採允收 — 子類別（v2 多選 JSON list；v1 單一 sa_subtype 保留向下相容）
+    sa_subtype          = Column(String(20), nullable=True)       # 舊：NO_ACTION | SORTING | REWORK
+    sa_subtypes_json    = Column(Text, nullable=True)             # 新：["SORTING","REWORK"] / ["NO_ACTION"]
+    sa_need_sorting     = Column(Boolean, default=False)
+    sa_need_rework      = Column(Boolean, default=False)
+    # 由品保填寫
+    sa_defect_handling  = Column(Text, nullable=True)              # 不良品處理方式（品保填）
+    # 由生管填寫（送生管按鈕觸發後可填）
+    sa_station          = Column(String(50), nullable=True)        # 執行站別/單位（生管填）
+    sa_sent_to_prod_at  = Column(DateTime, nullable=True)          # 已送生管時間
+    # Sorting 結果回填
+    sa_sorting_pass_qty = Column(Integer, nullable=True)
+    sa_sorting_fail_qty = Column(Integer, nullable=True)
+    sa_sorting_filled_at = Column(DateTime, nullable=True)
+    # Rework 內容
+    sa_rework_note      = Column(Text, nullable=True)
+    sa_rework_result    = Column(Text, nullable=True)              # rework + 樣品測試 結果回報
+    sa_rework_filled_at = Column(DateTime, nullable=True)
+
+    # 橫向展開 — v1 單列（向下相容） + v2 多列盤點單 JSON
+    he_customer_qty     = Column(Integer, nullable=True)
+    he_inhouse_qty      = Column(Integer, nullable=True)
+    he_supplier_qty     = Column(Integer, nullable=True)
+    he_decision         = Column(Text, nullable=True)
+    he_inventory_data   = Column(Text, nullable=True)              # JSON list:
+    # [{"part_no":"KS04P","customer_qty":5000,"inhouse_qty":12000,"supplier_qty":8000,"decision":"..."}]
 
     # ── Mail 通知 + 根因分析 ────────────────────────
     notify_mail_to    = Column(Text, nullable=True)            # CSV 收件人 email

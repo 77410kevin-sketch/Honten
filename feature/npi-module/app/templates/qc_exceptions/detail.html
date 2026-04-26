@@ -99,46 +99,346 @@
       </div>
     </div>
 
-    {# 品保處理判斷 #}
+    {# 品保處理判斷 — 多選 + 子表單 #}
+    {% set _picked = (form.dispositions_json | fromjson) if form.dispositions_json else
+                     ([form.disposition.value] if form.disposition else []) %}
+    {% set _disp_lbl = {'RETURN_TO_SUPPLIER':'退回供應商','LAB_TEST':'實驗測試','SPECIAL_ACCEPT':'特採允收'} %}
+    {% set _route_hint = '採購（原物料）' if (form.doc_type and form.doc_type.value == 'RECEIVE')
+                       else ('生管（製成品）' if (form.doc_type and form.doc_type.value == 'PROCESS')
+                             else '採購 + 生管') %}
+
     {% if _is_qc and _s in ('PENDING_DISPOSITION', 'DRAFT') %}
     <div class="card shadow-sm mb-3 border-warning">
-      <div class="card-header bg-warning-subtle fw-semibold">
-        <i class="bi bi-search me-2"></i>品保處理判斷
+      <div class="card-header bg-warning-subtle fw-semibold d-flex align-items-center">
+        <i class="bi bi-lightning-charge me-2"></i>品保立即處理（可多選）
       </div>
       <div class="card-body">
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition">
-          <div class="row g-2 mb-2">
-            <div class="col-md-4">
-              <select name="disposition" class="form-select" required>
-                <option value="">— 選擇處理方式 —</option>
-                <option value="RETURN_TO_SUPPLIER">退貨</option>
-                <option value="LAB_TEST">實驗測試</option>
-                <option value="SPECIAL_ACCEPT">特採允收</option>
-              </select>
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm">
+
+          {# Step 1：通知信（給異常廠商或工站）#}
+          <div class="border rounded p-3 mb-3 bg-light">
+            <div class="fw-semibold mb-2">
+              <i class="bi bi-envelope me-1"></i><span class="badge bg-secondary me-1">Step 1</span>
+              通知信 — 給異常廠商或工站
             </div>
-            <div class="col-md-8">
-              <input name="note" class="form-control" placeholder="處理判斷說明（選填）">
+            <div class="d-flex flex-wrap gap-3 mb-2">
+              <div class="form-check">
+                <input type="radio" name="rts_target_type" value="SUPPLIER"
+                       class="form-check-input" id="tgtSup"
+                       {% if (form.doc_type and form.doc_type.value in ('RECEIVE','SHIP_DC')) %}checked{% endif %}>
+                <label for="tgtSup" class="form-check-label">寄給供應商（{{ form.supplier_name or '—' }}）</label>
+              </div>
+              <div class="form-check">
+                <input type="radio" name="rts_target_type" value="STATION"
+                       class="form-check-input" id="tgtSta"
+                       {% if (form.doc_type and form.doc_type.value == 'PROCESS') %}checked{% endif %}>
+                <label for="tgtSta" class="form-check-label">寄給工站（{{ form.stage.value if form.stage else '—' }}）</label>
+              </div>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label small">收件人 (To)</label>
+                <input name="supplier_mail_to" class="form-control form-control-sm"
+                       placeholder="qa@example.com">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small">副本 (Cc)</label>
+                <input name="supplier_mail_cc" class="form-control form-control-sm"
+                       placeholder="多人用 , 隔開">
+              </div>
+              <div class="col-12">
+                <label class="form-label small">主旨</label>
+                <input name="supplier_mail_subject" class="form-control form-control-sm"
+                       value="【鴻騰電子 QC 異常通知】{{ form.form_id }} - {{ form.part_no }}">
+              </div>
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                  <label class="form-label small mb-1">信件內容（自動帶異常照片附件）</label>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="loadMailTpl">
+                    <i class="bi bi-file-earmark-text me-1"></i>套用範本
+                  </button>
+                </div>
+                <textarea name="supplier_mail_body" id="supplierMailBody" rows="8"
+                          class="form-control form-control-sm font-monospace" style="font-size:12px"
+                          placeholder="點「套用範本」自動帶入廠商聯絡人 / 品號 / 異常原因 / 抽驗比例…"></textarea>
+              </div>
             </div>
           </div>
+
+          {# Step 2：批次處理判斷（多選）#}
+          <div class="fw-semibold mb-2">
+            <span class="badge bg-secondary me-1">Step 2</span>
+            針對這批貨怎麼處理（可多選）
+          </div>
+          <div class="d-flex flex-wrap gap-3 mb-2">
+            <div class="form-check">
+              <input class="form-check-input disp-pick" type="checkbox" id="dispRTS"
+                     name="dispositions" value="RETURN_TO_SUPPLIER" data-target="rtsBox">
+              <label class="form-check-label fw-semibold text-danger" for="dispRTS">A. 退貨</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input disp-pick" type="checkbox" id="dispSA"
+                     name="dispositions" value="SPECIAL_ACCEPT" data-target="saBox">
+              <label class="form-check-label fw-semibold text-success" for="dispSA">B. 特採允收</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input disp-pick" type="checkbox" id="dispHE"
+                     name="dispositions" value="HORIZONTAL_EXPANSION" data-target="heBox">
+              <label class="form-check-label fw-semibold text-primary" for="dispHE">C. 橫向展開</label>
+            </div>
+          </div>
+          <input name="note" class="form-control mb-3" placeholder="總體處理判斷說明（選填）">
+
+          {# A. 退貨 sub-form #}
+          <div id="rtsBox" class="border border-danger-subtle rounded p-3 mb-2 d-none bg-danger-subtle bg-opacity-10">
+            <div class="fw-semibold text-danger mb-2">
+              <i class="bi bi-truck me-1"></i>A. 退貨
+              <span class="badge bg-danger ms-2">系統自動通知 → {{ _route_hint }}</span>
+            </div>
+            <label class="form-label small">補貨資訊請求 — 請廠商回覆補貨數量 / 預計交期</label>
+            <textarea name="rts_replenish_note" rows="3" class="form-control form-control-sm"
+                      placeholder="例：本批 35000 pcs 整批退回，請於 5 個工作天內提供新批號補貨數量、預計到貨日；採購／生管請追蹤回覆。"></textarea>
+          </div>
+
+          {# B. 特採允收 sub-form #}
+          <div id="saBox" class="border border-success-subtle rounded p-3 mb-2 d-none bg-success-subtle bg-opacity-10">
+            <div class="fw-semibold text-success mb-2">
+              <i class="bi bi-shield-check me-1"></i>B. 特採允收 — 選擇處理方式
+            </div>
+            <div class="d-flex flex-wrap gap-3 mb-3">
+              <div class="form-check">
+                <input type="radio" name="sa_subtype" value="NO_ACTION" id="saNo" class="form-check-input sa-sub" checked>
+                <label for="saNo" class="form-check-label">B1. 不需特殊處理（只記錄，直接過站）</label>
+              </div>
+              <div class="form-check">
+                <input type="radio" name="sa_subtype" value="SORTING" id="saSort" class="form-check-input sa-sub">
+                <label for="saSort" class="form-check-label">B2. 需 Sorting（生管安排）</label>
+              </div>
+              <div class="form-check">
+                <input type="radio" name="sa_subtype" value="REWORK" id="saRw" class="form-check-input sa-sub">
+                <label for="saRw" class="form-check-label">B3. Rework（小批驗證 → 樣品需求測試）</label>
+              </div>
+            </div>
+
+            {# B 共用 — 站別 + 不良品處理 #}
+            <div class="row g-2 mb-2">
+              <div class="col-md-4">
+                <label class="form-label small">執行站別（後製程）</label>
+                <input name="sa_station" class="form-control form-control-sm" placeholder="例：CNC / 組裝">
+              </div>
+              <div class="col-md-8">
+                <label class="form-label small">不良品處理方式</label>
+                <input name="sa_defect_handling" class="form-control form-control-sm"
+                       placeholder="例：另堆放每日回報；尾數抵扣">
+              </div>
+            </div>
+
+            {# B2 Sorting 子欄位 #}
+            <div id="saSortBox" class="border-top pt-2 mt-2 d-none">
+              <div class="small text-muted mb-2">
+                <i class="bi bi-info-circle me-1"></i>由生管安排 sorting 單位執行；下列數量待 sorting 完成後回填。
+              </div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label small">良品數</label>
+                  <input name="sa_sorting_pass_qty" type="number" min="0" class="form-control form-control-sm"
+                         placeholder="留空 — 待回填">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">不良品數</label>
+                  <input name="sa_sorting_fail_qty" type="number" min="0" class="form-control form-control-sm"
+                         placeholder="留空 — 待回填">
+                </div>
+              </div>
+            </div>
+
+            {# B3 Rework 子欄位 #}
+            <div id="saRwBox" class="border-top pt-2 mt-2 d-none">
+              <label class="form-label small">小批量驗證內容</label>
+              <textarea name="sa_rework_note" rows="2" class="form-control form-control-sm"
+                        placeholder="例：取 50 pcs 重工後做總長量測，確認 32.00±0.05 範圍內；通過再導入樣品需求測試。"></textarea>
+              <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                  <label class="form-label small">樣品測試數量</label>
+                  <input name="lab_test_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：50">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">需求時間</label>
+                  <input name="lab_test_due_date" class="form-control form-control-sm" placeholder="例：2026-04-30">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small">測試條件</label>
+                  <input name="lab_test_conditions" class="form-control form-control-sm"
+                         placeholder="例：高溫 85°C 24hr">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {# C. 橫向展開 sub-form #}
+          <div id="heBox" class="border border-primary-subtle rounded p-3 mb-3 d-none bg-primary-subtle bg-opacity-10">
+            <div class="fw-semibold text-primary mb-2">
+              <i class="bi bi-arrows-expand me-1"></i>C. 橫向展開 — 庫存盤點 + 判定
+            </div>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label small">客戶端庫存（pcs）</label>
+                <input name="he_customer_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：5000">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">廠內庫存（pcs）</label>
+                <input name="he_inhouse_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：12000">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small">供應商庫存（pcs）</label>
+                <input name="he_supplier_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：8000">
+              </div>
+              <div class="col-12">
+                <label class="form-label small">處理判定（每端如何處理）</label>
+                <textarea name="he_decision" rows="3" class="form-control form-control-sm"
+                          placeholder="例：客戶端 5000 通知特採允收；廠內 12000 全檢；供應商 8000 全部報廢，要求重新生產…"></textarea>
+              </div>
+            </div>
+          </div>
+
           <button class="btn btn-warning">
-            <i class="bi bi-check2-square me-1"></i>下處理判斷 → 根因階段
+            <i class="bi bi-check2-square me-1"></i>送出處理判斷 → 根因階段
           </button>
         </form>
       </div>
     </div>
-    {% elif form.disposition %}
+
+    <script>
+    (function(){
+      // 子表單 toggle
+      document.querySelectorAll('.disp-pick').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const box = document.getElementById(cb.dataset.target);
+          if (!box) return;
+          box.classList.toggle('d-none', !cb.checked);
+        });
+      });
+      // SA 子類別 toggle
+      const saSortBox = document.getElementById('saSortBox');
+      const saRwBox = document.getElementById('saRwBox');
+      function syncSaSub() {
+        const v = (document.querySelector('.sa-sub:checked') || {}).value;
+        if (saSortBox) saSortBox.classList.toggle('d-none', v !== 'SORTING');
+        if (saRwBox)   saRwBox.classList.toggle('d-none', v !== 'REWORK');
+      }
+      document.querySelectorAll('.sa-sub').forEach(r => r.addEventListener('change', syncSaSub));
+      syncSaSub();
+      // 套用 mail 範本
+      const tplBtn = document.getElementById('loadMailTpl');
+      const SUPPLIER_TPL = {{ qc_supplier_mail_tpl | tojson }};
+      if (tplBtn) {
+        tplBtn.addEventListener('click', () => {
+          const ta = document.getElementById('supplierMailBody');
+          if (ta) ta.value = SUPPLIER_TPL;
+        });
+      }
+
+      // 自動從供應商主檔抓 contact / email
+      // form 上有「廠商名稱」(form.supplier_name)，開「退回供應商」時自動 lookup
+      const SUPPLIER_NAME = {{ (form.supplier_name or '') | tojson }};
+      const dispRTS = document.getElementById('dispRTS');
+      const mailToInp = document.querySelector('#rtsBox input[name="supplier_mail_to"]');
+      const mailBody  = document.getElementById('supplierMailBody');
+      let _looked = false;
+      async function lookupSupplier() {
+        if (_looked || !SUPPLIER_NAME) return;
+        try {
+          const resp = await fetch(`/qc-exceptions/api/supplier-lookup?name=${encodeURIComponent(SUPPLIER_NAME)}`);
+          if (!resp.ok) return;
+          const j = await resp.json();
+          const m = (j.matches && j.matches[0]) || null;
+          if (!m) return;
+          _looked = true;
+          // To 為空才自動填入
+          if (mailToInp && !mailToInp.value && m.email) mailToInp.value = m.email;
+          // 範本內容自動帶聯絡人（取代第一行）
+          if (mailBody && !mailBody.value && m.contact) {
+            mailBody.value = SUPPLIER_TPL.replace(
+              /^.+ 您好：/, `${SUPPLIER_NAME} ${m.contact} 您好：`
+            );
+          } else if (mailBody && !mailBody.value) {
+            mailBody.value = SUPPLIER_TPL;
+          }
+        } catch(_) {}
+      }
+      if (dispRTS) dispRTS.addEventListener('change', () => {
+        if (dispRTS.checked) lookupSupplier();
+      });
+    })();
+    </script>
+    {% elif _picked %}
     <div class="card shadow-sm mb-3">
       <div class="card-header bg-white fw-semibold">處理判斷紀錄</div>
       <div class="card-body small">
         <strong>處理方式：</strong>
-        {% if form.disposition.value == 'RETURN_TO_SUPPLIER' %}<span class="badge bg-danger">退貨</span>
-        {% elif form.disposition.value == 'LAB_TEST' %}<span class="badge bg-info text-dark">實驗測試</span>
-        {% elif form.disposition.value == 'SPECIAL_ACCEPT' %}<span class="badge bg-success">特採允收</span>
-        {% endif %}
+        {% for code in _picked %}
+          {% if code == 'RETURN_TO_SUPPLIER' %}<span class="badge bg-danger me-1">A. 退貨</span>
+          {% elif code == 'LAB_TEST' %}<span class="badge bg-info text-dark me-1">實驗測試（舊）</span>
+          {% elif code == 'SPECIAL_ACCEPT' %}<span class="badge bg-success me-1">B. 特採允收</span>
+          {% elif code == 'HORIZONTAL_EXPANSION' %}<span class="badge bg-primary me-1">C. 橫向展開</span>
+          {% endif %}
+        {% endfor %}
         <span class="text-muted ms-2">由 {{ form.dispositioner.display_name if form.dispositioner else '—' }}
           於 {{ form.disposition_at.strftime('%Y-%m-%d %H:%M') if form.disposition_at else '' }} 判定</span>
-        {% if form.disposition_note %}
-        <div class="mt-1"><strong>備註：</strong>{{ form.disposition_note }}</div>
+        {% if form.disposition_note %}<div class="mt-1"><strong>備註：</strong>{{ form.disposition_note }}</div>{% endif %}
+
+        {# 通知信狀態 #}
+        {% if form.supplier_mail_to or form.supplier_mail_sent_at %}
+        <div class="mt-2 p-2 border rounded bg-light">
+          <strong>通知信：</strong>
+          對象 — {% if form.rts_target_type == 'STATION' %}工站{% else %}供應商{% endif %}
+          ｜ To：{{ form.supplier_mail_to or '—' }}
+          {% if form.supplier_mail_sent_at %}
+            <span class="text-success">已寄出 {{ form.supplier_mail_sent_at.strftime('%m-%d %H:%M') }}</span>
+          {% else %}<span class="text-warning">尚未寄出</span>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if 'RETURN_TO_SUPPLIER' in _picked %}
+        <div class="mt-2 p-2 border border-danger-subtle rounded">
+          <strong class="text-danger">A. 退貨：</strong>路由通知 → {{ _route_hint }}<br>
+          {% if form.rts_replenish_note %}
+          <span class="small">補貨資訊請求：{{ form.rts_replenish_note }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if 'SPECIAL_ACCEPT' in _picked %}
+        <div class="mt-2 p-2 border border-success-subtle rounded">
+          <strong class="text-success">B. 特採允收：</strong>
+          {% if form.sa_subtype == 'NO_ACTION' %}<span class="badge bg-secondary">B1 不需特殊處理</span>
+          {% elif form.sa_subtype == 'SORTING' %}<span class="badge bg-warning text-dark">B2 Sorting</span>
+          {% elif form.sa_subtype == 'REWORK' %}<span class="badge bg-info text-dark">B3 Rework</span>
+          {% endif %}
+          ｜執行站：{{ form.sa_station or '—' }}<br>
+          <span class="small">不良品處理：{{ form.sa_defect_handling or '—' }}</span>
+          {% if form.sa_subtype == 'SORTING' %}
+          <div class="small mt-1">
+            Sorting 結果：良品 <strong class="text-success">{{ form.sa_sorting_pass_qty if form.sa_sorting_pass_qty is not none else '待回填' }}</strong>
+            ／不良品 <strong class="text-danger">{{ form.sa_sorting_fail_qty if form.sa_sorting_fail_qty is not none else '待回填' }}</strong>
+          </div>
+          {% elif form.sa_subtype == 'REWORK' %}
+          <div class="small mt-1">驗證內容：{{ form.sa_rework_note or '—' }}</div>
+          <div class="small">樣品測試：數 {{ form.lab_test_qty or '—' }} ｜ 期 {{ form.lab_test_due_date or '—' }} ｜ 條件 {{ form.lab_test_conditions or '—' }}</div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if 'HORIZONTAL_EXPANSION' in _picked %}
+        <div class="mt-2 p-2 border border-primary-subtle rounded">
+          <strong class="text-primary">C. 橫向展開：</strong>
+          客戶 <strong>{{ form.he_customer_qty if form.he_customer_qty is not none else '—' }}</strong>
+          ｜廠內 <strong>{{ form.he_inhouse_qty if form.he_inhouse_qty is not none else '—' }}</strong>
+          ｜供應商 <strong>{{ form.he_supplier_qty if form.he_supplier_qty is not none else '—' }}</strong>
+          {% if form.he_decision %}
+          <div class="small mt-1">判定：{{ form.he_decision }}</div>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -317,11 +617,28 @@
     <div class="card shadow-sm mb-3">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>操作</div>
       <div class="card-body">
-        {% if _is_qc and _s == 'DRAFT' %}
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" class="mb-2">
-          <input type="hidden" name="disposition" value="LAB_TEST">
-          <button class="btn btn-outline-secondary w-100 btn-sm" disabled>
-            草稿請於上方填寫處理判斷送出
+        {# DRAFT — 建單者（業助/產線主管/品保）可修改補件 + 重送 #}
+        {% set _is_creator = (user.id == form.created_by or user.role.value == 'admin') %}
+        {% if _s == 'DRAFT' and _is_creator %}
+        <a href="/qc-exceptions/{{ form.form_id }}/edit" class="btn btn-warning w-100 mb-2 fw-semibold">
+          <i class="bi bi-pencil-square me-1"></i>補件修改（編輯內容 / 附件）
+        </a>
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/edit" class="mb-2">
+          <input type="hidden" name="submit_action" value="resubmit">
+          <input type="hidden" name="part_no" value="{{ form.part_no }}">
+          <input type="hidden" name="defect_cause" value="{{ form.defect_cause }}">
+          <input type="hidden" name="doc_type" value="{{ form.doc_type.value if form.doc_type else 'RECEIVE' }}">
+          <input type="hidden" name="receive_doc_no" value="{{ form.receive_doc_no or '' }}">
+          <input type="hidden" name="event_date_type" value="{{ form.event_date_type.value if form.event_date_type else 'RECEIVE' }}">
+          <input type="hidden" name="receive_date" value="{{ form.receive_date or '' }}">
+          <input type="hidden" name="stage" value="{{ form.stage.value }}">
+          <input type="hidden" name="supplier_name" value="{{ form.supplier_name or '' }}">
+          <input type="hidden" name="receive_qty" value="{{ form.receive_qty or '' }}">
+          <input type="hidden" name="measurement_data" value="{{ form.measurement_data or '' }}">
+          <input type="hidden" name="defect_qty" value="{{ form.defect_qty or '' }}">
+          <input type="hidden" name="sample_qty" value="{{ form.sample_qty or '' }}">
+          <button class="btn btn-danger w-100" onclick="return confirm('直接送出？將進入「待品保判斷」階段。');">
+            <i class="bi bi-send me-1"></i>直接送出 → 待品保判斷
           </button>
         </form>
         {% endif %}
@@ -336,6 +653,14 @@
         </form>
         {% endif %}
 
+        {# 退回前一站要求補資訊（品保/admin，且不是草稿/結案）#}
+        {% if _is_qc and _s in ('PENDING_DISPOSITION','PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+        <button class="btn btn-outline-secondary w-100 mb-2" data-bs-toggle="modal"
+                data-bs-target="#qcReturnPrevModal">
+          <i class="bi bi-arrow-return-left me-1"></i>退回前一站（要求補資訊）
+        </button>
+        {% endif %}
+
         {% if _s == 'CLOSED' %}
         <div class="text-success small text-center">
           <i class="bi bi-check2-circle me-1"></i>本單已結案
@@ -346,20 +671,44 @@
       </div>
     </div>
 
-    {# 附件 #}
+    {# 附件 — 圖片可預覽 #}
     <div class="card shadow-sm">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件</div>
       <div class="card-body">
         {% for cat in ATTACH_CATEGORIES %}
         {% if cat in docs_by_cat %}
-        <div class="mb-2">
+        <div class="mb-3">
           <div class="small fw-semibold text-primary mb-1">{{ cat }}</div>
-          {% for d in docs_by_cat[cat] %}
-          <div class="small border-bottom py-1">
-            <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
-            <span class="text-muted ms-1">{{ d.uploaded_at.strftime('%m-%d %H:%M') }}</span>
+          <div class="d-flex flex-wrap gap-2">
+            {% for d in docs_by_cat[cat] %}
+            {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+            {% set preview_url = '/qc-exceptions/doc/preview/' ~ d.id %}
+            <div class="border rounded p-1 text-center" style="width:120px">
+              {% if ext in ('png','jpg','jpeg','gif','webp','bmp') %}
+              <a href="#" class="qc-doc-preview" data-url="{{ preview_url }}"
+                 data-name="{{ d.original_name }}" data-type="image">
+                <img src="{{ preview_url }}" class="rounded w-100"
+                     style="height:80px;object-fit:cover" alt="">
+              </a>
+              <div class="text-truncate small mt-1" title="{{ d.original_name }}">
+                <i class="bi bi-image me-1"></i>{{ d.original_name }}
+              </div>
+              {% elif ext == 'pdf' %}
+              <a href="#" class="qc-doc-preview text-decoration-none" data-url="{{ preview_url }}"
+                 data-name="{{ d.original_name }}" data-type="pdf">
+                <i class="bi bi-file-earmark-pdf text-danger" style="font-size:2rem"></i>
+                <div class="text-truncate small mt-1" title="{{ d.original_name }}">{{ d.original_name }}</div>
+              </a>
+              {% else %}
+              <a href="{{ preview_url }}" target="_blank" class="text-decoration-none">
+                <i class="bi bi-file-earmark text-secondary" style="font-size:2rem"></i>
+                <div class="text-truncate small mt-1" title="{{ d.original_name }}">{{ d.original_name }}</div>
+              </a>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.7rem">{{ d.uploaded_at.strftime('%m-%d %H:%M') }}</div>
+            </div>
+            {% endfor %}
           </div>
-          {% endfor %}
         </div>
         {% endif %}
         {% endfor %}
@@ -370,4 +719,78 @@
     </div>
   </div>
 </div>
+
+{# 附件預覽 modal #}
+<div class="modal fade" id="qcDocModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="qcDocName"><i class="bi bi-eye me-2"></i>附件預覽</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 text-center bg-light" style="height:80vh;overflow:auto">
+        <iframe id="qcDocFrame" src="" class="w-100 h-100 border-0 bg-white"></iframe>
+        <img id="qcDocImg" src="" class="d-none mw-100" style="max-height:78vh" alt="">
+      </div>
+      <div class="modal-footer">
+        <a id="qcDocOpen" href="#" target="_blank" class="btn btn-outline-secondary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>開新分頁
+        </a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const modalEl = document.getElementById('qcDocModal');
+  const frame = document.getElementById('qcDocFrame');
+  const img = document.getElementById('qcDocImg');
+  document.addEventListener('click', e => {
+    const a = e.target.closest('.qc-doc-preview');
+    if (!a) return;
+    e.preventDefault();
+    const url = a.dataset.url, name = a.dataset.name || '附件預覽', type = a.dataset.type || 'pdf';
+    document.getElementById('qcDocName').textContent = name;
+    document.getElementById('qcDocOpen').href = url;
+    if (type === 'image') {
+      frame.classList.add('d-none'); frame.src = '';
+      img.classList.remove('d-none'); img.src = url;
+    } else {
+      img.classList.add('d-none'); img.src = '';
+      frame.classList.remove('d-none'); frame.src = url;
+    }
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => { frame.src = ''; img.src = ''; });
+})();
+</script>
+
+{# 退回前一站 modal #}
+{% if _is_qc and _s in ('PENDING_DISPOSITION','PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+<div class="modal fade" id="qcReturnPrevModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="/qc-exceptions/{{ form.form_id }}/return-to-previous">
+      <div class="modal-header bg-secondary text-white">
+        <h5 class="modal-title"><i class="bi bi-arrow-return-left me-2"></i>退回前一站</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          目前狀態 <strong>{{ _s }}</strong>，按下確認後會退回上一站，請填寫退回原因 / 需要補的資訊：
+        </div>
+        <textarea name="comment" rows="4" class="form-control" required
+                  placeholder="例：異常照片不清楚請補拍；量測數據缺取樣位置；建立者請補進貨單號正確編碼"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-secondary">
+          <i class="bi bi-arrow-return-left me-1"></i>確認退回前一站
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
