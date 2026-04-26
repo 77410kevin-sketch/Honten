@@ -326,9 +326,14 @@
         <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
           <span><i class="bi bi-truck me-2"></i>供應商派發 / 報價</span>
           {% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
-          <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#dispatchModal">
-            <i class="bi bi-send me-1"></i>派發詢價信
-          </button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#engReturnModal">
+              <i class="bi bi-arrow-return-left me-1"></i>退回業務補件
+            </button>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#dispatchModal">
+              <i class="bi bi-send me-1"></i>派發詢價信
+            </button>
+          </div>
           {% endif %}
         </div>
         <div class="card-body p-0">
@@ -372,17 +377,39 @@
                 {% endif %}
               </td>
               {% if _can_reply %}
-              <td>
-                <input form="reply-form-{{ inv.id }}" name="quote_amount" type="number" step="0.01"
-                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                       value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
-                       placeholder="單價">
+              <td class="price-cell" data-inv="{{ inv.id }}">
+                <div class="input-group input-group-sm">
+                  <select class="form-select form-select-sm currency-sel"
+                          style="max-width:60px;flex:0 0 60px;padding:.15rem .25rem">
+                    <option value="NTD" selected>NT$</option>
+                    <option value="USD">US$</option>
+                  </select>
+                  <input type="number" step="0.01"
+                         class="form-control form-control-sm price-display{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
+                         placeholder="單價">
+                </div>
+                <input form="reply-form-{{ inv.id }}" type="hidden" name="quote_amount"
+                       class="price-hidden"
+                       value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}">
+                <small class="text-muted convert-hint d-block" style="font-size:10px;line-height:1"></small>
               </td>
-              <td>
-                <input form="reply-form-{{ inv.id }}" name="tooling_cost" type="number" step="0.01"
-                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                       value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
-                       placeholder="模具費">
+              <td class="price-cell" data-inv="{{ inv.id }}">
+                <div class="input-group input-group-sm">
+                  <select class="form-select form-select-sm currency-sel"
+                          style="max-width:60px;flex:0 0 60px;padding:.15rem .25rem">
+                    <option value="NTD" selected>NT$</option>
+                    <option value="USD">US$</option>
+                  </select>
+                  <input type="number" step="0.01"
+                         class="form-control form-control-sm price-display{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
+                         placeholder="模具費">
+                </div>
+                <input form="reply-form-{{ inv.id }}" type="hidden" name="tooling_cost"
+                       class="price-hidden"
+                       value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}">
+                <small class="text-muted convert-hint d-block" style="font-size:10px;line-height:1"></small>
               </td>
               <td>
                 <input form="reply-form-{{ inv.id }}" name="lead_time_days" type="number"
@@ -446,8 +473,8 @@
                 <th style="min-width:160px">供應商</th>
                 <th style="min-width:90px">派發時間</th>
                 <th style="min-width:110px">回覆時間</th>
-                <th style="min-width:110px">報價金額</th>
-                <th style="min-width:110px">模治具費</th>
+                <th style="min-width:160px">報價金額</th>
+                <th style="min-width:160px">模治具費</th>
                 <th style="min-width:90px">交期(天)</th>
                 <th style="min-width:150px">備註</th>
                 <th style="min-width:180px">報價單附件</th>
@@ -1371,6 +1398,14 @@
         <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>操作</div>
         <div class="card-body">
 
+          {# 業務退回補件修改（RETURNED·業務）#}
+          {% if form.status.value == 'RETURNED' and form.reject_to == '業務'
+                and (user.role.value == 'admin' or user.id == form.created_by) %}
+          <a href="/npi-forms/{{ form.form_id }}/edit" class="btn btn-warning w-100 mb-2 fw-semibold">
+            <i class="bi bi-pencil-square me-1"></i>補件修改（編輯內容 / 附件）
+          </a>
+          {% endif %}
+
           {# 業務送審 #}
           {% if form.status.value in ('DRAFT','RETURNED') and (user.role.value == 'admin' or user.id == form.created_by) and (form.status.value != 'RETURNED' or form.reject_to != '工程師') %}
           <form method="post" action="/npi-forms/{{ form.form_id }}/submit-to-eng" class="mb-2">
@@ -1379,6 +1414,25 @@
             </button>
             <input type="hidden" name="comment" value="">
           </form>
+          {% endif %}
+
+          {# 工程：QUOTING 階段若業務新增了圖紙（沒有對應 invite），可重開派發補加 #}
+          {% if form.status.value == 'QUOTING' and user.role.value in ('engineer','admin') %}
+            {% set _drawing_docs = form.documents | selectattr('category', 'equalto', '圖面') | list %}
+            {% set _invited_dids = form.invites | map(attribute='drawing_doc_id') | select | list %}
+            {% set _new_drawings = _drawing_docs | rejectattr('id', 'in', _invited_dids) | list %}
+            {% if _new_drawings %}
+            <form method="post" action="/npi-forms/{{ form.form_id }}/reopen-dispatch" class="mb-2"
+                  onsubmit="return confirm('將狀態退回「待工程派發」以加派新圖紙的詢價，已派發的供應商列不變。確認？');">
+              <div class="alert alert-warning small mb-1 py-2">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                偵測到 <strong>{{ _new_drawings|length }}</strong> 張新圖紙尚未派發
+              </div>
+              <button class="btn btn-warning w-100">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>重開詢價派發（補派新圖紙）
+              </button>
+            </form>
+            {% endif %}
           {% endif %}
 
           {# 採購/工程宣告報價收齊 #}
@@ -1513,8 +1567,30 @@
       </div>
 
       {# 附件分類顯示 — 支援圖片縮圖 + PDF 內嵌預覽 modal #}
+      {% set _can_manage_docs = form.status.value != 'CLOSED' and user.role.value in ('sales','engineer','admin') %}
+      <style>
+        .doc-card { position: relative; }
+        .doc-card .doc-actions { position: absolute; top: 2px; right: 2px; display: none; gap: 2px; z-index: 5; }
+        .doc-card:hover .doc-actions { display: flex; }
+        .doc-card .doc-actions .btn { padding: 1px 5px; line-height: 1; }
+      </style>
       <div class="card shadow-sm mb-3">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件</div>
+        <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2 flex-wrap">
+          <span><i class="bi bi-paperclip me-2"></i>附件</span>
+          {% if _can_manage_docs %}
+          <div class="ms-auto d-flex align-items-center gap-1">
+            <select id="addDocCategory" class="form-select form-select-sm" style="width:auto;font-size:.8rem">
+              {% for cat in ATTACH_CATEGORIES %}
+              <option value="{{ cat }}"{% if cat == '圖面' %} selected{% endif %}>{{ cat }}</option>
+              {% endfor %}
+            </select>
+            <label class="btn btn-sm btn-outline-primary mb-0">
+              <i class="bi bi-plus-lg me-1"></i>新增附件
+              <input type="file" id="addDocFile" class="d-none">
+            </label>
+          </div>
+          {% endif %}
+        </div>
         <div class="card-body">
           {% for cat in ATTACH_CATEGORIES %}
           {% if cat in docs_by_cat %}
@@ -1524,7 +1600,21 @@
               {% for d in docs_by_cat[cat] %}
               {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
               {% set preview_url = '/npi-forms/doc/preview/' ~ d.id %}
-              <div class="border rounded p-1 small" style="min-width:130px; max-width:160px">
+              <div class="border rounded p-1 small doc-card" style="min-width:130px; max-width:160px">
+                {% if _can_manage_docs %}
+                <div class="doc-actions">
+                  <label class="btn btn-sm btn-light border mb-0" title="更換檔案">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <input type="file" class="d-none doc-replace-input" data-doc-id="{{ d.id }}">
+                  </label>
+                  <form method="post" action="/npi-forms/{{ form.form_id }}/delete-doc/{{ d.id }}"
+                        class="d-inline doc-delete-form" data-name="{{ d.original_name }}">
+                    <button type="submit" class="btn btn-sm btn-light border" title="刪除">
+                      <i class="bi bi-trash text-danger"></i>
+                    </button>
+                  </form>
+                </div>
+                {% endif %}
                 {% if ext in ('png','jpg','jpeg','gif','webp') %}
                   <a href="#" class="doc-preview" data-url="{{ preview_url }}" data-name="{{ d.original_name }}" data-type="image">
                     <img src="{{ preview_url }}" class="rounded w-100"
@@ -1616,6 +1706,56 @@
       })();
       </script>
 
+      {# 附件管理：新增 / 更換 / 刪除 #}
+      <script>
+      (function(){
+        // 新增附件
+        const addInp = document.getElementById('addDocFile');
+        const catSel = document.getElementById('addDocCategory');
+        if (addInp) {
+          addInp.addEventListener('change', async () => {
+            if (!addInp.files || !addInp.files[0]) return;
+            const fd = new FormData();
+            fd.append('file', addInp.files[0]);
+            fd.append('category', catSel ? catSel.value : '其它');
+            try {
+              const resp = await fetch('/npi-forms/{{ form.form_id }}/add-doc', { method:'POST', body: fd });
+              const j = await resp.json().catch(() => ({}));
+              if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+              location.reload();
+            } catch(err) {
+              alert('上傳失敗：' + err.message);
+              addInp.value = '';
+            }
+          });
+        }
+        // 更換附件（hover 工具列）
+        document.addEventListener('change', async (e) => {
+          const inp = e.target.closest('.doc-replace-input');
+          if (!inp || !inp.files || !inp.files[0]) return;
+          const docId = inp.dataset.docId;
+          const fd = new FormData();
+          fd.append('file', inp.files[0]);
+          try {
+            const resp = await fetch(`/npi-forms/{{ form.form_id }}/replace-doc/${docId}`, { method:'POST', body: fd });
+            const j = await resp.json().catch(() => ({}));
+            if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+            location.reload();
+          } catch(err) {
+            alert('更換失敗：' + err.message);
+            inp.value = '';
+          }
+        });
+        // 刪除附件確認
+        document.addEventListener('submit', (e) => {
+          const f = e.target.closest('.doc-delete-form');
+          if (!f) return;
+          const name = f.dataset.name || '此附件';
+          if (!confirm(`確定刪除「${name}」？此動作無法復原。`)) e.preventDefault();
+        });
+      })();
+      </script>
+
       {# 簽核紀錄 #}
       <div class="card shadow-sm">
         <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-data me-2"></i>簽核紀錄</div>
@@ -1649,6 +1789,35 @@
 </div>
 
 {# ───── Modals ───── #}
+
+{# 工程退回業務補件 #}
+{% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
+<div class="modal fade" id="engReturnModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/eng-return-to-sales">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-arrow-return-left me-2"></i>退回業務補件</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          按下確認後，本單會退回給原業務（狀態 → <strong>RETURNED · 退回業務</strong>），業務補件後可重送。
+        </div>
+        <label class="form-label fw-semibold">補件原因 / 缺漏項目 <span class="text-danger">*</span></label>
+        <textarea name="comment" rows="5" class="form-control" required
+                  placeholder="例：&#10;1. 缺少俯視圖 / 截面圖&#10;2. 材質規格未明確（請提供 SUS 等級）&#10;3. 客戶交期未填，請補充"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-danger">
+          <i class="bi bi-arrow-return-left me-1"></i>確認退回業務
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {# 派發供應商 #}
 {% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
@@ -1749,10 +1918,17 @@
             </div>
             <div class="flex-grow-1">
               <div class="fw-semibold">
-                <span class="badge bg-primary me-1">#{{ loop.index }}</span>{{ d.original_name }}
+                <span class="badge bg-primary me-1">#{{ loop.index }}</span>
+                <span class="drawing-title-name">{{ d.original_name }}</span>
               </div>
               <div class="small text-muted">該圖紙需發案的製程 / 供應商</div>
             </div>
+            <label class="btn btn-sm btn-outline-warning mb-0" title="更換圖檔（保留 doc id，內容換新版）">
+              <i class="bi bi-arrow-repeat me-1"></i>更換圖檔
+              <input type="file" class="d-none replace-doc-input"
+                     data-doc-id="{{ d.id }}"
+                     accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.gif,.webp">
+            </label>
             <button type="button" class="btn btn-sm btn-outline-primary add-row-btn">
               <i class="bi bi-plus"></i> 新增製程列
             </button>
@@ -1899,6 +2075,44 @@
     const tbody = block.querySelector('.drawing-rows');
     if (tbody && !tbody.querySelector('tr.dispatch-row')) {
       addRowToBlock(block); addRowToBlock(block);
+    }
+  });
+
+  // ── 更換業務上傳的圖檔 ──
+  document.addEventListener('change', async (e) => {
+    const inp = e.target.closest('#dispatchModal .replace-doc-input');
+    if (!inp || !inp.files || !inp.files[0]) return;
+    const docId = inp.dataset.docId;
+    const file  = inp.files[0];
+    const block = inp.closest('.drawing-block');
+    const titleEl = block && block.querySelector('.drawing-title-name');
+    const lbl = inp.closest('label');
+    const oldHTML = lbl ? lbl.innerHTML : '';
+    if (lbl) {
+      lbl.classList.add('disabled');
+      lbl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>上傳中…';
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/replace-doc/${docId}`, {
+        method: 'POST', body: fd
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+      if (titleEl) titleEl.textContent = j.original_name || file.name;
+      // 刷新 thumbnail
+      const thumb = block.querySelector('img');
+      if (thumb) thumb.src = `/npi-forms/doc/preview/${docId}?t=${Date.now()}`;
+      if (lbl) {
+        lbl.innerHTML = '<i class="bi bi-check-circle me-1 text-success"></i>已更換';
+        setTimeout(() => { lbl.innerHTML = oldHTML; lbl.classList.remove('disabled'); }, 1500);
+      }
+    } catch (err) {
+      alert('更換失敗：' + err.message);
+      if (lbl) { lbl.innerHTML = oldHTML; lbl.classList.remove('disabled'); }
+    } finally {
+      inp.value = '';
     }
   });
 
@@ -2118,14 +2332,16 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const t = e.target;
-    // 只處理 reply-form 下的 input（quote_amount / tooling_cost / lead_time_days / quote_comment）
+    if (t.tagName !== 'INPUT' || t.type === 'file' || t.type === 'hidden') return;
     const formId = t.getAttribute('form') || '';
-    if (!formId.startsWith('reply-form-')) return;
-    if (t.tagName !== 'INPUT' || t.type === 'file') return;
+    const isPriceDisplay = t.classList.contains('price-display');
+    if (!formId.startsWith('reply-form-') && !isPriceDisplay) return;
     e.preventDefault();
-    // 收集同一 reply-form 所有可 focus 的 input（排除 file / hidden），按 DOM 順序
-    const all = Array.from(document.querySelectorAll(
-      `input[form="${formId}"]:not([type="file"]):not([type="hidden"])`
+    // 收集同列所有可 focus 的 input（含視覺型 price-display + reply-form 內的其他欄位），按 DOM 順序
+    const tr = t.closest('tr');
+    if (!tr) return;
+    const all = Array.from(tr.querySelectorAll(
+      'input.form-control:not([type="file"]):not([type="hidden"])'
     ));
     const idx = all.indexOf(t);
     if (idx < 0) return;
@@ -2134,10 +2350,70 @@
       if (all[idx + 1].select) all[idx + 1].select();
     } else {
       // 最後一欄（備註）→ 自動開啟該列的檔案選擇視窗
-      const fileInp = document.querySelector(`input[form="${formId}"][type="file"]`);
+      const fileInp = tr.querySelector('input[type="file"]');
       if (fileInp) fileInp.click();
     }
   });
+
+  // ── NTD / USD 幣別切換（匯率固定 32）：visible 顯示用、hidden 永遠 NTD 送出 ──
+  const FX_RATE = 32;
+  function recalcPriceCell(td) {
+    const display = td.querySelector('.price-display');
+    const hidden  = td.querySelector('.price-hidden');
+    const sel     = td.querySelector('.currency-sel');
+    const hint    = td.querySelector('.convert-hint');
+    if (!display || !hidden || !sel) return;
+    const dv = parseFloat(display.value);
+    if (isNaN(dv)) {
+      hidden.value = '';
+      if (hint) hint.textContent = '';
+      return;
+    }
+    const ntd = sel.value === 'USD' ? dv * FX_RATE : dv;
+    hidden.value = ntd.toFixed(2);
+    if (hint) {
+      hint.textContent = sel.value === 'USD'
+        ? `≈ NT$ ${Math.round(ntd).toLocaleString('zh-TW')}`
+        : '';
+    }
+  }
+  function changeCurrency(td) {
+    const display = td.querySelector('.price-display');
+    const hidden  = td.querySelector('.price-hidden');
+    const sel     = td.querySelector('.currency-sel');
+    if (!display || !hidden || !sel) return;
+    const ntd = parseFloat(hidden.value);
+    if (!isNaN(ntd) && ntd !== 0) {
+      display.value = sel.value === 'USD'
+        ? (ntd / FX_RATE).toFixed(2)
+        : ntd.toFixed(2);
+    }
+    recalcPriceCell(td);
+  }
+  document.addEventListener('input', (e) => {
+    const td = e.target.closest('.price-cell');
+    if (td && e.target.classList.contains('price-display')) recalcPriceCell(td);
+  });
+  document.addEventListener('change', (e) => {
+    const td = e.target.closest('.price-cell');
+    if (td && e.target.classList.contains('currency-sel')) {
+      changeCurrency(td);
+      // 同列其他 price-cell 跟著切換幣別
+      const tr = td.closest('tr');
+      if (tr) {
+        tr.querySelectorAll('.price-cell').forEach(otherTd => {
+          if (otherTd === td) return;
+          const otherSel = otherTd.querySelector('.currency-sel');
+          if (otherSel && otherSel.value !== e.target.value) {
+            otherSel.value = e.target.value;
+            changeCurrency(otherTd);
+          }
+        });
+      }
+    }
+  });
+  // 初始：把 hidden(NTD) 同步寫一次（以防 display 有值但 hidden 不一致）
+  document.querySelectorAll('.price-cell').forEach(recalcPriceCell);
 
   // ── 儲存後保留捲動位置（submit 前記 scroll，reload 後還原）──
   document.addEventListener('submit', (e) => {

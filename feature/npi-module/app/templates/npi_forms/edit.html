@@ -73,9 +73,10 @@
             <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="small">
               <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
             </a>
-            <form method="post" action="/npi-forms/{{ form.form_id }}/delete-doc/{{ d.id }}">
-              <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x"></i></button>
-            </form>
+            <button type="button" class="btn btn-sm btn-outline-danger del-doc-btn"
+                    data-doc-id="{{ d.id }}" data-name="{{ d.original_name }}">
+              <i class="bi bi-x"></i>
+            </button>
           </div>
           {% endfor %}
         </div>
@@ -140,6 +141,29 @@ document.addEventListener("click", (e) => {
   if (e.target.closest(".remove-row")) {
     const rows = document.querySelectorAll(".attach-row");
     if (rows.length > 1) e.target.closest(".attach-row").remove();
+  }
+});
+
+// 刪除已上傳附件（用 fetch 呼叫，避免 nested form 破壞外層 edit form）
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".del-doc-btn");
+  if (!btn) return;
+  const docId = btn.dataset.docId;
+  const name = btn.dataset.name || '此附件';
+  if (!confirm(`確定刪除「${name}」？此動作無法復原。`)) return;
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/npi-forms/{{ form.form_id }}/delete-doc/${docId}`, {
+      method: 'POST', redirect: 'manual'
+    });
+    if (resp.ok || resp.type === 'opaqueredirect') {
+      btn.closest('.border-bottom').remove();
+    } else {
+      throw new Error('狀態 ' + resp.status);
+    }
+  } catch(err) {
+    alert('刪除失敗：' + err.message);
+    btn.disabled = false;
   }
 });
 </script>

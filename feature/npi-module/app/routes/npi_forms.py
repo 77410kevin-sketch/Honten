@@ -378,6 +378,132 @@ async def delete_doc(
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
+# ── 業務於任何活動階段補上傳附件 ─────────────────
+@router.post("/{form_id}/add-doc")
+async def add_doc(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+    category: str = Form("圖面"),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status == NPIFormStatus.CLOSED:
+        raise HTTPException(status_code=400, detail="已結案，無法新增附件")
+    if current_user.role not in (Role.SALES, Role.ENGINEER, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    if category not in ATTACH_CATEGORIES:
+        category = "其它"
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="檔案為空")
+    upload_dir = _upload_dir(form.id)
+    ext = os.path.splitext(file.filename)[1] or ".bin"
+    saved = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(upload_dir, saved), "wb") as f:
+        f.write(content)
+    doc = NPIDocument(
+        form_id_fk=form.id,
+        filename=saved,
+        original_name=file.filename,
+        category=category,
+        uploaded_by=current_user.id,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {"ok": True, "doc_id": doc.id, "original_name": doc.original_name, "category": doc.category}
+
+
+# ── 工程更換業務上傳的圖檔（保留 doc_id，內容換新版） ───────
+@router.post("/{form_id}/replace-doc/{doc_id}")
+async def replace_doc(
+    form_id: str, doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status not in (
+        NPIFormStatus.DRAFT, NPIFormStatus.ENG_DISPATCH, NPIFormStatus.RETURNED
+    ):
+        raise HTTPException(status_code=400, detail="目前狀態不可更換附件")
+    if current_user.role not in (Role.ENGINEER, Role.SALES, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    doc = await db.get(NPIDocument, doc_id)
+    if not doc or doc.form_id_fk != form.id:
+        raise HTTPException(status_code=404)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="檔案為空")
+    upload_dir = _upload_dir(form.id)
+    ext = os.path.splitext(file.filename)[1] or ".bin"
+    saved = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(upload_dir, saved), "wb") as f:
+        f.write(content)
+    # 砍掉舊檔
+    old_fp = os.path.join(upload_dir, doc.filename)
+    if os.path.exists(old_fp):
+        try: os.remove(old_fp)
+        except Exception: pass
+    doc.filename = saved
+    doc.original_name = file.filename
+    doc.uploaded_by = current_user.id
+    doc.uploaded_at = datetime.utcnow()
+    await db.commit()
+    return {"ok": True, "doc_id": doc.id, "original_name": doc.original_name}
+
+
+# ── 工程重新開啟詢價（QUOTING → ENG_DISPATCH，可為新圖紙加派 invites） ──
+@router.post("/{form_id}/reopen-dispatch")
+async def reopen_dispatch(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.QUOTING:
+        raise HTTPException(status_code=400, detail="目前狀態非供應商報價中")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    old = form.status
+    form.status = NPIFormStatus.ENG_DISPATCH
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "REOPEN_DISPATCH", old, form.status,
+                         comment.strip() or "業務新增圖紙 → 重開詢價派發"))
+    await db.commit()
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+# ── 工程退回業務補件 ─────────────────────────
+@router.post("/{form_id}/eng-return-to-sales")
+async def eng_return_to_sales(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(...),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.ENG_DISPATCH:
+        raise HTTPException(status_code=400, detail="目前狀態非待工程派發")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    if not comment.strip():
+        raise HTTPException(status_code=400, detail="退回原因不得為空")
+    old = form.status
+    form.status = NPIFormStatus.RETURNED
+    form.reject_to = "業務"
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "ENG_RETURN_TO_SALES",
+                         old, form.status, comment.strip(), reject_target="業務"))
+    await db.commit()
+    msg = (f"【工程退回業務補件】{form.form_id} - 請補件後重送。"
+           f"原因：{comment.strip()[:80]}")
+    await notif._notify_roles(db, [Role.SALES], msg)
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
 # ── 附件預覽 ────────────────────────────────
 
 @router.get("/doc/preview/{doc_id}")
@@ -1510,6 +1636,8 @@ async def detail_npi(
         "RETURNED→NPI_PENDING_BU":         ("工程重送BU",  "primary"),
         "RETURNED→QUOTES_COLLECTED":       ("業務重送",    "primary"),
         "ENG_DISPATCH→QUOTING":            ("派發供應商",  "info"),
+        "ENG_DISPATCH→RETURNED":           ("工程退回業務補件", "danger"),
+        "QUOTING→ENG_DISPATCH":            ("重開派發",    "warning"),
         "QUOTING→QUOTES_COLLECTED":        ("報價收齊",    "info"),
         "QUOTES_COLLECTED→RFQ_DONE":       ("發送客戶報價","success"),
         "RFQ_DONE→NPI_STARTED":            ("客戶確定開發","warning"),
