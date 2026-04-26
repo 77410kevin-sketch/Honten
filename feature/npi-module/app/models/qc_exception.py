@@ -48,6 +48,13 @@ class QCEventDateType(str, enum.Enum):
     COMPLAINT = "COMPLAINT" # 客訴日期
 
 
+class QCSourceType(str, enum.Enum):
+    """異常來源類型 — 廠商 / 客戶 / 廠內"""
+    SUPPLIER = "SUPPLIER"   # 廠商（外部供應商）
+    CUSTOMER = "CUSTOMER"   # 客戶（客訴端）
+    INTERNAL = "INTERNAL"   # 廠內（內部工站/單位）
+
+
 class QCException(Base):
     __tablename__ = "qc_exceptions"
 
@@ -69,7 +76,9 @@ class QCException(Base):
     receive_date      = Column(String(20),  nullable=True)    # 日期值
     stage             = Column(Enum(QCExceptionStage),
                                default=QCExceptionStage.IQC, nullable=False)
-    supplier_name     = Column(String(120), nullable=True)    # 廠商 展倚
+    source_type       = Column(Enum(QCSourceType),
+                               default=QCSourceType.SUPPLIER, nullable=True)  # 廠商/客戶/廠內
+    supplier_name     = Column(String(120), nullable=True)    # 名稱（廠商 展倚 / 客戶 景利 / 廠內 CNC 課）
     receive_qty       = Column(Integer,     nullable=True)    # 數量
     defect_cause      = Column(Text,        nullable=False)   # 異常原因 總長過長 32.00+-0.1
     measurement_data  = Column(Text,        nullable=True)    # 量測數據 32.11~32.15
@@ -117,6 +126,12 @@ class QCException(Base):
     sa_rework_note      = Column(Text, nullable=True)
     sa_rework_result    = Column(Text, nullable=True)              # rework + 樣品測試 結果回報
     sa_rework_filled_at = Column(DateTime, nullable=True)
+    # 客戶端執行（B4/B5）— 需計算工時與人力（業務協同）
+    sa_cust_sorting_hours    = Column(Float, nullable=True)
+    sa_cust_sorting_workers  = Column(Integer, nullable=True)
+    sa_cust_rework_hours     = Column(Float, nullable=True)
+    sa_cust_rework_workers   = Column(Integer, nullable=True)
+    sa_cust_note             = Column(Text, nullable=True)         # 客戶端地點/聯絡人/排程
 
     # 橫向展開 — v1 單列（向下相容） + v2 多列盤點單 JSON
     he_customer_qty     = Column(Integer, nullable=True)

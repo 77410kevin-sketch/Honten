@@ -14,6 +14,12 @@
 {% set _date_labels = {
   'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'
 } %}
+{% set _source_labels = {
+  'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'
+} %}
+{% set _source_placeholders = {
+  'SUPPLIER':'例：展倚','CUSTOMER':'例：景利','INTERNAL':'例：CNC 課'
+} %}
 
 <div class="container py-4" style="max-width:960px">
   <h4 class="mb-3">
@@ -66,9 +72,16 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-3">
-          <label class="form-label">廠商</label>
-          <input name="supplier_name" class="form-control" placeholder="例：展倚">
+        <div class="col-md-4">
+          <label class="form-label">來源</label>
+          <div class="input-group">
+            <select name="source_type" id="srcTypeSel" class="form-select" style="max-width:100px">
+              {% for v, lbl in _source_labels.items() %}
+              <option value="{{ v }}"{% if v == 'SUPPLIER' %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="supplier_name" id="srcNameInp" class="form-control" placeholder="例：展倚">
+          </div>
         </div>
         <div class="col-md-2">
           <label class="form-label">數量</label>
@@ -177,6 +190,14 @@ const docTypeSel = document.getElementById('docTypeSel');
 const docNoInp = document.getElementById('docNoInp');
 docTypeSel.addEventListener('change', () => {
   docNoInp.placeholder = docPlaceholders[docTypeSel.value] || '';
+});
+
+// 來源 placeholder 隨類型切換
+const srcPlaceholders = {{ _source_placeholders | tojson }};
+const srcTypeSel = document.getElementById('srcTypeSel');
+const srcNameInp = document.getElementById('srcNameInp');
+if (srcTypeSel) srcTypeSel.addEventListener('change', () => {
+  srcNameInp.placeholder = srcPlaceholders[srcTypeSel.value] || '';
 });
 
 // 3) 截圖貼上 — focus 在 paste-zone 時，Cmd/Ctrl+V 自動加為附件

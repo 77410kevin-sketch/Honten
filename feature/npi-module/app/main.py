@@ -40,6 +40,7 @@ async def seed_users():
         {"username": "qa01",       "display_name": "李品保",      "role": Role.QC,        "bu": None},
         {"username": "ipqc",       "display_name": "品保（IQC/IPQC/OQC 共用）", "role": Role.QC, "bu": None},
         {"username": "pd01",       "display_name": "張產線主管",  "role": Role.PROD_MGR,  "bu": None},
+        {"username": "pmc01",      "display_name": "李生管",      "role": Role.PC,        "bu": None},
         {"username": "bh01",       "display_name": "陳BU主管",    "role": Role.BU,        "bu": BU.ENERGY},
         {"username": "engmgr",     "display_name": "林工程主管",  "role": Role.ENG_MGR,   "bu": None},
         {"username": "pc01",       "display_name": "黃採購",      "role": Role.PURCHASE,  "bu": None},
@@ -88,6 +89,36 @@ async def seed_suppliers():
                 ))
         await db.commit()
     print("✅ 範例供應商建立完成")
+
+
+async def migrate_users_role_check():
+    """SQLite: 擴充 users.role CHECK constraint 允許新 enum 值（pc 生管）
+
+    SQLite 不支援 ALTER ... DROP CONSTRAINT；這裡用 PRAGMA writable_schema
+    直接改 sqlite_master 內的 CHECK 列表，安全且不破壞 FK。
+    """
+    async with engine.begin() as conn:
+        try:
+            r = await conn.execute(text(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+            ))
+            row = r.fetchone()
+            if not row or not row[0]:
+                return
+            sql = row[0]
+            if "'pc'" in sql:
+                return  # 已包含
+            # 將最後一個 'warehouse' 後面補上 'pc'
+            new_sql = sql.replace("'warehouse'", "'warehouse', 'pc'")
+            if new_sql == sql:
+                return  # replace 失敗就放棄（避免破壞 schema）
+            await conn.execute(text("PRAGMA writable_schema=ON"))
+            await conn.execute(text(
+                "UPDATE sqlite_master SET sql=:s WHERE type='table' AND name='users'"
+            ), {"s": new_sql})
+            await conn.execute(text("PRAGMA writable_schema=OFF"))
+        except Exception:
+            logging.exception("migrate_users_role_check failed (skipped)")
 
 
 async def run_migrations():
@@ -159,6 +190,17 @@ async def run_migrations():
         "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_result TEXT",
         "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_filled_at DATETIME",
         "ALTER TABLE qc_exceptions ADD COLUMN he_inventory_data TEXT",
+        # 立即處理 v4 — 客戶端 Sorting/Rework 工時與人力
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_sorting_hours FLOAT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_sorting_workers INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_rework_hours FLOAT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_rework_workers INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_note TEXT",
+        # 簡化流程：刪除「根因分析」階段，舊資料併入「改善方案」
+        "UPDATE qc_exceptions SET status='PENDING_IMPROVEMENT' WHERE status='PENDING_RCA'",
+        # 異常來源類型 — 廠商 / 客戶 / 廠內
+        "ALTER TABLE qc_exceptions ADD COLUMN source_type VARCHAR(20) DEFAULT 'SUPPLIER'",
+        "UPDATE qc_exceptions SET source_type='SUPPLIER' WHERE source_type IS NULL",
     ]
     async with engine.begin() as conn:
         for sql in migrations:
@@ -173,6 +215,8 @@ async def lifespan(app: FastAPI):
     # 建立資料表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # 擴充 users.role CHECK 限制（接受新 enum 值 'pc'）
+    await migrate_users_role_check()
     # 補欄位 migration
     await run_migrations()
     # 植入測試資料

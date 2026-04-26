@@ -10,8 +10,7 @@
     <i class="bi bi-exclamation-octagon text-danger me-2"></i>{{ form.form_id }}
     {% if _s == 'DRAFT' %}<span class="badge bg-secondary ms-2">草稿</span>
     {% elif _s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark ms-2">待品保判斷</span>
-    {% elif _s == 'PENDING_RCA' %}<span class="badge bg-info text-dark ms-2">待根因/通知</span>
-    {% elif _s == 'PENDING_IMPROVEMENT' %}<span class="badge bg-primary ms-2">待改善方案</span>
+    {% elif _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}<span class="badge bg-primary ms-2">待改善方案</span>
     {% elif _s == 'LINKED_ECN' %}<span class="badge bg-warning text-dark ms-2">已綁 ECN</span>
     {% elif _s == 'CLOSED' %}<span class="badge bg-success ms-2">結案</span>
     {% endif %}
@@ -21,18 +20,17 @@
   </a>
 </div>
 
-{# 進度軸 #}
+{# 進度軸（PENDING_RCA 已併入 PENDING_IMPROVEMENT）#}
 {% set _steps = [
   ('DRAFT', '品保草稿', 'bi-pencil'),
   ('PENDING_DISPOSITION', '待品保判斷', 'bi-search'),
-  ('PENDING_RCA', '根因+通知', 'bi-envelope-paper'),
-  ('PENDING_IMPROVEMENT', '改善方案', 'bi-tools'),
+  ('PENDING_IMPROVEMENT', '改善方案 (含根因)', 'bi-tools'),
   ('LINKED_ECN', '綁 ECN', 'bi-link-45deg'),
   ('CLOSED', '結案', 'bi-check2-circle'),
 ] %}
 {% set _idx_map = {'DRAFT':0, 'PENDING_DISPOSITION':1, 'PENDING_RCA':2,
-                   'PENDING_IMPROVEMENT':3, 'LINKED_ECN':4, 'CLOSED':5} %}
-{% set _cur = _idx_map[_s] %}
+                   'PENDING_IMPROVEMENT':2, 'LINKED_ECN':3, 'CLOSED':4} %}
+{% set _cur = _idx_map.get(_s, 1) %}
 <div class="card shadow-sm mb-3">
   <div class="card-body py-3">
     <div class="d-flex justify-content-between align-items-center text-center">
@@ -67,6 +65,8 @@
       {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
       {% set _stage_lbl = {'IQC':'IQC','IPQC':'IPQC','OQC':'OQC','INSPECTION':'品檢',
                            'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
+      {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
+      {% set _src_color = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'} %}
       <div class="card-body">
         <div class="row g-3 small">
           <div class="col-md-4"><strong>品號：</strong>{{ form.part_no }}</div>
@@ -78,9 +78,11 @@
             <strong>{{ _date_lbl.get(form.event_date_type.value, '日期') if form.event_date_type else '日期' }}：</strong>
             {{ form.receive_date or '—' }}
           </div>
-          <div class="col-md-4"><strong>工段+廠商：</strong>
+          {% set _src_v = form.source_type.value if form.source_type else 'SUPPLIER' %}
+          <div class="col-md-4"><strong>工段+來源：</strong>
             <span class="badge bg-light text-dark border">{{ _stage_lbl.get(form.stage.value, form.stage.value) }}</span>
-            +{{ form.supplier_name or '—' }}
+            <span class="badge {{ _src_color.get(_src_v, 'bg-secondary') }}">{{ _src_lbl.get(_src_v, '廠商') }}</span>
+            {{ form.supplier_name or '—' }}
           </div>
           <div class="col-md-4"><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
           <div class="col-12"><strong>異常原因：</strong>
@@ -113,7 +115,8 @@
         <i class="bi bi-lightning-charge me-2"></i>品保立即處理（可多選）
       </div>
       <div class="card-body">
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm">
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm"
+              enctype="multipart/form-data">
 
           {# Step 1：通知信（給異常廠商或工站）#}
           <div class="border rounded p-3 mb-3 bg-light">
@@ -179,7 +182,7 @@
             <div class="form-check">
               <input class="form-check-input disp-pick" type="checkbox" id="dispSA"
                      name="dispositions" value="SPECIAL_ACCEPT" data-target="saBox">
-              <label class="form-check-label fw-semibold text-success" for="dispSA">B. 特採允收</label>
+              <label class="form-check-label fw-semibold text-success" for="dispSA">B. 處理方式</label>
             </div>
             <div class="form-check">
               <input class="form-check-input disp-pick" type="checkbox" id="dispHE"
@@ -200,63 +203,70 @@
                       placeholder="例：本批 35000 pcs 整批退回，請於 5 個工作天內提供新批號補貨數量、預計到貨日；採購／生管請追蹤回覆。"></textarea>
           </div>
 
-          {# B. 特採允收 sub-form #}
+          {# B. 處理方式 sub-form — 多選 #}
           <div id="saBox" class="border border-success-subtle rounded p-3 mb-2 d-none bg-success-subtle bg-opacity-10">
             <div class="fw-semibold text-success mb-2">
-              <i class="bi bi-shield-check me-1"></i>B. 特採允收 — 選擇處理方式
+              <i class="bi bi-shield-check me-1"></i>B. 處理方式（可複選）
             </div>
             <div class="d-flex flex-wrap gap-3 mb-3">
               <div class="form-check">
-                <input type="radio" name="sa_subtype" value="NO_ACTION" id="saNo" class="form-check-input sa-sub" checked>
+                <input type="checkbox" name="sa_subtypes" value="NO_ACTION" id="saNo" class="form-check-input sa-sub">
                 <label for="saNo" class="form-check-label">B1. 不需特殊處理（只記錄，直接過站）</label>
               </div>
               <div class="form-check">
-                <input type="radio" name="sa_subtype" value="SORTING" id="saSort" class="form-check-input sa-sub">
-                <label for="saSort" class="form-check-label">B2. 需 Sorting（生管安排）</label>
+                <input type="checkbox" name="sa_subtypes" value="SORTING" id="saSort" class="form-check-input sa-sub">
+                <label for="saSort" class="form-check-label">B2. 廠內 Sorting（生管安排）</label>
               </div>
               <div class="form-check">
-                <input type="radio" name="sa_subtype" value="REWORK" id="saRw" class="form-check-input sa-sub">
-                <label for="saRw" class="form-check-label">B3. Rework（小批驗證 → 樣品需求測試）</label>
+                <input type="checkbox" name="sa_subtypes" value="REWORK" id="saRw" class="form-check-input sa-sub">
+                <label for="saRw" class="form-check-label">B3. 廠內 Rework（小批驗證 → 樣品測試）</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="sa_subtypes" value="CUST_SORTING" id="saCustSort" class="form-check-input sa-sub">
+                <label for="saCustSort" class="form-check-label text-primary">B4. 客戶端 Sorting（含工時/人力）</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" name="sa_subtypes" value="CUST_REWORK" id="saCustRw" class="form-check-input sa-sub">
+                <label for="saCustRw" class="form-check-label text-primary">B5. 客戶端 Rework（含工時/人力）</label>
               </div>
             </div>
 
-            {# B 共用 — 站別 + 不良品處理 #}
-            <div class="row g-2 mb-2">
-              <div class="col-md-4">
-                <label class="form-label small">執行站別（後製程）</label>
-                <input name="sa_station" class="form-control form-control-sm" placeholder="例：CNC / 組裝">
-              </div>
-              <div class="col-md-8">
-                <label class="form-label small">不良品處理方式</label>
-                <input name="sa_defect_handling" class="form-control form-control-sm"
-                       placeholder="例：另堆放每日回報；尾數抵扣">
-              </div>
+            {# 品保填 — 不良品處理方式 #}
+            <div class="mb-2">
+              <label class="form-label small text-success">不良品處理方式（品保填）</label>
+              <input name="sa_defect_handling" class="form-control form-control-sm"
+                     placeholder="例：另堆放每日回報；尾數抵扣">
+            </div>
+            <div class="alert alert-light border small mb-2 py-2">
+              <i class="bi bi-info-circle me-1"></i>
+              <strong>執行站別</strong>由生管於收到通知後填寫；
+              <strong>Sorting 良/不良數</strong>由 sorting 單位執行後回填；
+              <strong>Rework 結果</strong>由 rework 單位完成後回填。
             </div>
 
             {# B2 Sorting 子欄位 #}
             <div id="saSortBox" class="border-top pt-2 mt-2 d-none">
-              <div class="small text-muted mb-2">
-                <i class="bi bi-info-circle me-1"></i>由生管安排 sorting 單位執行；下列數量待 sorting 完成後回填。
-              </div>
+              <div class="small text-success mb-1"><strong>B2. Sorting 預填（可留空待 sorting 完成後回填）</strong></div>
               <div class="row g-2">
                 <div class="col-md-3">
                   <label class="form-label small">良品數</label>
                   <input name="sa_sorting_pass_qty" type="number" min="0" class="form-control form-control-sm"
-                         placeholder="留空 — 待回填">
+                         placeholder="待回填">
                 </div>
                 <div class="col-md-3">
                   <label class="form-label small">不良品數</label>
                   <input name="sa_sorting_fail_qty" type="number" min="0" class="form-control form-control-sm"
-                         placeholder="留空 — 待回填">
+                         placeholder="待回填">
                 </div>
               </div>
             </div>
 
             {# B3 Rework 子欄位 #}
             <div id="saRwBox" class="border-top pt-2 mt-2 d-none">
+              <div class="small text-success mb-1"><strong>B3. 廠內 Rework 規劃 + 樣品測試需求</strong></div>
               <label class="form-label small">小批量驗證內容</label>
               <textarea name="sa_rework_note" rows="2" class="form-control form-control-sm"
-                        placeholder="例：取 50 pcs 重工後做總長量測，確認 32.00±0.05 範圍內；通過再導入樣品需求測試。"></textarea>
+                        placeholder="例：取 50 pcs 重工後做總長量測，確認 32.00±0.05；通過再導入樣品需求測試。"></textarea>
               <div class="row g-2 mt-2">
                 <div class="col-md-3">
                   <label class="form-label small">樣品測試數量</label>
@@ -273,32 +283,99 @@
                 </div>
               </div>
             </div>
+
+            {# B4 客戶端 Sorting 子欄位 #}
+            <div id="saCustSortBox" class="border-top pt-2 mt-2 d-none">
+              <div class="small text-primary mb-1"><strong>B4. 客戶端 Sorting — 工時與人力評估</strong></div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label small">預估工時（小時）</label>
+                  <input name="sa_cust_sorting_hours" type="number" min="0" step="0.5"
+                         class="form-control form-control-sm" placeholder="例：8">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">需求人力（人）</label>
+                  <input name="sa_cust_sorting_workers" type="number" min="0"
+                         class="form-control form-control-sm" placeholder="例：2">
+                </div>
+              </div>
+            </div>
+
+            {# B5 客戶端 Rework 子欄位 #}
+            <div id="saCustRwBox" class="border-top pt-2 mt-2 d-none">
+              <div class="small text-primary mb-1"><strong>B5. 客戶端 Rework — 工時與人力評估</strong></div>
+              <div class="row g-2">
+                <div class="col-md-3">
+                  <label class="form-label small">預估工時（小時）</label>
+                  <input name="sa_cust_rework_hours" type="number" min="0" step="0.5"
+                         class="form-control form-control-sm" placeholder="例：12">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">需求人力（人）</label>
+                  <input name="sa_cust_rework_workers" type="number" min="0"
+                         class="form-control form-control-sm" placeholder="例：3">
+                </div>
+              </div>
+            </div>
+
+            {# B4/B5 客戶端執行說明 #}
+            <div id="saCustNoteBox" class="border-top pt-2 mt-2 d-none">
+              <label class="form-label small text-primary">客戶端執行說明（地點 / 客戶聯絡人 / 排程）</label>
+              <textarea name="sa_cust_note" rows="2" class="form-control form-control-sm"
+                        placeholder="例：景利 板橋廠 4/30 09:00；客戶端聯絡人 王 PE；協同人員 吳業務"></textarea>
+            </div>
+
+            {# Rework SOP 附件 — B3 / B5 共用，品保上傳 #}
+            <div id="reworkSopBox" class="border-top pt-2 mt-2 d-none">
+              <label class="form-label small text-success">
+                <i class="bi bi-file-earmark-text me-1"></i>Rework SOP 附件（品保上傳給執行單位/客戶端參考）
+              </label>
+              <input type="file" name="rework_sop_files" multiple class="form-control form-control-sm">
+              <div class="form-text">可多選；自動歸類為「Rework SOP」</div>
+            </div>
           </div>
 
-          {# C. 橫向展開 sub-form #}
+          {# C. 橫向展開 — 多列盤點單 #}
           <div id="heBox" class="border border-primary-subtle rounded p-3 mb-3 d-none bg-primary-subtle bg-opacity-10">
             <div class="fw-semibold text-primary mb-2">
-              <i class="bi bi-arrows-expand me-1"></i>C. 橫向展開 — 庫存盤點 + 判定
+              <i class="bi bi-clipboard-check me-1"></i>C. 橫向展開 — 庫存盤點單
             </div>
-            <div class="row g-2">
-              <div class="col-md-4">
-                <label class="form-label small">客戶端庫存（pcs）</label>
-                <input name="he_customer_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：5000">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small">廠內庫存（pcs）</label>
-                <input name="he_inhouse_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：12000">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label small">供應商庫存（pcs）</label>
-                <input name="he_supplier_qty" type="number" min="0" class="form-control form-control-sm" placeholder="例：8000">
-              </div>
-              <div class="col-12">
-                <label class="form-label small">處理判定（每端如何處理）</label>
-                <textarea name="he_decision" rows="3" class="form-control form-control-sm"
-                          placeholder="例：客戶端 5000 通知特採允收；廠內 12000 全檢；供應商 8000 全部報廢，要求重新生產…"></textarea>
-              </div>
+            <div class="alert alert-light border small mb-2 py-2">
+              品保先填料號 + 處理判定；後續由
+              <span class="badge bg-warning text-dark">業助</span> 填客戶端、
+              <span class="badge bg-secondary">倉管</span> 填廠內、
+              <span class="badge bg-info text-dark">採購</span> 填供應商端
             </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-2">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:40px">#</th>
+                    <th>盤點料號</th>
+                    <th class="text-end" style="width:100px">客戶端 (pcs)<br><small class="text-muted">業助填</small></th>
+                    <th class="text-end" style="width:100px">廠內 (pcs)<br><small class="text-muted">倉管填</small></th>
+                    <th class="text-end" style="width:100px">供應商 (pcs)<br><small class="text-muted">採購填</small></th>
+                    <th>處理判定<br><small class="text-muted">品保填</small></th>
+                    <th style="width:40px">—</th>
+                  </tr>
+                </thead>
+                <tbody id="invRows">
+                  <tr class="inv-row">
+                    <td class="text-center inv-idx">1</td>
+                    <td><input name="inv_part_no" class="form-control form-control-sm"
+                               value="{{ form.part_no or '' }}" placeholder="例：KS04P"></td>
+                    <td><input name="inv_customer_qty" type="number" min="0" class="form-control form-control-sm text-end" placeholder="待業助"></td>
+                    <td><input name="inv_inhouse_qty"  type="number" min="0" class="form-control form-control-sm text-end" placeholder="待倉管"></td>
+                    <td><input name="inv_supplier_qty" type="number" min="0" class="form-control form-control-sm text-end" placeholder="待採購"></td>
+                    <td><input name="inv_decision" class="form-control form-control-sm" placeholder="例：客戶端通知特採；廠內全檢"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger inv-remove">×</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <button type="button" id="invAdd" class="btn btn-sm btn-outline-primary">
+              <i class="bi bi-plus-circle"></i> 新增料號
+            </button>
           </div>
 
           <button class="btn btn-warning">
@@ -318,16 +395,60 @@
           box.classList.toggle('d-none', !cb.checked);
         });
       });
-      // SA 子類別 toggle
+      // SA 子類別多選 toggle — Sorting / Rework 可同時；NO_ACTION 與其他互斥
       const saSortBox = document.getElementById('saSortBox');
       const saRwBox = document.getElementById('saRwBox');
+      const saCustSortBox = document.getElementById('saCustSortBox');
+      const saCustRwBox = document.getElementById('saCustRwBox');
+      const saCustNoteBox = document.getElementById('saCustNoteBox');
+      const reworkSopBox = document.getElementById('reworkSopBox');
       function syncSaSub() {
-        const v = (document.querySelector('.sa-sub:checked') || {}).value;
-        if (saSortBox) saSortBox.classList.toggle('d-none', v !== 'SORTING');
-        if (saRwBox)   saRwBox.classList.toggle('d-none', v !== 'REWORK');
+        const checked = Array.from(document.querySelectorAll('.sa-sub:checked')).map(c => c.value);
+        if (saSortBox) saSortBox.classList.toggle('d-none', !checked.includes('SORTING'));
+        if (saRwBox)   saRwBox.classList.toggle('d-none', !checked.includes('REWORK'));
+        if (saCustSortBox) saCustSortBox.classList.toggle('d-none', !checked.includes('CUST_SORTING'));
+        if (saCustRwBox)   saCustRwBox.classList.toggle('d-none', !checked.includes('CUST_REWORK'));
+        if (saCustNoteBox) saCustNoteBox.classList.toggle('d-none',
+          !(checked.includes('CUST_SORTING') || checked.includes('CUST_REWORK')));
+        if (reworkSopBox)  reworkSopBox.classList.toggle('d-none',
+          !(checked.includes('REWORK') || checked.includes('CUST_REWORK')));
       }
-      document.querySelectorAll('.sa-sub').forEach(r => r.addEventListener('change', syncSaSub));
+      document.querySelectorAll('.sa-sub').forEach(cb => cb.addEventListener('change', (e) => {
+        // NO_ACTION 與其他互斥
+        if (cb.value === 'NO_ACTION' && cb.checked) {
+          document.querySelectorAll('.sa-sub').forEach(o => { if (o !== cb) o.checked = false; });
+        } else if (cb.value !== 'NO_ACTION' && cb.checked) {
+          const noAct = document.getElementById('saNo');
+          if (noAct) noAct.checked = false;
+        }
+        syncSaSub();
+      }));
       syncSaSub();
+
+      // 盤點單 — 新增/刪除列
+      function reindexInv() {
+        document.querySelectorAll('#invRows .inv-row .inv-idx').forEach((td, i) => {
+          td.textContent = i + 1;
+        });
+      }
+      const invAdd = document.getElementById('invAdd');
+      if (invAdd) invAdd.addEventListener('click', () => {
+        const tbody = document.getElementById('invRows');
+        const first = tbody.querySelector('.inv-row');
+        const clone = first.cloneNode(true);
+        clone.querySelectorAll('input').forEach(inp => { inp.value = ''; });
+        tbody.appendChild(clone);
+        reindexInv();
+      });
+      document.addEventListener('click', (e) => {
+        const rm = e.target.closest('.inv-remove');
+        if (!rm) return;
+        const rows = document.querySelectorAll('#invRows .inv-row');
+        if (rows.length > 1) {
+          rm.closest('.inv-row').remove();
+          reindexInv();
+        }
+      });
       // 套用 mail 範本
       const tplBtn = document.getElementById('loadMailTpl');
       const SUPPLIER_TPL = {{ qc_supplier_mail_tpl | tojson }};
@@ -379,7 +500,7 @@
         {% for code in _picked %}
           {% if code == 'RETURN_TO_SUPPLIER' %}<span class="badge bg-danger me-1">A. 退貨</span>
           {% elif code == 'LAB_TEST' %}<span class="badge bg-info text-dark me-1">實驗測試（舊）</span>
-          {% elif code == 'SPECIAL_ACCEPT' %}<span class="badge bg-success me-1">B. 特採允收</span>
+          {% elif code == 'SPECIAL_ACCEPT' %}<span class="badge bg-success me-1">B. 處理方式</span>
           {% elif code == 'HORIZONTAL_EXPANSION' %}<span class="badge bg-primary me-1">C. 橫向展開</span>
           {% endif %}
         {% endfor %}
@@ -409,34 +530,196 @@
         {% endif %}
 
         {% if 'SPECIAL_ACCEPT' in _picked %}
+        {% set _sa_subs = (form.sa_subtypes_json | fromjson) if form.sa_subtypes_json else
+                          ([form.sa_subtype] if form.sa_subtype else []) %}
         <div class="mt-2 p-2 border border-success-subtle rounded">
-          <strong class="text-success">B. 特採允收：</strong>
-          {% if form.sa_subtype == 'NO_ACTION' %}<span class="badge bg-secondary">B1 不需特殊處理</span>
-          {% elif form.sa_subtype == 'SORTING' %}<span class="badge bg-warning text-dark">B2 Sorting</span>
-          {% elif form.sa_subtype == 'REWORK' %}<span class="badge bg-info text-dark">B3 Rework</span>
+          <strong class="text-success">B. 處理方式：</strong>
+          {% if 'NO_ACTION'    in _sa_subs %}<span class="badge bg-secondary me-1">B1 不需特殊處理</span>{% endif %}
+          {% if 'SORTING'      in _sa_subs %}<span class="badge bg-warning text-dark me-1">B2 廠內 Sorting</span>{% endif %}
+          {% if 'REWORK'       in _sa_subs %}<span class="badge bg-info text-dark me-1">B3 廠內 Rework</span>{% endif %}
+          {% if 'CUST_SORTING' in _sa_subs %}<span class="badge bg-primary me-1">B4 客戶端 Sorting</span>{% endif %}
+          {% if 'CUST_REWORK'  in _sa_subs %}<span class="badge bg-primary me-1">B5 客戶端 Rework</span>{% endif %}
+          <br>
+          <span class="small">執行站別（生管填）：<strong>{{ form.sa_station or '（待生管填）' }}</strong></span><br>
+          <span class="small">不良品處理（品保填）：{{ form.sa_defect_handling or '—' }}</span>
+          {% if form.sa_sent_to_prod_at %}
+          <span class="badge bg-success ms-2">已送生管 {{ form.sa_sent_to_prod_at.strftime('%m-%d %H:%M') }}</span>
+          {% else %}
+          <span class="badge bg-warning text-dark ms-2">尚未送生管</span>
           {% endif %}
-          ｜執行站：{{ form.sa_station or '—' }}<br>
-          <span class="small">不良品處理：{{ form.sa_defect_handling or '—' }}</span>
-          {% if form.sa_subtype == 'SORTING' %}
-          <div class="small mt-1">
-            Sorting 結果：良品 <strong class="text-success">{{ form.sa_sorting_pass_qty if form.sa_sorting_pass_qty is not none else '待回填' }}</strong>
-            ／不良品 <strong class="text-danger">{{ form.sa_sorting_fail_qty if form.sa_sorting_fail_qty is not none else '待回填' }}</strong>
+
+          {% if 'SORTING' in _sa_subs %}
+          <div class="small mt-2">
+            <strong>Sorting 回填：</strong>
+            良品 <strong class="text-success">{{ form.sa_sorting_pass_qty if form.sa_sorting_pass_qty is not none else '待回填' }}</strong>
+            ／不良 <strong class="text-danger">{{ form.sa_sorting_fail_qty if form.sa_sorting_fail_qty is not none else '待回填' }}</strong>
+            {% if form.sa_sorting_filled_at %}
+            <span class="text-muted">（{{ form.sa_sorting_filled_at.strftime('%m-%d %H:%M') }}）</span>
+            {% endif %}
           </div>
-          {% elif form.sa_subtype == 'REWORK' %}
-          <div class="small mt-1">驗證內容：{{ form.sa_rework_note or '—' }}</div>
-          <div class="small">樣品測試：數 {{ form.lab_test_qty or '—' }} ｜ 期 {{ form.lab_test_due_date or '—' }} ｜ 條件 {{ form.lab_test_conditions or '—' }}</div>
+          {% endif %}
+          {% if 'REWORK' in _sa_subs %}
+          <div class="small mt-2">
+            <strong>廠內 Rework 規劃：</strong>{{ form.sa_rework_note or '—' }}<br>
+            <strong>樣品測試：</strong>數 {{ form.lab_test_qty or '—' }} ｜ 期 {{ form.lab_test_due_date or '—' }} ｜ 條件 {{ form.lab_test_conditions or '—' }}<br>
+            <strong>Rework 結果回填：</strong>
+            {% if form.sa_rework_result %}{{ form.sa_rework_result }}
+              <span class="text-muted">（{{ form.sa_rework_filled_at.strftime('%m-%d %H:%M') if form.sa_rework_filled_at }}）</span>
+            {% else %}<span class="text-warning">待回填</span>{% endif %}
+          </div>
+          {% endif %}
+          {% if 'CUST_SORTING' in _sa_subs %}
+          <div class="small mt-2 p-2 border border-primary-subtle rounded bg-light">
+            <strong class="text-primary">B4. 客戶端 Sorting：</strong>
+            預估工時 <strong>{{ form.sa_cust_sorting_hours if form.sa_cust_sorting_hours is not none else '—' }}</strong> hr
+            ／需求人力 <strong>{{ form.sa_cust_sorting_workers if form.sa_cust_sorting_workers is not none else '—' }}</strong> 人
+          </div>
+          {% endif %}
+          {% if 'CUST_REWORK' in _sa_subs %}
+          <div class="small mt-2 p-2 border border-primary-subtle rounded bg-light">
+            <strong class="text-primary">B5. 客戶端 Rework：</strong>
+            預估工時 <strong>{{ form.sa_cust_rework_hours if form.sa_cust_rework_hours is not none else '—' }}</strong> hr
+            ／需求人力 <strong>{{ form.sa_cust_rework_workers if form.sa_cust_rework_workers is not none else '—' }}</strong> 人
+          </div>
+          {% endif %}
+          {% if form.sa_cust_note %}
+          <div class="small mt-1"><strong>客戶端執行說明：</strong>{{ form.sa_cust_note }}</div>
+          {% endif %}
+          {# Rework SOP 附件 — 從 docs_by_cat 取出 #}
+          {% if 'Rework SOP' in docs_by_cat %}
+          <div class="small mt-2">
+            <strong><i class="bi bi-file-earmark-text me-1"></i>Rework SOP 附件：</strong>
+            {% for d in docs_by_cat['Rework SOP'] %}
+            <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank" class="badge bg-success-subtle text-success border me-1">
+              <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          {# 送生管按鈕 / SA 回填表單 #}
+          {% if (form.sa_need_sorting or form.sa_need_rework) and _is_qc and not form.sa_sent_to_prod_at %}
+          <form method="post" action="/qc-exceptions/{{ form.form_id }}/send-to-prod" class="mt-2">
+            <button class="btn btn-sm btn-warning">
+              <i class="bi bi-send-arrow-up me-1"></i>送生管處理（請填執行單位 + 安排回填）
+            </button>
+          </form>
+          {% endif %}
+          {% if (form.sa_need_sorting or form.sa_need_rework) and form.sa_sent_to_prod_at and
+                user.role.value in ('pc','qc','admin') %}
+          {% set _station_options = ['CNC 課', '雷雕課', '組裝課', '品檢課', '機加工課', '模具課',
+                                     'IQC', 'IPQC', 'OQC', '客戶端', '其他'] %}
+          <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-sa-fillback" class="mt-2 border-top pt-2">
+            <div class="small fw-semibold mb-1">回填處理結果</div>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label small">執行站別 / 單位（生管選）</label>
+                <select name="sa_station"
+                        class="form-select form-select-sm{% if form.sa_station %} bg-success-subtle border-success fw-semibold{% endif %}">
+                  <option value="">— 請選擇 —</option>
+                  {% for opt in _station_options %}
+                  <option value="{{ opt }}" {% if form.sa_station == opt %}selected{% endif %}>{{ opt }}</option>
+                  {% endfor %}
+                  {# 若舊資料是自由文字且不在預設清單，仍保留為一個選項 #}
+                  {% if form.sa_station and form.sa_station not in _station_options %}
+                  <option value="{{ form.sa_station }}" selected>{{ form.sa_station }}（自訂）</option>
+                  {% endif %}
+                </select>
+              </div>
+              {% if form.sa_need_sorting %}
+              <div class="col-md-2">
+                <label class="form-label small">良品數</label>
+                <input name="sa_sorting_pass_qty" type="number" min="0"
+                       class="form-control form-control-sm{% if form.sa_sorting_pass_qty is not none %} bg-success-subtle border-success fw-semibold{% endif %}"
+                       value="{{ form.sa_sorting_pass_qty if form.sa_sorting_pass_qty is not none else '' }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small">不良品數</label>
+                <input name="sa_sorting_fail_qty" type="number" min="0"
+                       class="form-control form-control-sm{% if form.sa_sorting_fail_qty is not none %} bg-success-subtle border-success fw-semibold{% endif %}"
+                       value="{{ form.sa_sorting_fail_qty if form.sa_sorting_fail_qty is not none else '' }}">
+              </div>
+              {% endif %}
+              {% if form.sa_need_rework %}
+              <div class="col-12">
+                <label class="form-label small">Rework 結果回報</label>
+                <textarea name="sa_rework_result" rows="2"
+                          class="form-control form-control-sm{% if form.sa_rework_result %} bg-success-subtle border-success fw-semibold{% endif %}"
+                          placeholder="例：50 pcs 重工後全部通過量測，導入樣品測試 OK。">{{ form.sa_rework_result or '' }}</textarea>
+              </div>
+              {% endif %}
+            </div>
+            <button class="btn btn-sm btn-primary mt-2">
+              <i class="bi bi-save me-1"></i>儲存回填
+            </button>
+          </form>
           {% endif %}
         </div>
         {% endif %}
 
         {% if 'HORIZONTAL_EXPANSION' in _picked %}
+        {% set _inv_rows = (form.he_inventory_data | fromjson) if form.he_inventory_data else [] %}
         <div class="mt-2 p-2 border border-primary-subtle rounded">
-          <strong class="text-primary">C. 橫向展開：</strong>
-          客戶 <strong>{{ form.he_customer_qty if form.he_customer_qty is not none else '—' }}</strong>
-          ｜廠內 <strong>{{ form.he_inhouse_qty if form.he_inhouse_qty is not none else '—' }}</strong>
-          ｜供應商 <strong>{{ form.he_supplier_qty if form.he_supplier_qty is not none else '—' }}</strong>
-          {% if form.he_decision %}
-          <div class="small mt-1">判定：{{ form.he_decision }}</div>
+          <strong class="text-primary">C. 橫向展開 — 庫存盤點單：</strong>
+          {% if _inv_rows %}
+          <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-inventory" class="mt-2">
+            {% set _can_cust = user.role.value in ('assistant','qc','admin') %}
+            {% set _can_in   = user.role.value in ('warehouse','qc','admin') %}
+            {% set _can_sup  = user.role.value in ('purchase','qc','admin') %}
+            {% set _can_dec  = user.role.value in ('qc','admin') %}
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-2">
+                <thead class="table-light">
+                  <tr>
+                    <th>料號</th>
+                    <th class="text-end">客戶端<br><small class="text-muted">業助</small></th>
+                    <th class="text-end">廠內<br><small class="text-muted">倉管</small></th>
+                    <th class="text-end">供應商<br><small class="text-muted">採購</small></th>
+                    <th>處理判定<br><small class="text-muted">品保</small></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in _inv_rows %}
+                  <tr>
+                    <td>
+                      <input name="inv_part_no" class="form-control form-control-sm" value="{{ r.part_no }}" readonly>
+                    </td>
+                    <td>
+                      <input name="inv_customer_qty" type="number" min="0"
+                             class="form-control form-control-sm text-end{% if r.customer_qty is not none %} bg-success-subtle border-success fw-semibold{% endif %}"
+                             value="{{ r.customer_qty if r.customer_qty is not none else '' }}"
+                             {% if not _can_cust %}readonly{% endif %} placeholder="待業助">
+                    </td>
+                    <td>
+                      <input name="inv_inhouse_qty" type="number" min="0"
+                             class="form-control form-control-sm text-end{% if r.inhouse_qty is not none %} bg-success-subtle border-success fw-semibold{% endif %}"
+                             value="{{ r.inhouse_qty if r.inhouse_qty is not none else '' }}"
+                             {% if not _can_in %}readonly{% endif %} placeholder="待倉管">
+                    </td>
+                    <td>
+                      <input name="inv_supplier_qty" type="number" min="0"
+                             class="form-control form-control-sm text-end{% if r.supplier_qty is not none %} bg-success-subtle border-success fw-semibold{% endif %}"
+                             value="{{ r.supplier_qty if r.supplier_qty is not none else '' }}"
+                             {% if not _can_sup %}readonly{% endif %} placeholder="待採購">
+                    </td>
+                    <td>
+                      <input name="inv_decision" class="form-control form-control-sm{% if r.decision %} bg-success-subtle border-success fw-semibold{% endif %}"
+                             value="{{ r.decision or '' }}"
+                             {% if not _can_dec %}readonly{% endif %} placeholder="—">
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if _can_cust or _can_in or _can_sup or _can_dec %}
+            <button class="btn btn-sm btn-primary">
+              <i class="bi bi-save me-1"></i>儲存盤點回填（{{ user.role.value }}）
+            </button>
+            {% endif %}
+          </form>
+          {% else %}
+          <div class="small text-muted">尚無盤點資料</div>
           {% endif %}
         </div>
         {% endif %}
@@ -444,64 +727,39 @@
     </div>
     {% endif %}
 
-    {# Mail 通知 + 根因分析 #}
+    {# 長期改善方案（合併 Mail 通知 + 根因分析）+ ECN 綁定 #}
     {% if _s in ('PENDING_RCA', 'PENDING_IMPROVEMENT', 'LINKED_ECN', 'CLOSED') %}
-    <div class="card shadow-sm mb-3 {% if _s == 'PENDING_RCA' %}border-info{% endif %}">
-      <div class="card-header {% if _s == 'PENDING_RCA' %}bg-info-subtle{% else %}bg-white{% endif %} fw-semibold">
-        <i class="bi bi-envelope-paper me-2"></i>Mail 通知 + 根因分析
+    {% set _can_edit_improve = _is_qc and _s in ('PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+    <div class="card shadow-sm mb-3 {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}border-primary{% endif %}">
+      <div class="card-header {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold">
+        <i class="bi bi-tools me-2"></i>改善方案（含 Mail 通知 + 根因分析）
       </div>
       <div class="card-body">
-        {% if _is_qc and _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-rca">
+        {% if _can_edit_improve %}
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement">
+          {# Mail 通知 #}
           <div class="row g-2 mb-2">
             <div class="col-md-6">
-              <label class="form-label small">收件人 (To，多人用 , 隔開)</label>
-              <input name="notify_mail_to" class="form-control form-control-sm"
+              <label class="form-label small">Mail 通知 收件人 (To，多人用 , 隔開)</label>
+              <input name="notify_mail_to"
+                     class="form-control form-control-sm{% if form.notify_mail_to %} bg-success-subtle border-success{% endif %}"
                      value="{{ form.notify_mail_to or '' }}"
                      placeholder="qa@honten.com, eng@honten.com">
             </div>
             <div class="col-md-6">
               <label class="form-label small">副本 (Cc)</label>
-              <input name="notify_mail_cc" class="form-control form-control-sm"
+              <input name="notify_mail_cc"
+                     class="form-control form-control-sm{% if form.notify_mail_cc %} bg-success-subtle border-success{% endif %}"
                      value="{{ form.notify_mail_cc or '' }}"
                      placeholder="bu@honten.com">
             </div>
           </div>
+          {# 根因分析 #}
           <label class="form-label small">根因分析（5Why / 魚骨圖摘要）</label>
-          <textarea name="root_cause" rows="4" class="form-control"
-                    placeholder="根因：例如 廠商換刀後未重新對 0…">{{ form.root_cause or '' }}</textarea>
-          <div class="d-flex gap-2 mt-2">
-            <button name="advance" value="0" class="btn btn-outline-secondary btn-sm">
-              <i class="bi bi-save me-1"></i>儲存
-            </button>
-            {% if _s == 'PENDING_RCA' %}
-            <button name="advance" value="1" class="btn btn-info text-white btn-sm">
-              <i class="bi bi-send me-1"></i>已 Mail 通知 + 根因完成 → 改善方案
-            </button>
-            {% endif %}
-          </div>
-        </form>
-        {% else %}
-        <div class="small">
-          <div><strong>收件人：</strong>{{ form.notify_mail_to or '—' }}</div>
-          <div><strong>副本：</strong>{{ form.notify_mail_cc or '—' }}</div>
-          <div class="mt-2"><strong>根因分析：</strong></div>
-          <div class="border rounded p-2 bg-light">{{ form.root_cause or '（尚未填寫）' }}</div>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-
-    {# 長期改善方案 + ECN 綁定 #}
-    {% if _s in ('PENDING_IMPROVEMENT', 'LINKED_ECN', 'CLOSED') %}
-    <div class="card shadow-sm mb-3 {% if _s == 'PENDING_IMPROVEMENT' %}border-primary{% endif %}">
-      <div class="card-header {% if _s == 'PENDING_IMPROVEMENT' %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold">
-        <i class="bi bi-tools me-2"></i>長期改善方案
-      </div>
-      <div class="card-body">
-        {% if _is_qc and _s in ('PENDING_IMPROVEMENT','LINKED_ECN') %}
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement">
+          <textarea name="root_cause" rows="3"
+                    class="form-control mb-3{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
+                    placeholder="例如 廠商換刀後未重新對 0…">{{ form.root_cause or '' }}</textarea>
+          {# 改善方案勾選 #}
           <div class="d-flex flex-wrap gap-3 mb-2">
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="need_drawing_rev" value="1"
@@ -519,13 +777,15 @@
               <label for="needSip" class="form-check-label">需修訂 SIP</label>
             </div>
           </div>
-          <textarea name="improvement_plan" rows="3" class="form-control"
-                    placeholder="改善方案內容…">{{ form.improvement_plan or '' }}</textarea>
+          <label class="form-label small">改善方案內容</label>
+          <textarea name="improvement_plan" rows="3"
+                    class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
+                    placeholder="長期改善內容…">{{ form.improvement_plan or '' }}</textarea>
           <div class="d-flex gap-2 mt-2">
             <button name="advance" value="" class="btn btn-outline-secondary btn-sm">
               <i class="bi bi-save me-1"></i>儲存
             </button>
-            {% if _s == 'PENDING_IMPROVEMENT' %}
+            {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}
             <button name="advance" value="ecn" class="btn btn-warning btn-sm">
               <i class="bi bi-link-45deg me-1"></i>需開 ECN（進等待 ECN 階段）
             </button>
@@ -556,11 +816,16 @@
         {% endif %}
         {% else %}
         <div class="small">
+          <div><strong>Mail 收件人：</strong>{{ form.notify_mail_to or '—' }}</div>
+          <div><strong>副本：</strong>{{ form.notify_mail_cc or '—' }}</div>
+          <div class="mt-2"><strong>根因分析：</strong></div>
+          <div class="border rounded p-2 bg-light mb-2">{{ form.root_cause or '（尚未填寫）' }}</div>
           <div class="mb-2">
             {% if form.need_drawing_rev %}<span class="badge bg-info text-dark me-1">需修訂圖面</span>{% endif %}
             {% if form.need_sop_rev %}<span class="badge bg-info text-dark me-1">需修訂 SOP</span>{% endif %}
             {% if form.need_sip_rev %}<span class="badge bg-info text-dark me-1">需修訂 SIP</span>{% endif %}
           </div>
+          <div><strong>改善方案內容：</strong></div>
           <div class="border rounded p-2 bg-light">{{ form.improvement_plan or '（尚未填寫）' }}</div>
           {% if form.linked_ecn %}
           <div class="mt-2">

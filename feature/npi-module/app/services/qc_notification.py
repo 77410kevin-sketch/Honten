@@ -99,9 +99,9 @@ def build_exception_message(form: QCException, creator_name: str = "") -> str:
     return "\n".join(lines)
 
 
-# 品保 + 工程 + 採購 + 產線主管 + 業助 + BU
+# 品保 + 工程 + 採購 + 產線主管 + 生管 + 業助 + BU
 _NOTIFY_ROLES = (Role.QC, Role.ENGINEER, Role.ENG_MGR, Role.PURCHASE,
-                 Role.PROD_MGR, Role.ASSISTANT, Role.BU)
+                 Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.BU)
 
 
 async def notify_exception_created(db, form: QCException, creator_name: str = ""):
@@ -124,10 +124,10 @@ async def notify_return_to_supplier(db, form: QCException):
     """
     dt = form.doc_type.value if form.doc_type else "RECEIVE"
     if dt == "PROCESS":
-        roles = [Role.PROD_MGR]
+        roles = [Role.PC]
         target_label = "生管（製成品）"
     elif dt == "SHIP_DC":
-        roles = [Role.PURCHASE, Role.PROD_MGR]
+        roles = [Role.PURCHASE, Role.PC]
         target_label = "採購 + 生管（出貨）"
     else:
         roles = [Role.PURCHASE]

@@ -11,6 +11,9 @@
 {% set _date_labels = {
   'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'
 } %}
+{% set _source_labels = {
+  'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'
+} %}
 
 <div class="container py-4" style="max-width:960px">
   <h4 class="mb-3">
@@ -65,9 +68,16 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-md-3">
-          <label class="form-label">廠商</label>
-          <input name="supplier_name" class="form-control" value="{{ form.supplier_name or '' }}">
+        <div class="col-md-4">
+          <label class="form-label">來源</label>
+          <div class="input-group">
+            <select name="source_type" class="form-select" style="max-width:100px">
+              {% for v, lbl in _source_labels.items() %}
+              <option value="{{ v }}"{% if form.source_type and form.source_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="supplier_name" class="form-control" value="{{ form.supplier_name or '' }}">
+          </div>
         </div>
         <div class="col-md-2">
           <label class="form-label">數量</label>

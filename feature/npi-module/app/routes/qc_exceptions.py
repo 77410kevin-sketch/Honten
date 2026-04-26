@@ -24,7 +24,7 @@ from app.models.user import User, Role
 from app.models.qc_exception import (
     QCException, QCExceptionDocument, QCExceptionApproval,
     QCExceptionStatus, QCDisposition, QCExceptionStage,
-    QCDocType, QCEventDateType,
+    QCDocType, QCEventDateType, QCSourceType,
 )
 from app.services.auth import get_current_user
 from app.services import qc_notification as qc_notif
@@ -43,12 +43,13 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "其它"]
+ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Rework SOP", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
-_CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.ASSISTANT, Role.ADMIN)     # 建單權限：品保 + 產線主管 + 業助
+_CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.ADMIN)  # 建單權限：品保 + 產線主管 + 生管 + 業助
 _VIEW_ROLES  = (Role.QC, Role.ENGINEER, Role.ENG_MGR, Role.PURCHASE,
-                Role.PROD_MGR, Role.ASSISTANT, Role.BU, Role.ADMIN)
+                Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.WAREHOUSE,
+                Role.BU, Role.ADMIN)
 
 
 # ── 共用 helper ─────────────────────────────────
@@ -166,6 +167,7 @@ async def new_qc_page(
         "QCExceptionStage": QCExceptionStage,
         "QCDocType": QCDocType,
         "QCEventDateType": QCEventDateType,
+        "QCSourceType": QCSourceType,
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
     })
 
@@ -180,6 +182,7 @@ async def create_qc(
     event_date_type:  str = Form("RECEIVE"),
     receive_date:     str = Form(""),
     stage:            str = Form("IQC"),
+    source_type:      str = Form("SUPPLIER"),
     supplier_name:    str = Form(""),
     receive_qty:      str = Form(""),
     defect_cause:     str = Form(""),
@@ -215,6 +218,10 @@ async def create_qc(
         edt_enum = QCEventDateType(event_date_type)
     except ValueError:
         edt_enum = QCEventDateType.RECEIVE
+    try:
+        src_enum = QCSourceType(source_type)
+    except ValueError:
+        src_enum = QCSourceType.SUPPLIER
 
     form_id = await _next_form_id(db)
     initial_status = (QCExceptionStatus.PENDING_DISPOSITION
@@ -225,7 +232,8 @@ async def create_qc(
         part_no=part_no.strip(),
         doc_type=dt_enum, receive_doc_no=receive_doc_no.strip() or None,
         event_date_type=edt_enum, receive_date=receive_date.strip() or None,
-        stage=st_enum, supplier_name=supplier_name.strip() or None,
+        stage=st_enum, source_type=src_enum,
+        supplier_name=supplier_name.strip() or None,
         receive_qty=_int(receive_qty), defect_cause=defect_cause.strip(),
         measurement_data=measurement_data.strip() or None,
         defect_qty=dq, sample_qty=sq, defect_rate=rate,
@@ -272,6 +280,7 @@ async def edit_qc_page(
         "QCExceptionStage": QCExceptionStage,
         "QCDocType": QCDocType,
         "QCEventDateType": QCEventDateType,
+        "QCSourceType": QCSourceType,
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
         "docs_by_cat": _docs_by_cat(form.documents),
     })
@@ -288,6 +297,7 @@ async def update_qc(
     event_date_type:  str = Form("RECEIVE"),
     receive_date:     str = Form(""),
     stage:            str = Form("IQC"),
+    source_type:      str = Form("SUPPLIER"),
     supplier_name:    str = Form(""),
     receive_qty:      str = Form(""),
     defect_cause:     str = Form(""),
@@ -326,6 +336,8 @@ async def update_qc(
     try: form.doc_type = QCDocType(doc_type)
     except ValueError: pass
     try: form.event_date_type = QCEventDateType(event_date_type)
+    except ValueError: pass
+    try: form.source_type = QCSourceType(source_type)
     except ValueError: pass
 
     if attach_files:
@@ -384,9 +396,10 @@ async def detail_qc(
         raise HTTPException(status_code=403)
     form = await _get_or_404(form_id, db)
     transition_combo = {
-        "DRAFT→PENDING_DISPOSITION":              ("品保送審",       "primary"),
-        "PENDING_DISPOSITION→PENDING_RCA":         ("品保下處理判斷", "info"),
-        "PENDING_RCA→PENDING_IMPROVEMENT":         ("根因分析完成",   "info"),
+        "DRAFT→PENDING_DISPOSITION":               ("品保送審",       "primary"),
+        "PENDING_DISPOSITION→PENDING_IMPROVEMENT": ("品保下處理判斷 → 改善方案", "info"),
+        "PENDING_DISPOSITION→PENDING_RCA":         ("品保下處理判斷（舊）", "info"),
+        "PENDING_RCA→PENDING_IMPROVEMENT":         ("併入改善方案（舊）",   "info"),
         "PENDING_IMPROVEMENT→LINKED_ECN":          ("綁入 ECN",       "warning"),
         "PENDING_IMPROVEMENT→CLOSED":              ("結案",           "dark"),
         "LINKED_ECN→CLOSED":                       ("ECN 已結案 → 結案", "dark"),
@@ -465,11 +478,10 @@ async def return_to_previous(
     form = await _get_or_404(form_id, db)
     if current_user.role not in _QC_ROLES:
         raise HTTPException(status_code=403)
-    # 反向狀態映射：把目前狀態退回前一站
+    # 反向狀態映射：把目前狀態退回前一站（PENDING_RCA 已併入 IMPROVEMENT）
     back_map = {
         QCExceptionStatus.PENDING_DISPOSITION: QCExceptionStatus.DRAFT,
-        QCExceptionStatus.PENDING_RCA:         QCExceptionStatus.PENDING_DISPOSITION,
-        QCExceptionStatus.PENDING_IMPROVEMENT: QCExceptionStatus.PENDING_RCA,
+        QCExceptionStatus.PENDING_IMPROVEMENT: QCExceptionStatus.PENDING_DISPOSITION,
         QCExceptionStatus.LINKED_ECN:          QCExceptionStatus.PENDING_IMPROVEMENT,
     }
     new_st = back_map.get(form.status)
@@ -542,10 +554,10 @@ async def set_disposition(
     if "RETURN_TO_SUPPLIER" in picked:
         form.rts_replenish_note = (fd.get("rts_replenish_note") or "").strip() or None
 
-    # B. 特採允收 — 子類別多選（NO_ACTION 與 SORTING/REWORK 互斥；SORTING+REWORK 可同時）
+    # B. 處理方式 — 子類別多選（NO_ACTION 與其他互斥；廠內/客戶端可同時）
     if "SPECIAL_ACCEPT" in picked:
         subs = [s for s in fd.getlist("sa_subtypes")
-                if s in ("NO_ACTION", "SORTING", "REWORK")]
+                if s in ("NO_ACTION", "SORTING", "REWORK", "CUST_SORTING", "CUST_REWORK")]
         if not subs:
             subs = ["NO_ACTION"]
         # NO_ACTION 與其他互斥
@@ -567,6 +579,26 @@ async def set_disposition(
             form.lab_test_qty        = _int(fd.get("lab_test_qty"))
             form.lab_test_conditions = (fd.get("lab_test_conditions") or "").strip() or None
             form.lab_test_due_date   = (fd.get("lab_test_due_date") or "").strip() or None
+        # B4 客戶端 Sorting / B5 客戶端 Rework — 工時與人力
+        def _float(s):
+            try: return float(s)
+            except (TypeError, ValueError): return None
+        if "CUST_SORTING" in subs:
+            form.sa_cust_sorting_hours   = _float(fd.get("sa_cust_sorting_hours"))
+            form.sa_cust_sorting_workers = _int(fd.get("sa_cust_sorting_workers"))
+        if "CUST_REWORK" in subs:
+            form.sa_cust_rework_hours   = _float(fd.get("sa_cust_rework_hours"))
+            form.sa_cust_rework_workers = _int(fd.get("sa_cust_rework_workers"))
+        if "CUST_SORTING" in subs or "CUST_REWORK" in subs:
+            form.sa_cust_note = (fd.get("sa_cust_note") or "").strip() or None
+        # Rework SOP 附件（B3 / B5 用）— 品保上傳，自動歸類「Rework SOP」
+        sop_files = []
+        for f in fd.getlist("rework_sop_files"):
+            if hasattr(f, "filename") and f.filename:
+                sop_files.append(f)
+        if sop_files:
+            await _save_attachments(db, form.id, current_user.id,
+                                    sop_files, ["Rework SOP"] * len(sop_files))
 
     # C. 橫向展開 — 多列盤點單（JSON list）
     if "HORIZONTAL_EXPANSION" in picked:
@@ -599,7 +631,7 @@ async def set_disposition(
         form.lab_test_conditions = (fd.get("lab_test_conditions") or "").strip() or None
         form.lab_test_due_date   = (fd.get("lab_test_due_date") or "").strip() or None
 
-    form.status = QCExceptionStatus.PENDING_RCA
+    form.status = QCExceptionStatus.PENDING_IMPROVEMENT
     form.updated_at = datetime.utcnow()
     summary = "+".join(picked)
     db.add(_log(form, current_user, "DISPOSITION", old, form.status,
@@ -648,7 +680,7 @@ async def send_to_prod(
            f"系統：/qc-exceptions/{form.form_id}")
     try:
         await qc_notif._send_line_group(qc_notif.LINE_QC_GROUP, msg)
-        await qc_notif._ntf._notify_roles(db, [Role.PROD_MGR], msg)
+        await qc_notif._ntf._notify_roles(db, [Role.PC], msg)
     except Exception:
         logging.exception("send_to_prod notify failed")
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
@@ -666,7 +698,7 @@ async def save_sa_fillback(
 ):
     """生管 / 品保 / admin 回填 SA 處理結果（執行單位、sorting 良/不良數、rework 結果）"""
     form = await _get_or_404(form_id, db)
-    if current_user.role not in (Role.PROD_MGR, Role.QC, Role.ADMIN):
+    if current_user.role not in (Role.PC, Role.QC, Role.ADMIN):
         raise HTTPException(status_code=403, detail="僅 生管 / 品保 可回填")
     def _int(s):
         try: return int(s)
@@ -756,57 +788,47 @@ async def save_inventory(
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
 
 
-@router.post("/{form_id}/save-rca")
-async def save_rca(
-    form_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    notify_mail_to: str = Form(""),
-    notify_mail_cc: str = Form(""),
-    root_cause:     str = Form(""),
-    advance:        str = Form(""),  # "1" → 順便推進到 PENDING_IMPROVEMENT
-):
-    """填寫 Mail 收件人 / 根因分析；可選擇順便推進"""
-    form = await _get_or_404(form_id, db)
-    if current_user.role not in _QC_ROLES:
-        raise HTTPException(status_code=403)
-    if form.status not in (QCExceptionStatus.PENDING_RCA, QCExceptionStatus.PENDING_IMPROVEMENT):
-        raise HTTPException(status_code=400, detail="目前狀態無法編輯根因分析")
-    form.notify_mail_to = notify_mail_to.strip() or None
-    form.notify_mail_cc = notify_mail_cc.strip() or None
-    form.root_cause = root_cause.strip() or None
-    if advance == "1" and form.status == QCExceptionStatus.PENDING_RCA and root_cause.strip():
-        old = form.status
-        form.status = QCExceptionStatus.PENDING_IMPROVEMENT
-        form.notify_sent_at = datetime.utcnow()
-        db.add(_log(form, current_user, "RCA_DONE", old, form.status,
-                    "已 Mail 通知 + 完成根因分析"))
-    form.updated_at = datetime.utcnow()
-    await db.commit()
-    return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
-
-
 @router.post("/{form_id}/save-improvement")
 async def save_improvement(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    notify_mail_to:   str = Form(""),
+    notify_mail_cc:   str = Form(""),
+    root_cause:       str = Form(""),
     need_drawing_rev: str = Form(""),
     need_sop_rev:     str = Form(""),
     need_sip_rev:     str = Form(""),
     improvement_plan: str = Form(""),
     advance:          str = Form(""),  # "ecn" / "close"
 ):
-    """改善方案：勾選需修訂項目 + 內容；可選擇推進到 LINKED_ECN 或直接結案"""
+    """改善方案（合併 Mail 通知 + 根因分析）：可選擇推進 LINKED_ECN 或直接結案"""
     form = await _get_or_404(form_id, db)
     if current_user.role not in _QC_ROLES:
         raise HTTPException(status_code=403)
-    if form.status not in (QCExceptionStatus.PENDING_IMPROVEMENT, QCExceptionStatus.LINKED_ECN):
+    # PENDING_RCA 為舊狀態（已併入 IMPROVEMENT），仍接受編輯避免舊資料卡死
+    if form.status not in (QCExceptionStatus.PENDING_IMPROVEMENT,
+                           QCExceptionStatus.LINKED_ECN,
+                           QCExceptionStatus.PENDING_RCA):
         raise HTTPException(status_code=400, detail="目前狀態無法編輯改善方案")
+    # 通知 + 根因
+    form.notify_mail_to = notify_mail_to.strip() or None
+    form.notify_mail_cc = notify_mail_cc.strip() or None
+    new_root = root_cause.strip() or None
+    if new_root and not form.root_cause:
+        form.notify_sent_at = datetime.utcnow()  # 第一次填根因時記錄
+    form.root_cause = new_root
+    # 改善方案
     form.need_drawing_rev = (need_drawing_rev == "1")
     form.need_sop_rev     = (need_sop_rev == "1")
     form.need_sip_rev     = (need_sip_rev == "1")
     form.improvement_plan = improvement_plan.strip() or None
+    # 把 PENDING_RCA 老資料順手推進
+    if form.status == QCExceptionStatus.PENDING_RCA:
+        old = form.status
+        form.status = QCExceptionStatus.PENDING_IMPROVEMENT
+        db.add(_log(form, current_user, "MIGRATE_TO_IMPROVE", old, form.status,
+                    "舊資料併入改善方案階段"))
     if advance == "ecn" and form.status == QCExceptionStatus.PENDING_IMPROVEMENT:
         old = form.status
         form.status = QCExceptionStatus.LINKED_ECN

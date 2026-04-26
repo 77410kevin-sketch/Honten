@@ -22,7 +22,7 @@
             <th>狀態</th>
             <th>品號</th>
             <th>批號</th>
-            <th>工段 / 廠商</th>
+            <th>工段 / 來源</th>
             <th class="text-end">不良率</th>
             <th>處理判斷</th>
             <th>ECN</th>
@@ -37,8 +37,7 @@
               {% set s = f.status.value %}
               {% if s == 'DRAFT' %}<span class="badge bg-secondary">草稿</span>
               {% elif s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark">待品保判斷</span>
-              {% elif s == 'PENDING_RCA' %}<span class="badge bg-info text-dark">待根因/通知</span>
-              {% elif s == 'PENDING_IMPROVEMENT' %}<span class="badge bg-primary">待改善方案</span>
+              {% elif s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}<span class="badge bg-primary">待改善方案</span>
               {% elif s == 'LINKED_ECN' %}<span class="badge bg-warning text-dark">已綁 ECN</span>
               {% elif s == 'CLOSED' %}<span class="badge bg-success">結案</span>
               {% endif %}
@@ -47,6 +46,10 @@
             <td class="small text-muted">{{ f.lot_no or '—' }}</td>
             <td class="small">
               <span class="badge bg-light text-dark border">{{ f.stage.value }}</span>
+              {% set _sv = f.source_type.value if f.source_type else 'SUPPLIER' %}
+              {% set _slbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'}.get(_sv, '廠商') %}
+              {% set _scls = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'}.get(_sv, 'bg-secondary') %}
+              <span class="badge {{ _scls }}">{{ _slbl }}</span>
               {{ f.supplier_name or '—' }}
             </td>
             <td class="text-end">

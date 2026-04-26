@@ -4797,3 +4797,25 @@ remote:   git@github.com:77410kevin-sketch/Honten-archive.git
 To github.com:77410kevin-sketch/Honten.git
    1be5ca1..88fb769  main -> main
 [2026-04-26 16:48] push all branches OK
+[main 5f0b00a] 自動備份 2026-04-26 17:48
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 7 files changed, 1299 insertions(+), 50 deletions(-)
+ create mode 100644 feature/npi-module/app/templates/qc_exceptions/edit.html
+[2026-04-26 17:48] commit on main
+remote: This repository moved. Please use the new location:        
+remote:   git@github.com:77410kevin-sketch/Honten-archive.git        
+To github.com:77410kevin-sketch/Honten.git
+   88fb769..5f0b00a  main -> main
+[2026-04-26 17:48] push all branches OK
