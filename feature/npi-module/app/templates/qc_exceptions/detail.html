@@ -85,10 +85,55 @@
             {{ form.supplier_name or '—' }}
           </div>
           <div class="col-md-4"><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
+          {% set _items = (form.defect_items_json | fromjson) if form.defect_items_json else None %}
+          {% if _items %}
+          <div class="col-12">
+            <strong>異常原因（{{ _items|length }} 筆）：</strong>
+            <table class="table table-sm table-bordered mt-1 mb-1">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>異常原因</th>
+                  <th style="width:140px">類型</th>
+                  <th class="text-end" style="width:100px">抽樣</th>
+                  <th class="text-end" style="width:100px">不良</th>
+                  <th class="text-end" style="width:90px">不良率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in _items %}
+                {% set _r = (it.defect_qty / it.sample_qty) if (it.sample_qty and it.defect_qty is not none) else None %}
+                <tr>
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td class="text-danger fw-semibold">{{ it.cause }}</td>
+                  <td>
+                    {% if 'EXTERIOR' in (it.types or []) %}<span class="badge bg-info text-dark">外觀</span>{% endif %}
+                    {% if 'DIMENSION' in (it.types or []) %}<span class="badge bg-warning text-dark">尺寸</span>{% endif %}
+                  </td>
+                  <td class="text-end">{{ it.sample_qty if it.sample_qty is not none else '—' }}</td>
+                  <td class="text-end">{{ it.defect_qty if it.defect_qty is not none else '—' }}</td>
+                  <td class="text-end fw-semibold {% if _r and _r >= 0.05 %}text-danger{% else %}text-muted{% endif %}">
+                    {% if _r is not none %}{{ '%.1f' % (_r * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light">
+                <tr>
+                  <td colspan="3" class="text-end fw-semibold">合計</td>
+                  <td class="text-end fw-semibold">{{ form.sample_qty or '—' }}</td>
+                  <td class="text-end fw-semibold">{{ form.defect_qty or '—' }}</td>
+                  <td class="text-end fw-semibold {% if form.defect_rate and form.defect_rate >= 0.05 %}text-danger{% endif %}">
+                    {% if form.defect_rate is not none %}{{ '%.2f' % (form.defect_rate * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {% else %}
           <div class="col-12"><strong>異常原因：</strong>
             <span class="text-danger fw-semibold">{{ form.defect_cause }}</span>
           </div>
-          <div class="col-md-6"><strong>量測數據：</strong>{{ form.measurement_data or '—' }}</div>
           <div class="col-md-6"><strong>不良率：</strong>
             {% if form.defect_rate is not none %}
               {{ form.defect_qty }} / {{ form.sample_qty }}
@@ -97,6 +142,7 @@
               </span>
             {% else %}—{% endif %}
           </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -118,31 +164,35 @@
         <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm"
               enctype="multipart/form-data">
 
-          {# Step 1：通知信（給異常廠商或工站）#}
+          {# Step 1：通知信 #}
           <div class="border rounded p-3 mb-3 bg-light">
             <div class="fw-semibold mb-2">
               <i class="bi bi-envelope me-1"></i><span class="badge bg-secondary me-1">Step 1</span>
-              通知信 — 給異常廠商或工站
-            </div>
-            <div class="d-flex flex-wrap gap-3 mb-2">
-              <div class="form-check">
-                <input type="radio" name="rts_target_type" value="SUPPLIER"
-                       class="form-check-input" id="tgtSup"
-                       {% if (form.doc_type and form.doc_type.value in ('RECEIVE','SHIP_DC')) %}checked{% endif %}>
-                <label for="tgtSup" class="form-check-label">寄給供應商（{{ form.supplier_name or '—' }}）</label>
-              </div>
-              <div class="form-check">
-                <input type="radio" name="rts_target_type" value="STATION"
-                       class="form-check-input" id="tgtSta"
-                       {% if (form.doc_type and form.doc_type.value == 'PROCESS') %}checked{% endif %}>
-                <label for="tgtSta" class="form-check-label">寄給工站（{{ form.stage.value if form.stage else '—' }}）</label>
-              </div>
+              通知信
             </div>
             <div class="row g-2">
               <div class="col-md-6">
                 <label class="form-label small">收件人 (To)</label>
-                <input name="supplier_mail_to" class="form-control form-control-sm"
-                       placeholder="qa@example.com">
+                <select id="mailToSel" name="supplier_mail_to" class="form-select form-select-sm">
+                  <option value="" {% if not qc_preselect_email %}selected{% endif %}>— 請選擇收件人 —</option>
+                  <optgroup label="廠內單位">
+                    {% for stg, em in qc_internal_stations %}
+                    <option value="{{ em }}" {% if em == qc_preselect_email %}selected{% endif %}>
+                      {{ stg }}（{{ em }}）
+                    </option>
+                    {% endfor %}
+                  </optgroup>
+                  <optgroup label="供應商">
+                    {% for s in qc_active_suppliers %}
+                    <option value="{{ s.email }}" {% if s.email == qc_preselect_email %}selected{% endif %}>
+                      {{ s.name }}（{{ s.email }}）
+                    </option>
+                    {% endfor %}
+                  </optgroup>
+                  <option value="__custom__">— 自訂輸入 —</option>
+                </select>
+                <input type="text" id="mailToCustom" class="form-control form-control-sm mt-1 d-none"
+                       placeholder="自訂 email">
               </div>
               <div class="col-md-6">
                 <label class="form-label small">副本 (Cc)</label>
@@ -161,9 +211,9 @@
                     <i class="bi bi-file-earmark-text me-1"></i>套用範本
                   </button>
                 </div>
-                <textarea name="supplier_mail_body" id="supplierMailBody" rows="8"
+                <textarea name="supplier_mail_body" id="supplierMailBody" rows="14"
                           class="form-control form-control-sm font-monospace" style="font-size:12px"
-                          placeholder="點「套用範本」自動帶入廠商聯絡人 / 品號 / 異常原因 / 抽驗比例…"></textarea>
+                          placeholder="信件內容…">{{ qc_supplier_mail_tpl }}</textarea>
               </div>
             </div>
           </div>
@@ -199,8 +249,17 @@
               <span class="badge bg-danger ms-2">系統自動通知 → {{ _route_hint }}</span>
             </div>
             <label class="form-label small">補貨資訊請求 — 請廠商回覆補貨數量 / 預計交期</label>
-            <textarea name="rts_replenish_note" rows="3" class="form-control form-control-sm"
+            <textarea name="rts_replenish_note" rows="3" class="form-control form-control-sm mb-2"
                       placeholder="例：本批 35000 pcs 整批退回，請於 5 個工作天內提供新批號補貨數量、預計到貨日；採購／生管請追蹤回覆。"></textarea>
+            <div class="form-check mt-2">
+              <input type="checkbox" name="rts_pickup_required" value="1" id="rtsPickup"
+                     class="form-check-input">
+              <label for="rtsPickup" class="form-check-label fw-semibold">
+                <i class="bi bi-truck-flatbed me-1"></i>需安排司機載回不良品
+              </label>
+            </div>
+            <input name="rts_pickup_note" class="form-control form-control-sm mt-1"
+                   placeholder="載回備註（地點 / 聯絡人 / 預計時間）">
           </div>
 
           {# B. 處理方式 sub-form — 多選 #}
@@ -231,33 +290,69 @@
               </div>
             </div>
 
-            {# 品保填 — 不良品處理方式 #}
-            <div class="mb-2">
-              <label class="form-label small text-success">不良品處理方式（品保填）</label>
-              <input name="sa_defect_handling" class="form-control form-control-sm"
-                     placeholder="例：另堆放每日回報；尾數抵扣">
-            </div>
             <div class="alert alert-light border small mb-2 py-2">
               <i class="bi bi-info-circle me-1"></i>
               <strong>執行站別</strong>由生管於收到通知後填寫；
-              <strong>Sorting 良/不良數</strong>由 sorting 單位執行後回填；
-              <strong>Rework 結果</strong>由 rework 單位完成後回填。
+              <strong>Sorting / Rework 數量</strong>由執行單位回填。
+              <br>下方彙整表會自動帶入<strong>總數</strong>，並即時計算 Sorting 不良率。
             </div>
 
-            {# B2 Sorting 子欄位 #}
-            <div id="saSortBox" class="border-top pt-2 mt-2 d-none">
-              <div class="small text-success mb-1"><strong>B2. Sorting 預填（可留空待 sorting 完成後回填）</strong></div>
-              <div class="row g-2">
-                <div class="col-md-3">
-                  <label class="form-label small">良品數</label>
-                  <input name="sa_sorting_pass_qty" type="number" min="0" class="form-control form-control-sm"
-                         placeholder="待回填">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label small">不良品數</label>
-                  <input name="sa_sorting_fail_qty" type="number" min="0" class="form-control form-control-sm"
-                         placeholder="待回填">
-                </div>
+            {# B2/B3 Sorting + Rework 彙整表（勾 B2 顯示 Sorting 列；勾 B3 顯示 Rework 列）#}
+            <div id="saSummaryBox" class="d-none mt-2">
+              <div class="small text-success fw-semibold mb-1">處理結果彙整</div>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-2" id="saSummary">
+                  <thead>
+                    <tr class="table-warning">
+                      <th colspan="4" class="text-center fs-6">
+                        總數：<span id="saTotalQty">{{ form.receive_qty or '—' }}</span> pcs
+                        <small class="text-muted ms-2">（自動帶入進貨數量）</small>
+                      </th>
+                    </tr>
+                    <tr class="table-light">
+                      <th>項目</th>
+                      <th class="text-end" style="width:110px">良品數</th>
+                      <th class="text-end" style="width:110px">不良品數</th>
+                      <th style="width:240px">不良率 / 不良品處理</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr id="saSortRow" class="d-none">
+                      <td><strong>Sorting</strong></td>
+                      <td>
+                        <input name="sa_sorting_pass_qty" type="number" min="0"
+                               class="form-control form-control-sm text-end" id="sortPass">
+                      </td>
+                      <td>
+                        <input name="sa_sorting_fail_qty" type="number" min="0"
+                               class="form-control form-control-sm text-end" id="sortFail">
+                      </td>
+                      <td class="text-end fw-semibold" id="sortRate">—</td>
+                    </tr>
+                    <tr id="saRwSummaryRow" class="d-none">
+                      <td><strong>Rework</strong></td>
+                      <td>
+                        <input name="sa_rework_pass_qty" type="number" min="0"
+                               class="form-control form-control-sm text-end" id="rwPass">
+                      </td>
+                      <td>
+                        <input name="sa_rework_fail_qty" type="number" min="0"
+                               class="form-control form-control-sm text-end" id="rwFail">
+                      </td>
+                      <td>
+                        <input name="sa_rework_defect_handling"
+                               class="form-control form-control-sm"
+                               placeholder="不良品處理方式（報廢/退廠/隔離）">
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="d-flex justify-content-end mt-2">
+                <button type="submit" name="notify_pc" value="1"
+                        class="btn btn-sm btn-warning fw-semibold">
+                  <i class="bi bi-send-arrow-up me-1"></i>送出處理判斷 + 通知生管接手
+                </button>
               </div>
             </div>
 
@@ -396,23 +491,50 @@
         });
       });
       // SA 子類別多選 toggle — Sorting / Rework 可同時；NO_ACTION 與其他互斥
-      const saSortBox = document.getElementById('saSortBox');
       const saRwBox = document.getElementById('saRwBox');
       const saCustSortBox = document.getElementById('saCustSortBox');
       const saCustRwBox = document.getElementById('saCustRwBox');
       const saCustNoteBox = document.getElementById('saCustNoteBox');
       const reworkSopBox = document.getElementById('reworkSopBox');
+      const saSummaryBox = document.getElementById('saSummaryBox');
+      const saSortRow = document.getElementById('saSortRow');
+      const saRwSummaryRow = document.getElementById('saRwSummaryRow');
       function syncSaSub() {
         const checked = Array.from(document.querySelectorAll('.sa-sub:checked')).map(c => c.value);
-        if (saSortBox) saSortBox.classList.toggle('d-none', !checked.includes('SORTING'));
-        if (saRwBox)   saRwBox.classList.toggle('d-none', !checked.includes('REWORK'));
-        if (saCustSortBox) saCustSortBox.classList.toggle('d-none', !checked.includes('CUST_SORTING'));
-        if (saCustRwBox)   saCustRwBox.classList.toggle('d-none', !checked.includes('CUST_REWORK'));
-        if (saCustNoteBox) saCustNoteBox.classList.toggle('d-none',
+        const hasSort = checked.includes('SORTING');
+        const hasRw   = checked.includes('REWORK');
+        // 彙整表：勾 B2 / B3 任一即顯示
+        if (saSummaryBox)   saSummaryBox.classList.toggle('d-none', !(hasSort || hasRw));
+        if (saSortRow)      saSortRow.classList.toggle('d-none', !hasSort);
+        if (saRwSummaryRow) saRwSummaryRow.classList.toggle('d-none', !hasRw);
+        if (saRwBox)        saRwBox.classList.toggle('d-none', !hasRw);
+        if (saCustSortBox)  saCustSortBox.classList.toggle('d-none', !checked.includes('CUST_SORTING'));
+        if (saCustRwBox)    saCustRwBox.classList.toggle('d-none', !checked.includes('CUST_REWORK'));
+        if (saCustNoteBox)  saCustNoteBox.classList.toggle('d-none',
           !(checked.includes('CUST_SORTING') || checked.includes('CUST_REWORK')));
-        if (reworkSopBox)  reworkSopBox.classList.toggle('d-none',
-          !(checked.includes('REWORK') || checked.includes('CUST_REWORK')));
+        if (reworkSopBox)   reworkSopBox.classList.toggle('d-none',
+          !(hasRw || checked.includes('CUST_REWORK')));
       }
+      // Sorting 即時不良率
+      const sortPass = document.getElementById('sortPass');
+      const sortFail = document.getElementById('sortFail');
+      const sortRate = document.getElementById('sortRate');
+      function calcSortRate() {
+        if (!sortRate) return;
+        const p = parseInt(sortPass.value) || 0;
+        const f = parseInt(sortFail.value) || 0;
+        const t = p + f;
+        if (t > 0) {
+          const r = (f / t * 100).toFixed(1);
+          sortRate.textContent = `不良率 ${r}%`;
+          sortRate.classList.toggle('text-danger', f / t >= 0.05);
+        } else {
+          sortRate.textContent = '—';
+          sortRate.classList.remove('text-danger');
+        }
+      }
+      if (sortPass) sortPass.addEventListener('input', calcSortRate);
+      if (sortFail) sortFail.addEventListener('input', calcSortRate);
       document.querySelectorAll('.sa-sub').forEach(cb => cb.addEventListener('change', (e) => {
         // NO_ACTION 與其他互斥
         if (cb.value === 'NO_ACTION' && cb.checked) {
@@ -459,37 +581,23 @@
         });
       }
 
-      // 自動從供應商主檔抓 contact / email
-      // form 上有「廠商名稱」(form.supplier_name)，開「退回供應商」時自動 lookup
-      const SUPPLIER_NAME = {{ (form.supplier_name or '') | tojson }};
-      const dispRTS = document.getElementById('dispRTS');
-      const mailToInp = document.querySelector('#rtsBox input[name="supplier_mail_to"]');
-      const mailBody  = document.getElementById('supplierMailBody');
-      let _looked = false;
-      async function lookupSupplier() {
-        if (_looked || !SUPPLIER_NAME) return;
-        try {
-          const resp = await fetch(`/qc-exceptions/api/supplier-lookup?name=${encodeURIComponent(SUPPLIER_NAME)}`);
-          if (!resp.ok) return;
-          const j = await resp.json();
-          const m = (j.matches && j.matches[0]) || null;
-          if (!m) return;
-          _looked = true;
-          // To 為空才自動填入
-          if (mailToInp && !mailToInp.value && m.email) mailToInp.value = m.email;
-          // 範本內容自動帶聯絡人（取代第一行）
-          if (mailBody && !mailBody.value && m.contact) {
-            mailBody.value = SUPPLIER_TPL.replace(
-              /^.+ 您好：/, `${SUPPLIER_NAME} ${m.contact} 您好：`
-            );
-          } else if (mailBody && !mailBody.value) {
-            mailBody.value = SUPPLIER_TPL;
-          }
-        } catch(_) {}
-      }
-      if (dispRTS) dispRTS.addEventListener('change', () => {
-        if (dispRTS.checked) lookupSupplier();
+      // 收件人下拉：選「自訂」時切換到 text input
+      const mailToSel = document.getElementById('mailToSel');
+      const mailToCustom = document.getElementById('mailToCustom');
+      if (mailToSel) mailToSel.addEventListener('change', () => {
+        if (mailToSel.value === '__custom__') {
+          mailToSel.removeAttribute('name');
+          mailToCustom.setAttribute('name', 'supplier_mail_to');
+          mailToCustom.classList.remove('d-none');
+          mailToCustom.value = '';
+          mailToCustom.focus();
+        } else {
+          mailToSel.setAttribute('name', 'supplier_mail_to');
+          mailToCustom.removeAttribute('name');
+          mailToCustom.classList.add('d-none');
+        }
       });
+
     })();
     </script>
     {% elif _picked %}

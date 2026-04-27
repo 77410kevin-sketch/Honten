@@ -201,6 +201,15 @@ async def run_migrations():
         # 異常來源類型 — 廠商 / 客戶 / 廠內
         "ALTER TABLE qc_exceptions ADD COLUMN source_type VARCHAR(20) DEFAULT 'SUPPLIER'",
         "UPDATE qc_exceptions SET source_type='SUPPLIER' WHERE source_type IS NULL",
+        # 異常原因多列（含外觀/尺寸 + 各列抽樣/不良）
+        "ALTER TABLE qc_exceptions ADD COLUMN defect_items_json TEXT",
+        # A 退貨 — 司機安排載回
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_pickup_required BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_pickup_note TEXT",
+        # B 處理方式 — Rework 良品/不良/不良品處理（彙整表用）
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_pass_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_fail_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_defect_handling TEXT",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

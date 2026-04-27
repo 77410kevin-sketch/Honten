@@ -80,11 +80,13 @@ class QCException(Base):
                                default=QCSourceType.SUPPLIER, nullable=True)  # 廠商/客戶/廠內
     supplier_name     = Column(String(120), nullable=True)    # 名稱（廠商 展倚 / 客戶 景利 / 廠內 CNC 課）
     receive_qty       = Column(Integer,     nullable=True)    # 數量
-    defect_cause      = Column(Text,        nullable=False)   # 異常原因 總長過長 32.00+-0.1
-    measurement_data  = Column(Text,        nullable=True)    # 量測數據 32.11~32.15
-    defect_qty        = Column(Integer,     nullable=True)    # 不良數量 40
-    sample_qty        = Column(Integer,     nullable=True)    # 抽樣數量 315
-    defect_rate       = Column(Float,       nullable=True)    # 不良率 0.126
+    defect_cause      = Column(Text,        nullable=False)   # 主要異常原因（向下相容，取多列 list 第一筆）
+    measurement_data  = Column(Text,        nullable=True)    # （已棄用，UI 取消，DB 保留）
+    defect_qty        = Column(Integer,     nullable=True)    # 不良總數（多列加總）
+    sample_qty        = Column(Integer,     nullable=True)    # 抽樣總數（多列加總）
+    defect_rate       = Column(Float,       nullable=True)    # 整批不良率（總不良/總抽樣）
+    defect_items_json = Column(Text,        nullable=True)    # 異常多列 JSON list:
+    # [{"cause":"總長過長","types":["EXTERIOR","DIMENSION"],"defect_qty":40,"sample_qty":315}]
 
     # ── 品保處理判斷 ────────────────────────────────
     disposition       = Column(Enum(QCDisposition), nullable=True)   # 主要處理（向下相容）
@@ -96,6 +98,8 @@ class QCException(Base):
     # 立即處理 — 通知信（對象可為「供應商」或「工站」）
     rts_target_type        = Column(String(20), nullable=True)   # SUPPLIER | STATION
     rts_replenish_note     = Column(Text, nullable=True)         # 補貨資訊請求（給採購/生管）
+    rts_pickup_required    = Column(Boolean, default=False)      # A 退貨：是否需安排司機載回
+    rts_pickup_note        = Column(Text, nullable=True)         # 司機載回備註（地點/聯絡人/時間）
     supplier_mail_to       = Column(Text, nullable=True)
     supplier_mail_cc       = Column(Text, nullable=True)
     supplier_mail_subject  = Column(String(200), nullable=True)
@@ -126,6 +130,9 @@ class QCException(Base):
     sa_rework_note      = Column(Text, nullable=True)
     sa_rework_result    = Column(Text, nullable=True)              # rework + 樣品測試 結果回報
     sa_rework_filled_at = Column(DateTime, nullable=True)
+    sa_rework_pass_qty  = Column(Integer, nullable=True)           # Rework 後良品數
+    sa_rework_fail_qty  = Column(Integer, nullable=True)           # Rework 後不良品數
+    sa_rework_defect_handling = Column(Text, nullable=True)        # Rework 後不良品處理方式（取代 sa_defect_handling UI）
     # 客戶端執行（B4/B5）— 需計算工時與人力（業務協同）
     sa_cust_sorting_hours    = Column(Float, nullable=True)
     sa_cust_sorting_workers  = Column(Integer, nullable=True)

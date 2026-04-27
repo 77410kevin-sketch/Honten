@@ -172,78 +172,89 @@ async def new_qc_page(
     })
 
 
+def _parse_defect_items(fd):
+    """從 form data 解析多列異常項目（抽樣→不良→自動算總不良率）"""
+    causes = fd.getlist("defect_cause")
+    types_csvs = fd.getlist("defect_types_csv")
+    sqs = fd.getlist("sample_qty")
+    dqs = fd.getlist("defect_qty")
+    def _int(s):
+        try: return int(s)
+        except (TypeError, ValueError): return None
+    items, total_dq, total_sq = [], 0, 0
+    for i, c in enumerate(causes):
+        c = (c or "").strip()
+        if not c:
+            continue
+        types_str = types_csvs[i] if i < len(types_csvs) else ""
+        types = [t.strip() for t in (types_str or "").split(",") if t.strip()]
+        sq = _int(sqs[i] if i < len(sqs) else None)
+        dq = _int(dqs[i] if i < len(dqs) else None)
+        items.append({"cause": c, "types": types, "sample_qty": sq, "defect_qty": dq})
+        if dq is not None: total_dq += dq
+        if sq is not None: total_sq += sq
+    rate = (total_dq / total_sq) if total_sq > 0 else None
+    return items, total_dq, total_sq, rate
+
+
 @router.post("/new")
 async def create_qc(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    part_no:          str = Form(""),
-    doc_type:         str = Form("RECEIVE"),
-    receive_doc_no:   str = Form(""),
-    event_date_type:  str = Form("RECEIVE"),
-    receive_date:     str = Form(""),
-    stage:            str = Form("IQC"),
-    source_type:      str = Form("SUPPLIER"),
-    supplier_name:    str = Form(""),
-    receive_qty:      str = Form(""),
-    defect_cause:     str = Form(""),
-    measurement_data: str = Form(""),
-    defect_qty:       str = Form(""),
-    sample_qty:       str = Form(""),
-    attach_files:      List[UploadFile] = File(default=[]),
-    attach_categories: List[str] = Form(default=[]),
-    submit_action:    str = Form("draft"),  # draft | submit
 ):
     if current_user.role not in _CREATE_ROLES:
         raise HTTPException(status_code=403)
-    if not (part_no.strip() and defect_cause.strip()):
-        raise HTTPException(status_code=400, detail="品號與異常原因為必填")
-
+    fd = await request.form()
+    def g(k, d=""):
+        v = fd.get(k); return v.strip() if isinstance(v, str) else d
     def _int(s):
         try: return int(s)
         except (TypeError, ValueError): return None
 
-    dq = _int(defect_qty)
-    sq = _int(sample_qty)
-    rate = (dq / sq) if (dq is not None and sq and sq > 0) else None
+    part_no = g("part_no")
+    if not part_no:
+        raise HTTPException(status_code=400, detail="品號為必填")
+    items, total_dq, total_sq, rate = _parse_defect_items(fd)
+    if not items:
+        raise HTTPException(status_code=400, detail="至少需填一筆異常原因")
 
-    try:
-        st_enum = QCExceptionStage(stage)
-    except ValueError:
-        st_enum = QCExceptionStage.IQC
-    try:
-        dt_enum = QCDocType(doc_type)
-    except ValueError:
-        dt_enum = QCDocType.RECEIVE
-    try:
-        edt_enum = QCEventDateType(event_date_type)
-    except ValueError:
-        edt_enum = QCEventDateType.RECEIVE
-    try:
-        src_enum = QCSourceType(source_type)
-    except ValueError:
-        src_enum = QCSourceType.SUPPLIER
+    try: st_enum = QCExceptionStage(g("stage", "IQC"))
+    except ValueError: st_enum = QCExceptionStage.IQC
+    try: dt_enum = QCDocType(g("doc_type", "RECEIVE"))
+    except ValueError: dt_enum = QCDocType.RECEIVE
+    try: edt_enum = QCEventDateType(g("event_date_type", "RECEIVE"))
+    except ValueError: edt_enum = QCEventDateType.RECEIVE
+    try: src_enum = QCSourceType(g("source_type", "SUPPLIER"))
+    except ValueError: src_enum = QCSourceType.SUPPLIER
 
+    submit_action = g("submit_action", "draft")
     form_id = await _next_form_id(db)
     initial_status = (QCExceptionStatus.PENDING_DISPOSITION
                       if submit_action == "submit"
                       else QCExceptionStatus.DRAFT)
     qc = QCException(
         form_id=form_id, status=initial_status,
-        part_no=part_no.strip(),
-        doc_type=dt_enum, receive_doc_no=receive_doc_no.strip() or None,
-        event_date_type=edt_enum, receive_date=receive_date.strip() or None,
+        part_no=part_no,
+        doc_type=dt_enum, receive_doc_no=g("receive_doc_no") or None,
+        event_date_type=edt_enum, receive_date=g("receive_date") or None,
         stage=st_enum, source_type=src_enum,
-        supplier_name=supplier_name.strip() or None,
-        receive_qty=_int(receive_qty), defect_cause=defect_cause.strip(),
-        measurement_data=measurement_data.strip() or None,
-        defect_qty=dq, sample_qty=sq, defect_rate=rate,
+        supplier_name=g("supplier_name") or None,
+        receive_qty=_int(fd.get("receive_qty")),
+        defect_cause=items[0]["cause"],
+        measurement_data=None,
+        defect_qty=total_dq or None, sample_qty=total_sq or None, defect_rate=rate,
+        defect_items_json=json.dumps(items, ensure_ascii=False),
         created_by=current_user.id,
-        # 建單者若不是品保，assigned_qc 留空待品保接手
         assigned_qc_id=(current_user.id if current_user.role in _QC_ROLES else None),
     )
     db.add(qc)
     await db.commit()
     await db.refresh(qc)
+
+    attach_files = [f for f in fd.getlist("attach_files")
+                    if hasattr(f, "filename") and f.filename]
+    attach_categories = fd.getlist("attach_categories")
     if attach_files:
         await _save_attachments(db, qc.id, current_user.id, attach_files, attach_categories)
         await db.commit()
@@ -289,24 +300,9 @@ async def edit_qc_page(
 @router.post("/{form_id}/edit")
 async def update_qc(
     form_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    part_no:          str = Form(""),
-    doc_type:         str = Form("RECEIVE"),
-    receive_doc_no:   str = Form(""),
-    event_date_type:  str = Form("RECEIVE"),
-    receive_date:     str = Form(""),
-    stage:            str = Form("IQC"),
-    source_type:      str = Form("SUPPLIER"),
-    supplier_name:    str = Form(""),
-    receive_qty:      str = Form(""),
-    defect_cause:     str = Form(""),
-    measurement_data: str = Form(""),
-    defect_qty:       str = Form(""),
-    sample_qty:       str = Form(""),
-    attach_files:      List[UploadFile] = File(default=[]),
-    attach_categories: List[str] = Form(default=[]),
-    submit_action:    str = Form("save"),  # save | resubmit
 ):
     form = await _get_or_404(form_id, db)
     if form.status != QCExceptionStatus.DRAFT:
@@ -315,31 +311,43 @@ async def update_qc(
     if not (is_creator or current_user.role == Role.ADMIN):
         raise HTTPException(status_code=403)
 
+    fd = await request.form()
+    def g(k, d=""):
+        v = fd.get(k); return v.strip() if isinstance(v, str) else d
     def _int(s):
         try: return int(s)
         except (TypeError, ValueError): return None
 
-    if part_no.strip(): form.part_no = part_no.strip()
-    if defect_cause.strip(): form.defect_cause = defect_cause.strip()
-    form.receive_doc_no = receive_doc_no.strip() or None
-    form.receive_date   = receive_date.strip() or None
-    form.supplier_name  = supplier_name.strip() or None
-    form.measurement_data = measurement_data.strip() or None
-    dq = _int(defect_qty)
-    sq = _int(sample_qty)
-    form.defect_qty = dq
-    form.sample_qty = sq
-    form.defect_rate = (dq / sq) if (dq is not None and sq and sq > 0) else None
-    form.receive_qty = _int(receive_qty)
-    try: form.stage = QCExceptionStage(stage)
+    part_no = g("part_no")
+    if part_no: form.part_no = part_no
+
+    items, total_dq, total_sq, rate = _parse_defect_items(fd)
+    if items:
+        form.defect_cause = items[0]["cause"]
+        form.defect_qty = total_dq or None
+        form.sample_qty = total_sq or None
+        form.defect_rate = rate
+        form.defect_items_json = json.dumps(items, ensure_ascii=False)
+    form.measurement_data = None  # 已棄用
+
+    form.receive_doc_no = g("receive_doc_no") or None
+    form.receive_date   = g("receive_date") or None
+    form.supplier_name  = g("supplier_name") or None
+    form.receive_qty    = _int(fd.get("receive_qty"))
+
+    try: form.stage = QCExceptionStage(g("stage", "IQC"))
     except ValueError: pass
-    try: form.doc_type = QCDocType(doc_type)
+    try: form.doc_type = QCDocType(g("doc_type", "RECEIVE"))
     except ValueError: pass
-    try: form.event_date_type = QCEventDateType(event_date_type)
+    try: form.event_date_type = QCEventDateType(g("event_date_type", "RECEIVE"))
     except ValueError: pass
-    try: form.source_type = QCSourceType(source_type)
+    try: form.source_type = QCSourceType(g("source_type", "SUPPLIER"))
     except ValueError: pass
 
+    attach_files = [f for f in fd.getlist("attach_files")
+                    if hasattr(f, "filename") and f.filename]
+    attach_categories = fd.getlist("attach_categories")
+    submit_action = g("submit_action", "save")
     if attach_files:
         await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
 
@@ -404,6 +412,51 @@ async def detail_qc(
         "PENDING_IMPROVEMENT→CLOSED":              ("結案",           "dark"),
         "LINKED_ECN→CLOSED":                       ("ECN 已結案 → 結案", "dark"),
     }
+    # 自動 lookup 廠商主檔的 contact / email，server-side 帶入模板
+    # 廠內單位收件清單（hard-coded）+ 廠商主檔清單，供 mail 收件人下拉選擇
+    INTERNAL_STATIONS = [
+        ("品保 QC",       "qa@honten.local"),
+        ("IQC 進料檢驗",  "iqc@honten.local"),
+        ("IPQC 製程檢驗", "ipqc@honten.local"),
+        ("OQC 出貨檢驗",  "oqc@honten.local"),
+        ("品檢",          "inspect@honten.local"),
+        ("雷雕課",        "laser@honten.local"),
+        ("CNC 課",        "cnc@honten.local"),
+        ("組裝課",        "asm@honten.local"),
+        ("生管 PMC",      "pmc@honten.local"),
+        ("採購",          "purchase@honten.local"),
+        ("業助",          "assist@honten.local"),
+    ]
+    STAGE_TO_EMAIL = {
+        "IQC": "iqc@honten.local", "IPQC": "ipqc@honten.local", "OQC": "oqc@honten.local",
+        "INSPECTION": "inspect@honten.local", "LASER": "laser@honten.local",
+        "CNC": "cnc@honten.local", "ASSEMBLY": "asm@honten.local",
+    }
+    from app.models.supplier import Supplier
+    rs2 = await db.execute(
+        select(Supplier).where(Supplier.is_active == True).order_by(Supplier.name)
+    )
+    suppliers = [{"id": s.id, "name": s.name, "email": s.email or "",
+                  "contact": s.contact or ""} for s in rs2.scalars().all() if s.email]
+
+    # 找對應該單異常廠商的 email/contact
+    sup_contact, sup_email = "", ""
+    if form.supplier_name:
+        for s in suppliers:
+            if form.supplier_name.strip() in s["name"]:
+                sup_contact = s["contact"]; sup_email = s["email"]; break
+
+    # 預選 email 邏輯：
+    #   SUPPLIER → 帶該廠商
+    #   INTERNAL → 帶對應工段
+    #   CUSTOMER（客訴）→ 不預選，由品保自選
+    src = form.source_type.value if form.source_type else "SUPPLIER"
+    preselect_email = ""
+    if src == "SUPPLIER":
+        preselect_email = sup_email
+    elif src == "INTERNAL":
+        preselect_email = STAGE_TO_EMAIL.get(form.stage.value if form.stage else "", "")
+
     return templates.TemplateResponse("qc_exceptions/detail.html", {
         "request": request, "user": current_user, "form": form,
         "docs_by_cat": _docs_by_cat(form.documents),
@@ -412,7 +465,10 @@ async def detail_qc(
         "QCDisposition": QCDisposition,
         "QCExceptionStage": QCExceptionStage,
         "ATTACH_CATEGORIES": ATTACH_CATEGORIES,
-        "qc_supplier_mail_tpl": qc_notif.build_supplier_mail_template(form),
+        "qc_supplier_mail_tpl": qc_notif.build_supplier_mail_template(form, sup_contact),
+        "qc_internal_stations": INTERNAL_STATIONS,
+        "qc_active_suppliers":  suppliers,
+        "qc_preselect_email":   preselect_email,
     })
 
 
@@ -550,9 +606,11 @@ async def set_disposition(
     form.supplier_mail_subject = (fd.get("supplier_mail_subject") or "").strip() or None
     form.supplier_mail_body    = (fd.get("supplier_mail_body") or "").strip() or None
 
-    # A. 退貨 — 補貨需求說明（給採購/生管）
+    # A. 退貨 — 補貨需求說明（給採購/生管）+ 司機載回
     if "RETURN_TO_SUPPLIER" in picked:
         form.rts_replenish_note = (fd.get("rts_replenish_note") or "").strip() or None
+        form.rts_pickup_required = bool(fd.get("rts_pickup_required"))
+        form.rts_pickup_note = (fd.get("rts_pickup_note") or "").strip() or None
 
     # B. 處理方式 — 子類別多選（NO_ACTION 與其他互斥；廠內/客戶端可同時）
     if "SPECIAL_ACCEPT" in picked:
@@ -631,25 +689,46 @@ async def set_disposition(
         form.lab_test_conditions = (fd.get("lab_test_conditions") or "").strip() or None
         form.lab_test_due_date   = (fd.get("lab_test_due_date") or "").strip() or None
 
-    form.status = QCExceptionStatus.PENDING_IMPROVEMENT
+    notify_pc = (fd.get("notify_pc") == "1")
+    # 「送出 + 通知生管」按鈕：只觸發 send-to-prod，狀態維持在品保判斷階段
+    # 主送出按鈕：才推進到 PENDING_IMPROVEMENT
+    if not notify_pc:
+        form.status = QCExceptionStatus.PENDING_IMPROVEMENT
     form.updated_at = datetime.utcnow()
     summary = "+".join(picked)
-    db.add(_log(form, current_user, "DISPOSITION", old, form.status,
-                f"處理判斷：{summary}｜{note.strip()[:120]}"))
+    if notify_pc:
+        action_lbl, log_note = "SEND_TO_PC", f"暫存處理判斷 + 送生管：{summary}"
+    else:
+        action_lbl, log_note = "DISPOSITION", f"處理判斷：{summary}｜{note.strip()[:120]}"
+    db.add(_log(form, current_user, action_lbl, old, form.status, log_note))
     await db.commit()
 
-    # 通知 LINE 群組 + 相關角色
+    # 通知 pipeline
     try:
-        await qc_notif.notify_disposition(
-            db, form, disposer_name=(current_user.display_name or current_user.username))
-        # Step 1：通知信（給供應商或工站）— 獨立於批次處理判斷，只要填了內容就寄
-        if form.supplier_mail_to and form.supplier_mail_body:
-            await qc_notif.send_supplier_mail(form)
-            form.supplier_mail_sent_at = datetime.utcnow()
+        # 「送出 + 通知生管」按鈕：只觸發送生管，不發整體 disposition / mail / 退貨通知
+        if not notify_pc:
+            await qc_notif.notify_disposition(
+                db, form, disposer_name=(current_user.display_name or current_user.username))
+            # Step 1：通知信（給供應商或工站）
+            if form.supplier_mail_to and form.supplier_mail_body:
+                await qc_notif.send_supplier_mail(form)
+                form.supplier_mail_sent_at = datetime.utcnow()
+                await db.commit()
+            # Step 2：A. 退貨 → 額外通知採購（進貨）/ 生管（製程）
+            if "RETURN_TO_SUPPLIER" in picked:
+                await qc_notif.notify_return_to_supplier(db, form)
+        # notify_pc=1 + 有 Sorting/Rework → 送生管（狀態維持 PENDING_DISPOSITION）
+        if notify_pc and (form.sa_need_sorting or form.sa_need_rework):
+            form.sa_sent_to_prod_at = datetime.utcnow()
             await db.commit()
-        # Step 2：A. 退貨 → 額外通知採購（進貨）/ 生管（製程）+ 帶補貨資訊
-        if "RETURN_TO_SUPPLIER" in picked:
-            await qc_notif.notify_return_to_supplier(db, form)
+            pc_msg = (f"📋 【特採允收 — 待生管處理】{form.form_id}\n"
+                      f"品號：{form.part_no}　異常：{form.defect_cause}\n"
+                      f"處理：{('Sorting ' if form.sa_need_sorting else '')}"
+                      f"{('Rework ' if form.sa_need_rework else '')}\n"
+                      f"請填執行單位 + 安排執行後回填數量。\n"
+                      f"系統：/qc-exceptions/{form.form_id}")
+            await qc_notif._send_line_group(qc_notif.LINE_QC_GROUP, pc_msg)
+            await qc_notif._ntf._notify_roles(db, [Role.PC], pc_msg)
     except Exception:
         logging.exception("notify_disposition pipeline failed")
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
@@ -691,12 +770,15 @@ async def save_sa_fillback(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    sa_station: str = Form(""),                # 生管填
-    sa_sorting_pass_qty: str = Form(""),       # sorting 單位回填
+    sa_station: str = Form(""),                  # 生管填
+    sa_sorting_pass_qty: str = Form(""),         # sorting 單位回填
     sa_sorting_fail_qty: str = Form(""),
-    sa_rework_result: str = Form(""),          # rework 結果回報
+    sa_rework_pass_qty:  str = Form(""),         # rework 單位回填
+    sa_rework_fail_qty:  str = Form(""),
+    sa_rework_defect_handling: str = Form(""),   # Rework 後不良品處理方式
+    sa_rework_result:    str = Form(""),         # （舊）rework 結果回報
 ):
-    """生管 / 品保 / admin 回填 SA 處理結果（執行單位、sorting 良/不良數、rework 結果）"""
+    """生管 / 品保 / admin 回填 SA 處理結果（彙整表：Sorting 良/不良 + Rework 良/不良/不良品處理）"""
     form = await _get_or_404(form_id, db)
     if current_user.role not in (Role.PC, Role.QC, Role.ADMIN):
         raise HTTPException(status_code=403, detail="僅 生管 / 品保 可回填")
@@ -705,24 +787,29 @@ async def save_sa_fillback(
         except (TypeError, ValueError): return None
     if sa_station.strip():
         form.sa_station = sa_station.strip()
-    pass_q = _int(sa_sorting_pass_qty)
-    fail_q = _int(sa_sorting_fail_qty)
-    if pass_q is not None or fail_q is not None:
-        form.sa_sorting_pass_qty = pass_q
-        form.sa_sorting_fail_qty = fail_q
+    s_pass = _int(sa_sorting_pass_qty); s_fail = _int(sa_sorting_fail_qty)
+    if s_pass is not None or s_fail is not None:
+        form.sa_sorting_pass_qty = s_pass
+        form.sa_sorting_fail_qty = s_fail
         form.sa_sorting_filled_at = datetime.utcnow()
+    r_pass = _int(sa_rework_pass_qty); r_fail = _int(sa_rework_fail_qty)
+    if r_pass is not None or r_fail is not None:
+        form.sa_rework_pass_qty = r_pass
+        form.sa_rework_fail_qty = r_fail
+        form.sa_rework_filled_at = datetime.utcnow()
+    if sa_rework_defect_handling.strip():
+        form.sa_rework_defect_handling = sa_rework_defect_handling.strip()
     if sa_rework_result.strip():
         form.sa_rework_result = sa_rework_result.strip()
         form.sa_rework_filled_at = datetime.utcnow()
     db.add(_log(form, current_user, "SA_FILLBACK", form.status, form.status,
-                f"回填：站別={form.sa_station or '—'} sort={pass_q}/{fail_q} rework={sa_rework_result.strip()[:60]}"))
+                f"回填：站別={form.sa_station or '—'} sort={s_pass}/{s_fail} rework={r_pass}/{r_fail}"))
     await db.commit()
-    # 通知品保收到回填
     try:
         msg = (f"✅ 【特採處理結果回填】{form.form_id}\n品號：{form.part_no}\n"
                f"站別：{form.sa_station or '—'}\n"
-               f"Sorting 良/不良：{pass_q if pass_q is not None else '—'}/{fail_q if fail_q is not None else '—'}\n"
-               f"Rework 結果：{(form.sa_rework_result or '—')[:80]}")
+               f"Sorting 良/不良：{s_pass if s_pass is not None else '—'}/{s_fail if s_fail is not None else '—'}\n"
+               f"Rework 良/不良：{r_pass if r_pass is not None else '—'}/{r_fail if r_fail is not None else '—'}")
         await qc_notif._ntf._notify_roles(db, [Role.QC], msg)
     except Exception:
         pass

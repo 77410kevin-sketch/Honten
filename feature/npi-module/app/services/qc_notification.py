@@ -10,7 +10,7 @@
     LINE_CHANNEL_ACCESS_TOKEN=...
     LINE_QC_GROUP_ID=Cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 """
-import os
+import os, json
 import logging
 from typing import Iterable
 
@@ -168,35 +168,107 @@ async def send_supplier_mail(form: QCException):
 
 
 def build_supplier_mail_template(form: QCException, contact_name: str = "") -> str:
-    """產出退貨給供應商的預設 mail 範本（讓品保編輯）
+    """產出 QC 異常通知信範本（參考 RFQ 工程詢價信格式）
 
-    強調：要說明「退貨」、要帶「異常廠商」名稱（不是工段名）
+    內容：
+      開頭   — Hi {對象 聯絡人}（依 rts_target_type/source_type 切換）
+      案件資訊 — 異常單號 / 對象 / 品號 / 單號 / 日期 / 工段 / 數量
+      異常項目 — 列出多筆 cause + 類型(外觀/尺寸) + 抽樣/不良/不良率
+      回覆要求 — 5Why / 暫時對策 / 永久對策 / 擴大調查
+      附件     — 異常照片
     """
-    rate_str = "—"
-    if form.defect_rate is not None:
-        rate_str = f"{form.defect_qty or 0} / {form.sample_qty or 0} ({form.defect_rate*100:.1f}%)"
-    supplier = form.supplier_name or "（廠商）"
-    greeting = f"{supplier} {contact_name or '聯絡人'} 您好：" if contact_name \
-               else f"{supplier} 您好："
+    name = form.supplier_name or "對象單位"
+    src = form.source_type.value if form.source_type else "SUPPLIER"
+    is_complaint = (src == "CUSTOMER")
+
+    # 對象稱呼 + 標籤
+    if is_complaint:
+        # 客訴情境：寄給內部單位協助處理，不帶客戶資料
+        addressee = "同仁"
+        target_lbl = ""
+    elif src == "INTERNAL":
+        stage_lbl = form.stage.value if form.stage else "工站"
+        addressee = f"廠內 {stage_lbl} 同仁"
+        target_lbl = "廠內工站"
+    else:
+        addressee = f"{name} {contact_name}".strip() if contact_name else f"{name} 採購窗口"
+        target_lbl = "供應商"
+
+    # 單號 / 日期類型 label
+    doc_lbl = {"RECEIVE": "進貨單號", "PROCESS": "製程單號", "SHIP_DC": "出貨 D/C"}.get(
+        form.doc_type.value if form.doc_type else "", "單號")
+    date_lbl = {"RECEIVE": "進貨日期", "PRODUCE": "生產日期",
+                "SHIP": "出貨日期", "COMPLAINT": "客訴日期"}.get(
+        form.event_date_type.value if form.event_date_type else "", "日期")
+
+    # 異常項目（多列）
+    items = []
+    if form.defect_items_json:
+        try:
+            items = json.loads(form.defect_items_json) or []
+        except Exception:
+            items = []
+    if not items and form.defect_cause:
+        items = [{"cause": form.defect_cause, "types": [],
+                  "sample_qty": form.sample_qty, "defect_qty": form.defect_qty}]
+
+    type_lbl = {"EXTERIOR": "外觀", "DIMENSION": "尺寸"}
+    item_lines = []
+    for i, it in enumerate(items, 1):
+        sq = it.get("sample_qty") or 0
+        dq = it.get("defect_qty") or 0
+        r = (dq / sq * 100) if sq > 0 else 0
+        types_str = "/".join(type_lbl.get(t, t) for t in (it.get("types") or [])) or "—"
+        item_lines.append(
+            f" {i}. {it.get('cause')} ｜ 類型 {types_str} ｜ 抽樣 {sq} / 不良 {dq} ({r:.1f}%)"
+        )
+    items_block = "\n".join(item_lines) if item_lines else " （請查看異常單）"
+
+    rate_str = (f"{form.defect_qty or 0} / {form.sample_qty or 0} "
+                f"({(form.defect_rate or 0)*100:.2f}%)") \
+                if form.defect_rate is not None else "—"
+
+    # 客訴情境（CUSTOMER）：信件不帶任何客戶資訊（對象 / 工段也淡化）
+    if is_complaint:
+        case_lines = (
+            f" 異常單號：{form.form_id}\n"
+            f" 品號：{form.part_no}\n"
+            f" 異常項目（共 {len(items)} 筆）"
+        )
+    else:
+        case_lines = (
+            f" 異常單號：{form.form_id}\n"
+            f" 對象（{target_lbl}）：{name}\n"
+            f" 品號：{form.part_no}\n"
+            f" {doc_lbl}：{form.receive_doc_no or '—'}\n"
+            f" {date_lbl}：{form.receive_date or '—'}\n"
+            f" 工段：{form.stage.value if form.stage else '—'}\n"
+            f" 進貨數量：{form.receive_qty or '—'} pcs"
+        )
+
+    intro = ("收到客戶反饋本批產品異常，需請相關單位協助確認與改善。" if is_complaint
+             else f"本公司於 {form.stage.value if form.stage else '檢驗'} 發現品號 {form.part_no} 異常，"
+                  "經確認本批不符合允收規格，請協助分析異常原因並回覆「異常分析報告」與後續改善方案。")
+
     return (
-        f"{greeting}\n\n"
-        f"本公司於進料檢驗 貴司（{supplier}）所出貨之品號 {form.part_no} 時發現異常，\n"
-        f"經 IQC 確認本批不符合允收規格，**將辦理退貨**，請協助分析原因並回覆「異常分析報告」。\n\n"
+        f"Hi {addressee}，\n\n"
+        f"{intro}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"異常單號：{form.form_id}\n"
-        f"異常廠商：{supplier}\n"
-        f"品號：{form.part_no}\n"
-        f"進貨單號：{form.receive_doc_no or '—'}\n"
-        f"進貨日期：{form.receive_date or '—'}\n"
-        f"異常原因：{form.defect_cause}\n"
-        f"量測數據：{form.measurement_data or '—'}\n"
-        f"異常抽驗比例：{rate_str}\n"
+        f"案件資訊：\n"
+        f"{case_lines}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"處理方式：本批整批退回 貴司，麻煩於收到後 3 個工作天內回覆異常分析報告，\n"
-        f"內容請包含：5Why 分析、根本原因、暫時對策、永久對策、相同批號是否需擴大調查。\n\n"
+        f"異常項目（共 {len(items)} 筆）：\n"
+        f"{items_block}\n\n"
+        f"合計不良率：{rate_str}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"請於收到本信件後 3 個工作天內回覆下列項目：\n"
+        f" 1. 異常根本原因分析（5Why / 魚骨圖摘要）\n"
+        f" 2. 暫時對策（針對在途/庫存品如何處理）\n"
+        f" 3. 永久改善對策（製程/SOP/治具/檢驗方式調整）\n"
+        f" 4. 相同批號 / 同類產品是否需擴大調查\n\n"
         f"附件：異常照片如附\n\n"
-        f"如有任何疑問請回信至本信件。\n\n"
-        f"鴻騰電子 品保部 敬上"
+        f"若有任何疑問請直接回信，謝謝。\n\n"
+        f"— 鴻騰電子 品保部 敬上"
     )
 
 

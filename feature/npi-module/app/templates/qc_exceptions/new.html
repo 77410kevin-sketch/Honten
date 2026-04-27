@@ -9,7 +9,7 @@
   'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'
 } %}
 {% set _doc_placeholders = {
-  'RECEIVE':'例：3402-260424001','PROCESS':'例：MO-260424001','SHIP_DC':'例：DC-260424'
+  'RECEIVE':'','PROCESS':'','SHIP_DC':''
 } %}
 {% set _date_labels = {
   'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'
@@ -18,7 +18,7 @@
   'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'
 } %}
 {% set _source_placeholders = {
-  'SUPPLIER':'例：展倚','CUSTOMER':'例：景利','INTERNAL':'例：CNC 課'
+  'SUPPLIER':'','CUSTOMER':'','INTERNAL':''
 } %}
 
 <div class="container py-4" style="max-width:960px">
@@ -32,82 +32,132 @@
       <div class="card-body row g-3">
         <div class="col-md-4">
           <label class="form-label">品號 <span class="text-danger">*</span></label>
-          <input name="part_no" class="form-control" placeholder="例：KS04P" required>
+          <input name="part_no" class="form-control" required>
         </div>
 
         {# 單號（類型 + 號碼） #}
         <div class="col-md-8">
-          <label class="form-label">單號</label>
+          <label class="form-label">單號 <span class="text-danger">*</span></label>
           <div class="input-group">
-            <select name="doc_type" id="docTypeSel" class="form-select" style="max-width:140px">
+            <select name="doc_type" id="docTypeSel" class="form-select" style="max-width:140px" required>
+              <option value="" disabled selected>— 請選擇 —</option>
               {% for v, lbl in _doc_labels.items() %}
-              <option value="{{ v }}"{% if v == 'RECEIVE' %} selected{% endif %}>{{ lbl }}</option>
+              <option value="{{ v }}">{{ lbl }}</option>
               {% endfor %}
             </select>
-            <input name="receive_doc_no" id="docNoInp" class="form-control"
-                   placeholder="例：3402-260424001">
+            <input name="receive_doc_no" id="docNoInp" class="form-control" required>
           </div>
         </div>
 
         {# 日期（類型 + 值） #}
         <div class="col-md-4">
-          <label class="form-label">日期</label>
+          <label class="form-label">日期 <span class="text-danger">*</span></label>
           <div class="input-group">
-            <select name="event_date_type" class="form-select" style="max-width:120px">
+            <select name="event_date_type" id="dateTypeSel" class="form-select" style="max-width:120px" required>
+              <option value="" disabled selected>— 請選擇 —</option>
               {% for v, lbl in _date_labels.items() %}
-              <option value="{{ v }}"{% if v == 'RECEIVE' %} selected{% endif %}>{{ lbl }}</option>
+              <option value="{{ v }}">{{ lbl }}</option>
               {% endfor %}
             </select>
-            <input name="receive_date" class="form-control" placeholder="例：4/24">
+            <input name="receive_date" class="form-control" required>
           </div>
         </div>
 
         <div class="col-md-3">
-          <label class="form-label">工段</label>
-          <select name="stage" class="form-select">
+          <label class="form-label">工段 <span class="text-danger">*</span></label>
+          <select name="stage" id="stageSel" class="form-select" required>
+            <option value="" disabled selected>— 請選擇 —</option>
             {% for st in QCExceptionStage %}
-            <option value="{{ st.value }}"{% if st.value == 'IQC' %} selected{% endif %}>
-              {{ _stage_labels.get(st.value, st.value) }}
-            </option>
+            <option value="{{ st.value }}">{{ _stage_labels.get(st.value, st.value) }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-md-4">
-          <label class="form-label">來源</label>
+          <label class="form-label">來源 <span class="text-danger">*</span></label>
           <div class="input-group">
-            <select name="source_type" id="srcTypeSel" class="form-select" style="max-width:100px">
+            <select name="source_type" id="srcTypeSel" class="form-select" style="max-width:100px" required>
+              <option value="" disabled selected>— 請選擇 —</option>
               {% for v, lbl in _source_labels.items() %}
-              <option value="{{ v }}"{% if v == 'SUPPLIER' %} selected{% endif %}>{{ lbl }}</option>
+              <option value="{{ v }}">{{ lbl }}</option>
               {% endfor %}
             </select>
-            <input name="supplier_name" id="srcNameInp" class="form-control" placeholder="例：展倚">
+            <input name="supplier_name" id="srcNameInp" class="form-control" required>
           </div>
         </div>
         <div class="col-md-2">
-          <label class="form-label">數量</label>
-          <input name="receive_qty" type="number" min="0" class="form-control" placeholder="36472">
-        </div>
-
-        <div class="col-12">
-          <label class="form-label">異常原因 <span class="text-danger">*</span></label>
-          <input name="defect_cause" class="form-control"
-                 placeholder="例：總長過長 32.00+-0.1" required>
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">量測數據</label>
-          <input name="measurement_data" class="form-control" placeholder="例：32.11~32.15">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">不良數量</label>
-          <input name="defect_qty" type="number" min="0" class="form-control" placeholder="40">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">抽樣數量</label>
-          <input name="sample_qty" type="number" min="0" class="form-control" placeholder="315">
+          <label class="form-label">數量 <span class="text-danger">*</span></label>
+          <input name="receive_qty" type="number" min="0" class="form-control" required>
         </div>
         <div class="col-12 small text-muted">
           <i class="bi bi-info-circle me-1"></i>
-          系統會自動以「不良數 / 抽樣數」計算不良率（例：40 / 315 = 12.6%）。
+          <strong>單號類型自動連動：</strong>
+          進貨單號 → 進貨日期/IQC/廠商；製程單號 → 生產日期/IPQC/廠內；出貨D/C → 客訴日期/其他/客戶。
+          人工手選後不再覆蓋。
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">異常原因 <span class="text-danger">*</span>
+            <span class="text-muted small">（可向下新增多列；每列各填抽樣/不良；外觀/尺寸可勾選）</span>
+          </label>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-2" id="defectTable">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>異常原因</th>
+                  <th style="width:170px">類型</th>
+                  <th style="width:100px" class="text-end">抽樣數</th>
+                  <th style="width:100px" class="text-end">不良數</th>
+                  <th style="width:90px" class="text-end">不良率</th>
+                  <th style="width:40px"></th>
+                </tr>
+              </thead>
+              <tbody id="defectRows">
+                <tr class="defect-row">
+                  <td class="text-center df-idx">1</td>
+                  <td>
+                    <input name="defect_cause" class="form-control form-control-sm" required>
+                  </td>
+                  <td>
+                    <input type="hidden" name="defect_types_csv" class="dft-csv" value="">
+                    <div class="form-check form-check-inline">
+                      <input type="checkbox" class="form-check-input dft-cb" data-type="EXTERIOR">
+                      <label class="form-check-label small">外觀</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                      <input type="checkbox" class="form-check-input dft-cb" data-type="DIMENSION">
+                      <label class="form-check-label small">尺寸</label>
+                    </div>
+                  </td>
+                  <td>
+                    <input name="sample_qty" type="number" min="0"
+                           class="form-control form-control-sm text-end df-sq">
+                  </td>
+                  <td>
+                    <input name="defect_qty" type="number" min="0"
+                           class="form-control form-control-sm text-end df-dq">
+                  </td>
+                  <td class="text-end small df-rate text-muted">—</td>
+                  <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger df-remove"
+                            title="移除此列">×</button>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot class="table-light">
+                <tr>
+                  <td colspan="3" class="text-end fw-semibold">合計</td>
+                  <td class="text-end fw-semibold" id="totalSq">0</td>
+                  <td class="text-end fw-semibold" id="totalDq">0</td>
+                  <td class="text-end fw-semibold text-danger" id="totalRate">—</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <button type="button" id="defectAdd" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-plus-circle"></i>新增異常項目
+          </button>
         </div>
       </div>
     </div>
@@ -184,19 +234,42 @@ document.addEventListener("click", (e) => {
   }
 });
 
-// 2) 單號 placeholder 隨類型切換
+// 2) 單號 → 日期/工段/來源 三欄連動
+//    人工手選後不再被覆蓋（用 _userTouched 標記）
 const docPlaceholders = {{ _doc_placeholders | tojson }};
-const docTypeSel = document.getElementById('docTypeSel');
-const docNoInp = document.getElementById('docNoInp');
-docTypeSel.addEventListener('change', () => {
-  docNoInp.placeholder = docPlaceholders[docTypeSel.value] || '';
-});
-
-// 來源 placeholder 隨類型切換
 const srcPlaceholders = {{ _source_placeholders | tojson }};
-const srcTypeSel = document.getElementById('srcTypeSel');
-const srcNameInp = document.getElementById('srcNameInp');
-if (srcTypeSel) srcTypeSel.addEventListener('change', () => {
+const PRESETS = {
+  RECEIVE: {date_type: 'RECEIVE',   stage: 'IQC',   source_type: 'SUPPLIER'},
+  PROCESS: {date_type: 'PRODUCE',   stage: 'IPQC',  source_type: 'INTERNAL'},
+  SHIP_DC: {date_type: 'COMPLAINT', stage: 'OTHER', source_type: 'CUSTOMER'},
+};
+const docTypeSel  = document.getElementById('docTypeSel');
+const docNoInp    = document.getElementById('docNoInp');
+const dateTypeSel = document.getElementById('dateTypeSel');
+const stageSel    = document.getElementById('stageSel');
+const srcTypeSel  = document.getElementById('srcTypeSel');
+const srcNameInp  = document.getElementById('srcNameInp');
+
+const _userTouched = { date_type: false, stage: false, source_type: false };
+
+function applyPreset(docType) {
+  const p = PRESETS[docType];
+  if (!p) return;
+  if (!_userTouched.date_type   && dateTypeSel) dateTypeSel.value = p.date_type;
+  if (!_userTouched.stage       && stageSel)    stageSel.value    = p.stage;
+  if (!_userTouched.source_type && srcTypeSel) {
+    srcTypeSel.value = p.source_type;
+    srcNameInp.placeholder = srcPlaceholders[p.source_type] || '';
+  }
+  docNoInp.placeholder = docPlaceholders[docType] || '';
+}
+
+if (docTypeSel) docTypeSel.addEventListener('change', () => applyPreset(docTypeSel.value));
+// 三組欄位：被使用者手選後標記 touched，下次切單號類型不再覆蓋
+if (dateTypeSel) dateTypeSel.addEventListener('change', () => { _userTouched.date_type = true; });
+if (stageSel)    stageSel.addEventListener('change',    () => { _userTouched.stage = true; });
+if (srcTypeSel)  srcTypeSel.addEventListener('change',  () => {
+  _userTouched.source_type = true;
   srcNameInp.placeholder = srcPlaceholders[srcTypeSel.value] || '';
 });
 
@@ -258,5 +331,102 @@ zone.addEventListener('paste', (e) => {
 
 // 點 paste-zone 時自動 focus（讓貼上事件能觸發）
 zone.addEventListener('click', () => zone.focus());
+
+// Enter 跳下一個欄位（避免誤送出）— 適用於 input/select；textarea / button 維持原本行為
+document.getElementById('qcForm').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const t = e.target;
+  const tag = (t.tagName || '').toLowerCase();
+  if (tag === 'textarea' || tag === 'button') return;
+  if (t.type === 'submit') return;
+  e.preventDefault();
+  const focusables = Array.from(document.getElementById('qcForm').querySelectorAll(
+    'input:not([type=hidden]):not([type=file]):not([disabled]), select:not([disabled])'
+  )).filter(el => el.offsetParent !== null); // 只取可見元素
+  const idx = focusables.indexOf(t);
+  if (idx >= 0 && idx + 1 < focusables.length) {
+    const next = focusables[idx + 1];
+    next.focus();
+    if (typeof next.select === 'function' && next.type !== 'checkbox') next.select();
+  }
+});
+
+// 異常原因 多列 + 即時不良率
+(function(){
+  const tbody = document.getElementById('defectRows');
+  const addBtn = document.getElementById('defectAdd');
+  const totalSqEl = document.getElementById('totalSq');
+  const totalDqEl = document.getElementById('totalDq');
+  const totalRateEl = document.getElementById('totalRate');
+
+  function reindex() {
+    tbody.querySelectorAll('.df-idx').forEach((td, i) => td.textContent = i + 1);
+  }
+  function calcRow(row) {
+    const sq = parseInt(row.querySelector('.df-sq').value) || 0;
+    const dq = parseInt(row.querySelector('.df-dq').value) || 0;
+    const rateEl = row.querySelector('.df-rate');
+    if (sq > 0) {
+      const r = (dq / sq * 100).toFixed(1);
+      rateEl.textContent = `${r}%`;
+      rateEl.classList.toggle('text-danger', dq / sq >= 0.05);
+      rateEl.classList.toggle('text-muted', !(dq / sq >= 0.05));
+    } else {
+      rateEl.textContent = '—';
+      rateEl.classList.add('text-muted');
+      rateEl.classList.remove('text-danger');
+    }
+  }
+  function calcTotal() {
+    let totSq = 0, totDq = 0;
+    tbody.querySelectorAll('.defect-row').forEach(row => {
+      totSq += parseInt(row.querySelector('.df-sq').value) || 0;
+      totDq += parseInt(row.querySelector('.df-dq').value) || 0;
+    });
+    totalSqEl.textContent = totSq;
+    totalDqEl.textContent = totDq;
+    if (totSq > 0) {
+      totalRateEl.textContent = `${(totDq / totSq * 100).toFixed(2)}%`;
+    } else {
+      totalRateEl.textContent = '—';
+    }
+  }
+  function updateTypesCsv(row) {
+    const types = Array.from(row.querySelectorAll('.dft-cb:checked')).map(c => c.dataset.type);
+    row.querySelector('.dft-csv').value = types.join(',');
+  }
+  function bindRow(row) {
+    row.querySelectorAll('.df-sq, .df-dq').forEach(inp => {
+      inp.addEventListener('input', () => { calcRow(row); calcTotal(); });
+    });
+    row.querySelectorAll('.dft-cb').forEach(cb => {
+      cb.addEventListener('change', () => updateTypesCsv(row));
+    });
+    row.querySelector('.df-remove').addEventListener('click', () => {
+      const rows = tbody.querySelectorAll('.defect-row');
+      if (rows.length > 1) {
+        row.remove();
+        reindex();
+        calcTotal();
+      }
+    });
+  }
+  bindRow(tbody.querySelector('.defect-row'));
+  addBtn.addEventListener('click', () => {
+    const first = tbody.querySelector('.defect-row');
+    const clone = first.cloneNode(true);
+    clone.querySelectorAll('input').forEach(inp => {
+      if (inp.type === 'checkbox') inp.checked = false;
+      else if (inp.type !== 'hidden') inp.value = '';
+      else inp.value = '';
+    });
+    clone.querySelector('.df-rate').textContent = '—';
+    clone.querySelector('.df-rate').classList.remove('text-danger');
+    clone.querySelector('.df-rate').classList.add('text-muted');
+    tbody.appendChild(clone);
+    bindRow(clone);
+    reindex();
+  });
+})();
 </script>
 {% endblock %}
