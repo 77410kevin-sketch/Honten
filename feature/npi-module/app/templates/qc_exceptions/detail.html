@@ -732,33 +732,26 @@
     {% set _can_edit_improve = _is_qc and _s in ('PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
     <div class="card shadow-sm mb-3 {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}border-primary{% endif %}">
       <div class="card-header {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold">
-        <i class="bi bi-tools me-2"></i>改善方案（含 Mail 通知 + 根因分析）
+        <i class="bi bi-tools me-2"></i>長期改善方案
       </div>
       <div class="card-body">
         {% if _can_edit_improve %}
         <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement">
-          {# Mail 通知 #}
-          <div class="row g-2 mb-2">
+          {# 根因分析 + 長期改善 兩欄並排 #}
+          <div class="row g-3 mb-3">
             <div class="col-md-6">
-              <label class="form-label small">Mail 通知 收件人 (To，多人用 , 隔開)</label>
-              <input name="notify_mail_to"
-                     class="form-control form-control-sm{% if form.notify_mail_to %} bg-success-subtle border-success{% endif %}"
-                     value="{{ form.notify_mail_to or '' }}"
-                     placeholder="qa@honten.com, eng@honten.com">
+              <label class="form-label small fw-semibold">根因分析（5Why / 魚骨圖摘要）</label>
+              <textarea name="root_cause" rows="6"
+                        class="form-control{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
+                        placeholder="例如 廠商換刀後未重新對 0…">{{ form.root_cause or '' }}</textarea>
             </div>
             <div class="col-md-6">
-              <label class="form-label small">副本 (Cc)</label>
-              <input name="notify_mail_cc"
-                     class="form-control form-control-sm{% if form.notify_mail_cc %} bg-success-subtle border-success{% endif %}"
-                     value="{{ form.notify_mail_cc or '' }}"
-                     placeholder="bu@honten.com">
+              <label class="form-label small fw-semibold">長期改善內容</label>
+              <textarea name="improvement_plan" rows="6"
+                        class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
+                        placeholder="長期改善方案、預防措施、SOP/SIP 修訂方向…">{{ form.improvement_plan or '' }}</textarea>
             </div>
           </div>
-          {# 根因分析 #}
-          <label class="form-label small">根因分析（5Why / 魚骨圖摘要）</label>
-          <textarea name="root_cause" rows="3"
-                    class="form-control mb-3{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
-                    placeholder="例如 廠商換刀後未重新對 0…">{{ form.root_cause or '' }}</textarea>
           {# 改善方案勾選 #}
           <div class="d-flex flex-wrap gap-3 mb-2">
             <div class="form-check">
@@ -777,11 +770,7 @@
               <label for="needSip" class="form-check-label">需修訂 SIP</label>
             </div>
           </div>
-          <label class="form-label small">改善方案內容</label>
-          <textarea name="improvement_plan" rows="3"
-                    class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
-                    placeholder="長期改善內容…">{{ form.improvement_plan or '' }}</textarea>
-          <div class="d-flex gap-2 mt-2">
+          <div class="d-flex gap-2 mt-3">
             <button name="advance" value="" class="btn btn-outline-secondary btn-sm">
               <i class="bi bi-save me-1"></i>儲存
             </button>
@@ -816,17 +805,21 @@
         {% endif %}
         {% else %}
         <div class="small">
-          <div><strong>Mail 收件人：</strong>{{ form.notify_mail_to or '—' }}</div>
-          <div><strong>副本：</strong>{{ form.notify_mail_cc or '—' }}</div>
-          <div class="mt-2"><strong>根因分析：</strong></div>
-          <div class="border rounded p-2 bg-light mb-2">{{ form.root_cause or '（尚未填寫）' }}</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <strong>根因分析：</strong>
+              <div class="border rounded p-2 bg-light mt-1">{{ form.root_cause or '（尚未填寫）' }}</div>
+            </div>
+            <div class="col-md-6">
+              <strong>長期改善內容：</strong>
+              <div class="border rounded p-2 bg-light mt-1">{{ form.improvement_plan or '（尚未填寫）' }}</div>
+            </div>
+          </div>
           <div class="mb-2">
             {% if form.need_drawing_rev %}<span class="badge bg-info text-dark me-1">需修訂圖面</span>{% endif %}
             {% if form.need_sop_rev %}<span class="badge bg-info text-dark me-1">需修訂 SOP</span>{% endif %}
             {% if form.need_sip_rev %}<span class="badge bg-info text-dark me-1">需修訂 SIP</span>{% endif %}
           </div>
-          <div><strong>改善方案內容：</strong></div>
-          <div class="border rounded p-2 bg-light">{{ form.improvement_plan or '（尚未填寫）' }}</div>
           {% if form.linked_ecn %}
           <div class="mt-2">
             <strong>已綁 ECN：</strong>
