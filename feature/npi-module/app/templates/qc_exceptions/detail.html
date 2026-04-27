@@ -9,7 +9,7 @@
   <h4 class="mb-0">
     <i class="bi bi-exclamation-octagon text-danger me-2"></i>{{ form.form_id }}
     {% if _s == 'DRAFT' %}<span class="badge bg-secondary ms-2">草稿</span>
-    {% elif _s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark ms-2">待品保判斷</span>
+    {% elif _s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark ms-2">立即處理</span>
     {% elif _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}<span class="badge bg-primary ms-2">待改善方案</span>
     {% elif _s == 'LINKED_ECN' %}<span class="badge bg-warning text-dark ms-2">已綁 ECN</span>
     {% elif _s == 'CLOSED' %}<span class="badge bg-success ms-2">結案</span>
@@ -23,7 +23,7 @@
 {# 進度軸（PENDING_RCA 已併入 PENDING_IMPROVEMENT）#}
 {% set _steps = [
   ('DRAFT', '品保草稿', 'bi-pencil'),
-  ('PENDING_DISPOSITION', '待品保判斷', 'bi-search'),
+  ('PENDING_DISPOSITION', '立即處理', 'bi-search'),
   ('PENDING_IMPROVEMENT', '改善方案 (含根因)', 'bi-tools'),
   ('LINKED_ECN', '綁 ECN', 'bi-link-45deg'),
   ('CLOSED', '結案', 'bi-check2-circle'),
@@ -1003,8 +1003,8 @@
           <input type="hidden" name="measurement_data" value="{{ form.measurement_data or '' }}">
           <input type="hidden" name="defect_qty" value="{{ form.defect_qty or '' }}">
           <input type="hidden" name="sample_qty" value="{{ form.sample_qty or '' }}">
-          <button class="btn btn-danger w-100" onclick="return confirm('直接送出？將進入「待品保判斷」階段。');">
-            <i class="bi bi-send me-1"></i>直接送出 → 待品保判斷
+          <button class="btn btn-danger w-100" onclick="return confirm('直接送出？將進入「立即處理」階段。');">
+            <i class="bi bi-send me-1"></i>直接送出 → 立即處理
           </button>
         </form>
         {% endif %}

@@ -23,7 +23,7 @@
 
   <div class="alert alert-warning small">
     <i class="bi bi-info-circle me-1"></i>
-    本單已由品保退回要求補件。請修正內容 / 補上附件後，按下方<strong>「補件完成 → 重送品保判斷」</strong>把單子送回品保。
+    本單已由品保退回要求補件。請修正內容 / 補上附件後，按下方<strong>「補件完成 → 重送立即處理」</strong>把單子送回品保。
   </div>
 
   <form method="post" action="/qc-exceptions/{{ form.form_id }}/edit"
@@ -221,7 +221,7 @@
         <i class="bi bi-save me-1"></i>儲存（不送出）
       </button>
       <button name="submit_action" value="resubmit" class="btn btn-warning fw-semibold">
-        <i class="bi bi-send me-1"></i>補件完成 → 重送品保判斷
+        <i class="bi bi-send me-1"></i>補件完成 → 重送立即處理
       </button>
     </div>
   </form>

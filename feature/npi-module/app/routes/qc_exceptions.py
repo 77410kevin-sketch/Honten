@@ -405,8 +405,8 @@ async def detail_qc(
     form = await _get_or_404(form_id, db)
     transition_combo = {
         "DRAFT→PENDING_DISPOSITION":               ("品保送審",       "primary"),
-        "PENDING_DISPOSITION→PENDING_IMPROVEMENT": ("品保下處理判斷 → 改善方案", "info"),
-        "PENDING_DISPOSITION→PENDING_RCA":         ("品保下處理判斷（舊）", "info"),
+        "PENDING_DISPOSITION→PENDING_IMPROVEMENT": ("立即處理 → 改善方案", "info"),
+        "PENDING_DISPOSITION→PENDING_RCA":         ("立即處理（舊）", "info"),
         "PENDING_RCA→PENDING_IMPROVEMENT":         ("併入改善方案（舊）",   "info"),
         "PENDING_IMPROVEMENT→LINKED_ECN":          ("綁入 ECN",       "warning"),
         "PENDING_IMPROVEMENT→CLOSED":              ("結案",           "dark"),

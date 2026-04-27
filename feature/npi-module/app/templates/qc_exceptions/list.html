@@ -36,7 +36,7 @@
             <td>
               {% set s = f.status.value %}
               {% if s == 'DRAFT' %}<span class="badge bg-secondary">草稿</span>
-              {% elif s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark">待品保判斷</span>
+              {% elif s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark">立即處理</span>
               {% elif s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}<span class="badge bg-primary">待改善方案</span>
               {% elif s == 'LINKED_ECN' %}<span class="badge bg-warning text-dark">已綁 ECN</span>
               {% elif s == 'CLOSED' %}<span class="badge bg-success">結案</span>
