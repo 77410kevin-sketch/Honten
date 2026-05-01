@@ -210,6 +210,8 @@ async def run_migrations():
         "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_pass_qty INTEGER",
         "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_fail_qty INTEGER",
         "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_defect_handling TEXT",
+        # 立即處理 v3 — 多卡片 actions JSON
+        "ALTER TABLE qc_exceptions ADD COLUMN actions_json TEXT",
     ]
     async with engine.begin() as conn:
         for sql in migrations:

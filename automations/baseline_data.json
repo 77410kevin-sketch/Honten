@@ -1,0 +1,812 @@
+{
+  "Jeffrey": {
+    "projects": [
+      {
+        "customer": "順達",
+        "model": "ORV3 5.5KW",
+        "stage": "PVT",
+        "sales_followup": "1. PVT: 4/2提供FAI/Cpk, 4/15試產完成,準備出貨光寶驗證",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "順達",
+        "model": "LA235",
+        "stage": "Mockup",
+        "sales_followup": "1. 2/25已報價,3/4已更新報價,已拿到案子  開模DFM: 3/20已提供\n2. 7th延燒:3/26 若過了會發圖開模 (TS: 3/E, T1: 4/E-5/B)  模工: Paul\n    ==>4/14  8th測試(4/10提早測NG), 下周複測\n3. 鎳片1組 Support  3/20已製作  交期確認:3/25已交\n4. 成本分析: 3/27 (伸揚/合檥) (按最新圖面成本下降)\n5. 4/14已報價 500套(簡易模), 與RD確認可否修模(鑲件, 滑塊, 入子活動式)==>可行\n追",
+        "eng_followup": ""
+      },
+      {
+        "customer": "順達",
+        "model": "LA267H",
+        "stage": "RFQ",
+        "sales_followup": "1. 2/25已報價, 策略性給元鐙\n2. 4/14更新樣品需求(上下鐵片 SUS301 3/4H), 4/13已報價製作,4/21交(補出貨單/發票)",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "順達",
+        "model": "MSFT 1KW",
+        "stage": "DVT",
+        "sales_followup": "1. PCN: 4/9 (已簽)\n2. 請工程更新模具開發履歷 (ng尺寸逐項檢視並安排復測&分析&對策&建議)\n3. 4/16 RD通知上蓋需加外蓋板(鉚接) (更新成本分析)\n     ==>模具追加工站壓鉚? 還是外部工具鉚接 須說明一下製程以及其定位方式確認",
+        "eng_followup": "1.等待報價更新。"
+      },
+      {
+        "customer": "順達",
+        "model": "SCS-30KW (LA300S)",
+        "stage": "DVT",
+        "sales_followup": "1. 3/19鋁板及銅板樣品需求 support 報價回收（拓海）==>3/25送\n2. 確認材質硬度 & 製程:  SUS304 1/2H , 簡模壓凸包，折曲是折床(鴻濰)\n3. 新增鋁條: AL5052(伸揚:10W模具; 22/pcs(貼膠) 鴻濰已報:55/pcs 缺拓海) 4/18已報價\n   ,模具費support   (評估鋁擠模無法 (太薄)  (開模確認＆數量）　==>pending",
+        "eng_followup": "已暫停"
+      },
+      {
+        "customer": "順達",
+        "model": "HVDC 600V 66KW",
+        "stage": "Mockup",
+        "sales_followup": "1. 評估模具費用: 33/45(伸揚), 樣品/模具費皆已報價\n2. 評估底板載重:40Kg==>實驗何時完成? 4/24已提供\n3. 4/15已報價(20套樣品)  約Lance discuss CNC  control parts (4/21 ):無其他金屬件\n     進度確認",
+        "eng_followup": "負載搬運穩定性測試結果\n1. 穩定平衡狀態：\n當雙手抓握於重物重心下方的對稱位置時，金屬板受力均勻，能有效支撐上方載重並維持水平面平整，兩組重物之間保持預設間距，不產生傾斜。\n\n2. 動態失穩現象：\n當雙手抓握位置由中心點向兩側邊緣偏移時，金屬板的支撐結構發生變化。由於板材厚度較薄，受重力影響會產生向下的弧形下撓（類似 U 型彎曲）。\n\n3. 連鎖反應結果：\n隨著板材中心的下陷，原本垂直站立的重物會隨底面角度連動。板材底部的微小彎曲會放大為重物頂端的位移，導致兩組重物向中心縫隙靠攏，最終發生頂端碰撞干涉。"
+      },
+      {
+        "customer": "順達",
+        "model": "DM258H (400V)",
+        "stage": "RFQ",
+        "sales_followup": "1. 3/25已與Nick討論  待其更新圖紙確認\n    4/10看延燒結果\n2. 雙金屬樣品*1: 4/23已報價",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "順達",
+        "model": "DTG0110U (UPS)\n11KW",
+        "stage": "Mockup",
+        "sales_followup": "1. 5th 樣品報價 (拓海):3/17已交 3/24延燒測試: pass\n2. 6th樣品交期: 4/1已交, 4/16測試pass, 追伸揚報價 (4/21前須報價)\n    (待順達業務(要單)/EE(重新洗板打件)更新狀況)   追",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "順達",
+        "model": "AWS 8.5KW",
+        "stage": "DVT",
+        "sales_followup": "3th修模已通知:3/18-3/26==>3/26已交修模品 & 簽樣  待提供FAI",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "系統電子",
+        "model": "AVA Robot",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "BWD-6040N",
+        "stage": "RFQ",
+        "sales_followup": "1. 暫時pending 待系統之客人ID改圖",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "AIX-8000N",
+        "stage": "DVT",
+        "sales_followup": "1. 組模組須確認料件票期一致 (螺絲 & Thermal pad): 3/16確認\n2. DVT *ˇ30訂單已下: 3/6 Tedd提DVT機殼設變點 :  3/31交貨南崗\n(不影響樣品單價)\n3. 冷熱衝擊fail==>已與客人溝通說明, DVT維持原漆\n4. 請工程確認EVT時給的DVT圖面與最新DVT圖是否有出入(前蓋M3沙拉孔位置)\n5. EVT*20 追PO\n6. AIX8000大鋁擠幫泛海調整陽極色  (泛海給素材 祐鋅調,Tedd給圖紙,DFM評估)\n7. 小鋁擠有後續需求 待客戶提供明確數量&需求日\n8. 大鋁擠開模評估: 開模DFM、開模T0/T1時間、PVT備料100套的各製程時間==>待回 DFM",
+        "eng_followup": "待寶森更新大鋁擠評估DFM"
+      },
+      {
+        "customer": "系統電子",
+        "model": "TRI-BAND ANTENNA",
+        "stage": "RFQ",
+        "sales_followup": "案子還在設計階段，待研發通知，持續追蹤",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "TPMS天線(Antenna)",
+        "stage": "PVT",
+        "sales_followup": "1. PPAP: 按照祖孟給的訊息更新, 客人3/17更新修改處,4/2已提供\n2. 後續須評估送交美國的方式 (新報價) ==>工程包裝評估 (DAP/DDP) 已問系統&翼高\n3. PCN:3/10  通知翼高提供包裝數實驗批(AI): 3/3\n4. 追加3K: 4/17已交\n4. 包裝可靠度規範計畫確認: 4/24已提供==>客戶已要求包裝測試計畫\n5. 客戶4/23提供GP相關承認文件製作 (Sana): 剩IMDS (4/30 搞定!)",
+        "eng_followup": "1.下單30K，5/20出包裝測試結果"
+      },
+      {
+        "customer": "系統電子",
+        "model": "ONEBOX_REEECU",
+        "stage": "RFQ",
+        "sales_followup": "(此案量少先觀察)",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "無人機電池包",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "Mantis Puck",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "Falcon\n(GCS-0700)",
+        "stage": "RFQ",
+        "sales_followup": "==>AL Plate *130 pcs急件已打樣: 2/13交貨\n      ==>樣品訂單確認 (Terry Yang / 楊皓清) #2535",
+        "eng_followup": ""
+      },
+      {
+        "customer": "系統電子",
+        "model": "紅外線攝影機",
+        "stage": "RFQ",
+        "sales_followup": "1. 確認是否要接\n2. 提供DFM報價方式(condition)",
+        "eng_followup": ""
+      },
+      {
+        "customer": "電統能源",
+        "model": "Wonder Woman\n(11KW)",
+        "stage": "RFQ",
+        "sales_followup": "1. 2/B 9540已過  年後電統會再與其客戶測試一次: PASS  待確認打樣時間\n     ==>4/9 約拜訪Matthew: main source移模狀況/乙盛意願確認/台灣DAP-->Plano\n     ==>4/23等Matthew答覆\n2. 順達訊息: 11KW目前放量交貨: STL/Pana/系統電?",
+        "eng_followup": "N/A"
+      },
+      {
+        "customer": "電統能源",
+        "model": "NB109",
+        "stage": "RFQ",
+        "sales_followup": "1. 10pcs 待確認拓海打樣進度(電統已下訂單) : 3/18已交",
+        "eng_followup": "done"
+      },
+      {
+        "customer": "電統能源",
+        "model": "3KW",
+        "stage": "DVT",
+        "sales_followup": "1. 銅導片(鍍鎳): DVT 300pcs PO 已下, 3/30交貨\n2. 量產價/模具費3/20已給Nita  待追蹤(3/27第三間報價), 已跟進目標價\n     ==>4/17開模, 5/18 T1, 第三顆料*300(模具品)\n3. DE-100S 銘板估價(3/20): 不鏽鋼銘板要雷雕, 已報價製作: 4/2已交貨",
+        "eng_followup": "開模T1：5/9，出貨寄台灣時間：5/14"
+      },
+      {
+        "customer": "電統能源",
+        "model": "Iron man",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "電統能源",
+        "model": "Thor (7KW)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "波若威",
+        "model": "",
+        "stage": "RFQ",
+        "sales_followup": "1. 已發RFQ(10件), 翼高/伸揚報價(4/21回收), 但須先內地(RMB報價)交中山廠 \n2. 4/23翼高已回價格  待報價:4/27  追",
+        "eng_followup": "1.翼高報價回收"
+      },
+      {
+        "customer": "加百裕",
+        "model": "",
+        "stage": "RFQ",
+        "sales_followup": "1. 4/1已拜訪, 待簽NDA 後 發RFQ",
+        "eng_followup": ""
+      }
+    ]
+  },
+  "Robin": {
+    "projects": [
+      {
+        "customer": "圓剛",
+        "model": "D331 nct for ADlink",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "聰泰",
+        "model": "GTDL--B-154-1G2",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "瑞傳",
+        "model": "PCOM-B709",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "瑞傳",
+        "model": "MEDS-5210",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "td4257a_ ESD彈片",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "TD-2555(體重計)",
+        "stage": "DVT",
+        "sales_followup": "1. 3/27 已提供T1樣品10pcs給泰博 \n\n2. 3/30 採購表示工程T1樣品承認OK，需製作承認書，有與採購說明因負責工程本週請假，需待下週上班後製作提供。\n\n3. 4/10 承認書已提供",
+        "eng_followup": "承認書4/10 以提供"
+      },
+      {
+        "customer": "泰博",
+        "model": "TD4239血糖機",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "彈片專案",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "馬達固定夾",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "M3銅柱",
+        "stage": "DVT",
+        "sales_followup": "",
+        "eng_followup": "以提供"
+      },
+      {
+        "customer": "泰博",
+        "model": "鋼帽",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "泰博",
+        "model": "馬達彈性墊片",
+        "stage": "RFQ",
+        "sales_followup": "1.03/25提供報價",
+        "eng_followup": "以報價"
+      },
+      {
+        "customer": "泰博",
+        "model": "ESD彈片",
+        "stage": "RFQ",
+        "sales_followup": "2 量產報價，年需求300k",
+        "eng_followup": "以報價"
+      },
+      {
+        "customer": "啟鑫",
+        "model": "QM-銑床件",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "科賦",
+        "model": "LITE V RGB",
+        "stage": "DVT",
+        "sales_followup": "1. 4/7 科賦回覆信件，印刷顏色限度，接受中下限，上限NG，請我們在提供一版，中下限中間值當中限==>4/15已提供，有提及後續會有漲價資訊\n\n2. 4/17 回覆印刷限度已核准，需準備正式限度樣，及請我們提供50套樣品，供內部品質驗證及電腦參展使用。==>4/30 送50套成品給科賦",
+        "eng_followup": "9C色樣,上中下\n\n上限取消 中下間做一階4/13\n\n50套電腦展樣品>OK"
+      },
+      {
+        "customer": "創見",
+        "model": "13-5370",
+        "stage": "MP異常處理",
+        "sales_followup": "1. 4/10 確認樣品，伸揚重工品962pcs先試產，提供良率數據給創見==>4/22 良率數據，總檢數935pcs 良品645 不良290 尺寸NG198 佔大宗， 4/22回覆創見，首批投產700pcs 量率數據 承認樣 產品預計4/27提供。 \n\n2. 4/27已提供新參數承認樣給創見，並與採購主管確認我司既有舊參數良品630pcs可交貨，確認5K訂單餘下交期。",
+        "eng_followup": "#80 粗糙度4,光澤度1.2\n\n4/10確認#80 ok\n\n5本承認樣 客戶簽核中"
+      },
+      {
+        "customer": "創見",
+        "model": "DP2X0",
+        "stage": "RFQ",
+        "sales_followup": "1. 表示價格有差距 (不願透漏細節)。",
+        "eng_followup": "以報價"
+      },
+      {
+        "customer": "圓剛",
+        "model": "T2508P",
+        "stage": "DVT",
+        "sales_followup": "1. 承認書已提供，已下1K訂單。",
+        "eng_followup": "完成,孟潔幫忙做本子放入即可\n\n4/17 承認書>OK\n\n客戶下單1K\n工程確認單 更新\nPCN>5/6"
+      },
+      {
+        "customer": "圓剛",
+        "model": "GC750",
+        "stage": "DVT",
+        "sales_followup": "1. 4/16圓剛通知T1樣品測試pass，故4/17通知寶森1800pcs開始同步製作，並製作承認書。\n2. 4/30 200pcs交貨圓剛。",
+        "eng_followup": "T140/10~4/13(到台)\n寶森 FAI以提供\n4/10送樣ok\n\n200PCS>4/29\n承認書\nPCN"
+      },
+      {
+        "customer": "圓剛",
+        "model": "D115W",
+        "stage": "RFQ",
+        "sales_followup": "1. 承認書需更新，材質標示有誤，需提供新版的RoSH與HF測試報告(已超過2年了)，修改為Approval Sheet A7格式。",
+        "eng_followup": "承認書4/10以提供"
+      },
+      {
+        "customer": "聰泰",
+        "model": "PD570",
+        "stage": "MP異常處理",
+        "sales_followup": "1. 6本承認樣，3本碰撞傷退回，聰泰留兩本 我司帶回一本，烤漆廠1K依然要10個工作天==>最新交期回覆5/5\n2. 4/13 表示鋁擠素材有點撞刮傷，4/15 momo篩選回覆良品948pcs，嚴重505pcs，嚴重進打磨製程 \n3. 4/29 打拋烤漆露白異常，已與聰泰品保確認，先標示分開出貨若組裝廠有發現問題在行打掉。",
+        "eng_followup": "藍色樣ok 安排製作封面\nOK完成"
+      },
+      {
+        "customer": "太業",
+        "model": "EFH12089-23",
+        "stage": "MP異常處理",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "宸曜",
+        "model": "POC-766AWP",
+        "stage": "MP異常處理",
+        "sales_followup": "",
+        "eng_followup": ""
+      }
+    ]
+  },
+  "Alan": {
+    "projects": [
+      {
+        "customer": "佐茂",
+        "model": "2025/8/20\n\n ENERGY WALL\n儲能牆",
+        "stage": "EVT",
+        "sales_followup": "1. 4/22 終端是否有訂單? 無。是否有廠商在生產? 無。鎳片會綁定在鴻騰。\n\n2. 4/22 已發信詢問T1測試進度。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/12\n2026/4/4\n\n購物車VC-705ML-充電把手",
+        "stage": "Mockup",
+        "sales_followup": "1. 塑膠把手+下蓋，各9 PCS，交期：待定\n4/16 RD通知改圖，暫停生產\n\n2. 2種板金，各9 PCS，交期：\n4/15 佐茂通知暫停生產，將新增符號\n\n3. 4/22 詢問RD Jamie，仍在與終端客戶溝通中。\n\n4. 4/27 A0版圖面升A1，4/29 重新報價與提供A0版費用。\n\n5. 4/29 通知評估3D列印1套。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/15\n\nEnergy Wall-M 48V",
+        "stage": "TS",
+        "sales_followup": "1. 4/21 已詢問RD是否為最終版圖面，RD 4/23 將回信。\n\n2. 4/21 需提供開模甘特圖與DFM。\n\n3. 4/22 翼高已提供開模甘特圖。\n\n4. 4/23 佐茂RD通知設變，暫停開模程序與製作DFM。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "AECX-MTL0 Heatsink",
+        "stage": "Mockup",
+        "sales_followup": "1. 3/13 (五) 提供樣品給RD。\n\n2. 3/23 (一) 詢問測試結果，RD表示還在測試。\n\n3. 4/28 通知協助加工M3攻牙與3處凸台降面。\n\n4. 5/20 要提供，客戶要參加電腦展。\n\n1. 3/13 (五) 提供樣品給RD。\n\n2. 3/23 (一) 詢問測試結果，RD表示還在測試，需要一點時間。",
+        "eng_followup": "業務已送樣\n\n業務已送樣"
+      },
+      {
+        "customer": "晶達光電",
+        "model": "RS-ITRP-1045-EHL2-ZP00-1001",
+        "stage": "Mockup",
+        "sales_followup": "1. 4/15 送樣，RD表示有區域須烤漆。\n\n2. 4/20 建笠協助重工，預計4/28前回貨晶達。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "1902-EHL0-Front Case & AECX-EHL0-HeatSink",
+        "stage": "MP",
+        "sales_followup": "1. 4/15 送一套驗證，RD 組裝OK。",
+        "eng_followup": "4/15尺寸確認ok已送樣1pcs，已請寶森後續全數下去製作。"
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IEAP-1330-RKC3",
+        "stage": "Mockup",
+        "sales_followup": "1. 晶達板金廠5/20 前將送貨至鴻騰，再送去又全陽極。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "興能高",
+        "model": "3U-12KW",
+        "stage": "Mockup",
+        "sales_followup": "1. 4/24 RD提供新圖面。",
+        "eng_followup": "4/28已請鴻濰評估"
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/9/8\n\nMIRAI LABO004 7S10P 鋁擠",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/9/6\n\nBDC72 BDC TH連接端子",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/9/22\n\nGTS NPA9-LIP 充電五金",
+        "stage": "Mockup",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/10/9\n\nRFQ-25049-03+25049-53-02+25051-03+25052-02+25053-02\n\nMAP Nakanishi 滅菌対応 4S1P 18650",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/10/23\n\nRichcom Apollo Robot",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/10/27\n\nRichcom Apollo Robot",
+        "stage": "Mockup",
+        "sales_followup": "1. 鋁板A+B+A面，3種鋁板：3/26 送高雄\n\n2. RD需求鋁板C+D (無料號)，各7PCS，3/25 送中和",
+        "eng_followup": "已給業務送樣"
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/11/4\n\n臻禾 13S5P_0S8P",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/11/4\n\n臻禾 AEBC-BA-48V-165",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/11/17\n\nRFQ-25085-00\n\ninMusic",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/11/21\n\nRichcom Apollo Robot",
+        "stage": "Mockup",
+        "sales_followup": "１. 3/20前出貨",
+        "eng_followup": "已送樣"
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/11/19\n\nRFQ-25089-00\n\nFUTABA AiTran Lift2 BATTERY",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/12/1\n\nRFQ-25093-00\n\n系統電子 GCS-6070",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/12/15\n\nRFQ-25101-00\n\n溢泰 儲電型加熱器",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/12/22\n2026/2/3\n\nRetail AI SkipCart ACDC Charger _1000W_殼類(鋁)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/12/24\n\n系統電子\nFalcon external 2S3P/沖型鎳片",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2025/12/29\n\nRFQ-25104-00\n\n新智能 8S2P",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/1/8\n\nRFQ-25103-00\n\nRICOH 相機電池(1S1P)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/1/13\n\nRFQ-25089-01\n\nFUTABA AiTran Lift2 BATTERY",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/1/14\n\nRFQ-25049-04\n\nMAP-INAKANISHI INC_滅菌対応_A12326650",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/1/16\n\nMAP-INAKANISHI INC",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/1/29\n\nRFQ-26002-00\n\nKARMA",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/2/9\n\nBusbar",
+        "stage": "Mockup",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/2/10\n\nRFQ-26005-00\n\n無人機(12S3P)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/4\n\nRFQ-260010-00\n\nAmita PS106 (10S2P)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/9\n\nRFQ-26011-01 MAP \n\n滅菌充電器",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/10\n\nRFQ-26011-01 \n\n滅菌Nakanishi 充電器",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/12\n\n購物車VC-705ML-充電把手",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/16\n\nGarmin 361-00218-00",
+        "stage": "Mockup",
+        "sales_followup": "",
+        "eng_followup": "已全數寄給左茂"
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/16\n\nRFQ-26003-01\n\nNightingale security_NSDrone",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/19\n\nRFQ-260013-00 \n\navatarin Newme 2.0，AI行動機器人",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/20\n\nRFQ-26002-00 \n\nKARMA",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/25\n\nRFQ-260014-00 \n\n倚天一型(無人機)_10S4P",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/3/26\n\n台塑生醫-儲能牆\n\nRFQ-26016-00 (儲能牆落地公版結構) \n\nRFQ-26016-01 (儲能牆-掛牆)\n\nRFQ-26016-02(儲能牆落地專用結構)",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/8\n\nRFQ-25051-04 \n\nMAP-INAKANISHI INC_滅菌対応_A12318650",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/13\n\nRFQ-26015-00 \n\n上緯智聯 小狗電池-沖型NI",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/13\n\nRFQ-26021-00\n\n台端_AF1K 電摩_14S4P",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/16\n\nRFQ-26015-00 \n\n上緯智聯 小狗電池",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/16\n\nRFQ-25043-03 \n\nOEM儲能16S",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "佐茂",
+        "model": "2026/4/22\n\n滅菌_端子NUT(12AWG)_260422",
+        "stage": "RFQ",
+        "sales_followup": "1. RD Brian請我們測試雷焊WW型式，黃銅+NB109 0.3T，使用片料，拉拔力5~8 kgf，不用量阻抗值。\n\n2. 黃銅要鍍錫或鍍鎳，待確認。\n\n3. 4/24 通知暫停測試。",
+        "eng_followup": "廢料已拿到待通知鍍鎳還是鍍錫"
+      },
+      {
+        "customer": "晶達光電",
+        "model": "ITRP-3805 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "ACDF-WHL2 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "0705-RCK4_前框",
+        "stage": "MP",
+        "sales_followup": "1.  2/10 口頭更新報價，烤漆廠表示表面要完美，良率只會有4成，除非找汽車烤漆或無塵烤漆。請晶達推薦烤漆廠。",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "ITRP-2845 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "0705-RES4_前框",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IBOC-ADL0 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "0705-RES4_Heat sink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "ACDF-WHL1 Heatsink with fan",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IPPC-1562-WHL0-ZP00-3001 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IPPC-1702-KBL5-WR00-1001 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "AECX-APL7 Heatsink",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "AECX-APL7 Heat Spreader",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IPPC-2155-EHL0-ZG00-2001 (LID散熱塊)",
+        "stage": "Mockup",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "晶達光電",
+        "model": "DPD-1268 Front Case",
+        "stage": "Mockup",
+        "sales_followup": "1. 3/13 客戶反映明顯料痕，須重工\n\n2. 3/17 銘唯協助磨髮線+噴砂，3/18 廠內陽極可蓋過，3/19完成陽極5 PCS，3/20 雷雕+量尺寸",
+        "eng_followup": "0323下午2點前給業務送樣"
+      },
+      {
+        "customer": "晶達光電",
+        "model": "IPPC-2158-TGL0-WP00-1001\n\n前框+後蓋+電池蓋",
+        "stage": "MP",
+        "sales_followup": "1. 4/13 送後蓋1 PCS外觀不良， 給RD與採購。\n\n2. 4/15 尋找烤漆廠商，評估重工。\n\n3. 4/16 送建笠烤漆1 PCS。\n\n4. 4/17 烤漆OK，4/20 安排 JD12B 31 PCS、JD12C 32 PCS，烤漆重工。 \n\n5. 4/23 完成重工，4/27出貨。",
+        "eng_followup": "1.後蓋:出貨32pcs以液烤完回廠內(品檢有檢查到外觀不相同的)"
+      },
+      {
+        "customer": "嘉彰",
+        "model": "UCS-STIR",
+        "stage": "MP",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "嘉彰",
+        "model": "h_sprd_ford_10p2\n\nFord 10.2 背板",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      },
+      {
+        "customer": "嘉彰",
+        "model": "3483814600 拉手",
+        "stage": "RFQ",
+        "sales_followup": "",
+        "eng_followup": ""
+      }
+    ]
+  }
+}

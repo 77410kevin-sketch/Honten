@@ -90,7 +90,13 @@ class QCException(Base):
 
     # ── 品保處理判斷 ────────────────────────────────
     disposition       = Column(Enum(QCDisposition), nullable=True)   # 主要處理（向下相容）
-    dispositions_json = Column(Text, nullable=True)                  # 多選 JSON list
+    dispositions_json = Column(Text, nullable=True)                  # 多選 JSON list（向下相容）
+    actions_json      = Column(Text, nullable=True)                  # v3 多卡片 JSON list
+    # actions_json 結構：
+    # [{"id":"uuid","type":"RTS|B1|B2|B3|B4|B5|HE",
+    #   "fields":{...各 type 自己的 fields...},
+    #   "created_at":"...", "sent_at":"...", "sent_by":1,
+    #   "replies":[{"unit":"PURCHASE","at":"...","by":1,"note":"已收到"}]}]
     disposition_note  = Column(Text, nullable=True)                  # 處理判斷說明
     disposition_at    = Column(DateTime, nullable=True)
     disposition_by    = Column(Integer, ForeignKey("users.id"), nullable=True)

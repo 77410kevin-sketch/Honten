@@ -7570,3 +7570,60 @@ remote:   git@github.com:77410kevin-sketch/Honten-archive.git
 To github.com:77410kevin-sketch/Honten.git
    1d25736..7924b28  main -> main
 [2026-05-02 04:55] push all branches OK
+[main 9908518] 自動備份 2026-05-02 05:56
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 10 files changed, 652 insertions(+), 1 deletion(-)
+ create mode 100644 automations/prompts/monthly_industry.md
+ create mode 100644 automations/prompts/monthly_industry_preview.md
+ create mode 100644 automations/prompts/weekly_iran_war.md
+ create mode 100644 automations/publish_monthly.sh
+ create mode 100755 automations/run_monthly_industry.sh
+ create mode 100755 automations/run_weekly_dashboard.sh
+ create mode 100755 automations/run_weekly_iran_war.sh
+ create mode 100644 automations/weekly_dashboard.log
+[2026-05-02 05:56] commit on main
+remote: This repository moved. Please use the new location:        
+remote:   git@github.com:77410kevin-sketch/Honten-archive.git        
+remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   —————————————————————————————————————————        
+remote:     Resolve the following violations before pushing again        
+remote: 
+remote:     - Push cannot contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how to resolve a blocked push        
+remote:      https://docs.github.com/code-security/secret-scanning/working-with-secret-scanning-and-push-protection/working-with-push-protection-from-the-command-line#resolving-a-blocked-push        
+remote:             
+remote:             
+remote:       —— GitHub Personal Access Token ——————————————————————        
+remote:        locations:        
+remote:          - commit: 99085182459c3f313cba7ff6ea899fed26a54b3e        
+remote:            path: automations/prompts/monthly_industry.md:86        
+remote:          - commit: 99085182459c3f313cba7ff6ea899fed26a54b3e        
+remote:            path: automations/prompts/monthly_industry_preview.md:63        
+remote:          - commit: 99085182459c3f313cba7ff6ea899fed26a54b3e        
+remote:            path: automations/publish_monthly.sh:31        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to allow the secret.        
+remote:        https://github.com/77410kevin-sketch/Honten-archive/security/secret-scanning/unblock-secret/3D8nScCa8ZRClzF6O9OZQZsXdma        
+remote:             
+remote: 
+remote: 
+To github.com:77410kevin-sketch/Honten.git
+ ! [remote rejected] main -> main (push declined due to repository rule violations)
+error: failed to push some refs to 'github.com:77410kevin-sketch/Honten.git'
+[2026-05-02 05:56] push failed
