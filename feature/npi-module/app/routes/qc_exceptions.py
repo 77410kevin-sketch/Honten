@@ -43,7 +43,7 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Rework SOP", "其它"]
+ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
 _CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.ADMIN)  # 建單權限：品保 + 產線主管 + 生管 + 業助
@@ -54,20 +54,26 @@ _VIEW_ROLES  = (Role.QC, Role.ENGINEER, Role.ENG_MGR, Role.PURCHASE,
 
 # ── 立即處理 v3 — 卡片型別定義 ────────────────────
 # type 對應：通知對應角色 + UI 標籤 + 顏色
+# B2/B3 內含「客戶端 Sorting/Rework」勾選；舊版 B4/B5 已併入此處
 ACTION_TYPE_INFO = {
-    "RTS": {"label": "A 退貨",          "units": [Role.PURCHASE, Role.PC],                    "color": "danger",    "icon": "bi-truck"},
-    "B1":  {"label": "B1 不需處理",     "units": [],                                          "color": "secondary", "icon": "bi-check2"},
-    "B2":  {"label": "B2 廠內 Sorting", "units": [Role.PC],                                   "color": "warning",   "icon": "bi-funnel"},
-    "B3":  {"label": "B3 廠內 Rework",  "units": [Role.PC, Role.ENGINEER],                    "color": "info",      "icon": "bi-tools"},
-    "B4":  {"label": "B4 客戶端 Sorting","units": [Role.ASSISTANT, Role.SALES],               "color": "primary",   "icon": "bi-person-check"},
-    "B5":  {"label": "B5 客戶端 Rework", "units": [Role.ASSISTANT, Role.SALES, Role.ENGINEER],"color": "primary",   "icon": "bi-person-gear"},
-    "HE":  {"label": "C 橫向展開",       "units": [Role.ASSISTANT, Role.WAREHOUSE, Role.PURCHASE], "color": "primary", "icon": "bi-clipboard-check"},
+    "A1":  {"label": "A1 退貨廠商",       "units": [Role.PURCHASE, Role.PC],
+            "color": "danger",    "icon": "bi-truck"},
+    "A2":  {"label": "A2 客戶退貨",       "units": [Role.ASSISTANT],
+            "color": "danger",    "icon": "bi-arrow-return-left"},
+    "B1":  {"label": "B1 直接進料/出貨",  "units": [Role.PC, Role.ASSISTANT, Role.WAREHOUSE],
+            "color": "secondary", "icon": "bi-arrow-right-circle"},
+    "B2":  {"label": "B2 廠內 Sorting",   "units": [Role.PC],
+            "color": "warning",   "icon": "bi-funnel"},
+    "B3":  {"label": "B3 廠內 Rework",    "units": [Role.PC, Role.ENGINEER],
+            "color": "info",      "icon": "bi-tools"},
+    "HE":  {"label": "C 物料盤點",        "units": [Role.ASSISTANT, Role.WAREHOUSE, Role.PURCHASE],
+            "color": "primary",   "icon": "bi-clipboard-check"},
 }
 UNIT_LABEL = {
     Role.PURCHASE.value: "採購", Role.PC.value: "生管",
     Role.ENGINEER.value: "工程師", Role.ASSISTANT.value: "業助",
     Role.SALES.value: "業務", Role.WAREHOUSE.value: "倉管",
-    Role.QC.value: "品保",
+    Role.QC.value: "品保", Role.PROD_MGR.value: "產線主管",
 }
 
 
@@ -81,7 +87,13 @@ def _load_actions(form: QCException) -> list:
         return []
     try:
         v = json.loads(form.actions_json)
-        return v if isinstance(v, list) else []
+        if not isinstance(v, list):
+            return []
+        # 舊資料 RTS → A1（廠商退貨）
+        for a in v:
+            if a.get("type") == "RTS":
+                a["type"] = "A1"
+        return v
     except Exception:
         return []
 
@@ -497,6 +509,15 @@ async def detail_qc(
             "units": [{"role": u.value, "label": UNIT_LABEL.get(u.value, u.value)} for u in v["units"]]}
         for k, v in ACTION_TYPE_INFO.items()
     }
+    # 附件分類給 JS 用（dict[category] = list of {id, name, uploaded_at})
+    _docs_dict = _docs_by_cat(form.documents)
+    docs_by_cat_json = {
+        cat: [{
+            "id": d.id, "name": d.original_name,
+            "at": d.uploaded_at.strftime("%m-%d %H:%M") if d.uploaded_at else "",
+        } for d in items]
+        for cat, items in _docs_dict.items()
+    }
     return templates.TemplateResponse("qc_exceptions/detail.html", {
         "request": request, "user": current_user, "form": form,
         "docs_by_cat": _docs_by_cat(form.documents),
@@ -511,6 +532,7 @@ async def detail_qc(
         "qc_preselect_email":   preselect_email,
         "qc_action_types_meta": action_types_meta,
         "qc_actions":           _load_actions(form),
+        "qc_docs_by_cat_json":  docs_by_cat_json,
     })
 
 
@@ -668,8 +690,8 @@ async def set_disposition(
 
     # ── 反推舊欄位（向下相容）──────────────────────
     old_picked = []
-    if any(a["type"] == "RTS" for a in actions): old_picked.append("RETURN_TO_SUPPLIER")
-    if any(a["type"] in ("B1","B2","B3","B4","B5") for a in actions): old_picked.append("SPECIAL_ACCEPT")
+    if any(a["type"] in ("A1","A2") for a in actions): old_picked.append("RETURN_TO_SUPPLIER")
+    if any(a["type"] in ("B1","B2","B3") for a in actions): old_picked.append("SPECIAL_ACCEPT")
     if any(a["type"] == "HE" for a in actions): old_picked.append("HORIZONTAL_EXPANSION")
     form.dispositions_json = json.dumps(old_picked, ensure_ascii=False) if old_picked else None
     try:
@@ -678,11 +700,14 @@ async def set_disposition(
         form.disposition = None
 
     sa_subs = []
-    sub_map = {"B1":"NO_ACTION","B2":"SORTING","B3":"REWORK",
-               "B4":"CUST_SORTING","B5":"CUST_REWORK"}
+    sub_map = {"B1":"NO_ACTION","B2":"SORTING","B3":"REWORK"}
     for a in actions:
         if a["type"] in sub_map:
             sa_subs.append(sub_map[a["type"]])
+        if a["type"] == "B2" and a["fields"].get("cust_sorting"):
+            sa_subs.append("CUST_SORTING")
+        if a["type"] == "B3" and a["fields"].get("cust_rework"):
+            sa_subs.append("CUST_REWORK")
     form.sa_subtypes_json = json.dumps(sa_subs, ensure_ascii=False) if sa_subs else None
     form.sa_subtype = sa_subs[0] if sa_subs else None
     form.sa_need_sorting = ("SORTING" in sa_subs)
@@ -691,31 +716,51 @@ async def set_disposition(
     # 把卡片內 fields 反推進舊明細欄位
     for a in actions:
         f = a["fields"]
-        if a["type"] == "RTS":
+        if a["type"] == "A1":
+            # 廠商退貨：通常供應商來載；可勾選需我方協助派車
             form.rts_replenish_note  = (f.get("replenish_note") or "").strip() or None
             form.rts_pickup_required = bool(f.get("pickup_required"))
             form.rts_pickup_note     = (f.get("pickup_note") or "").strip() or None
+        elif a["type"] == "A2":
+            # 客戶退貨：我方派司機去載（pickup 強制 True）
+            form.rts_replenish_note  = (f.get("replenish_note") or "").strip() or None
+            form.rts_pickup_required = True
+            form.rts_pickup_note     = (f.get("pickup_note") or "").strip() or None
+            if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
         elif a["type"] == "B2":
             form.sa_sorting_pass_qty = _int(f.get("pass_qty"))
             form.sa_sorting_fail_qty = _int(f.get("fail_qty"))
             if f.get("station"): form.sa_station = f.get("station")
-            if f.get("defect_handling"): form.sa_defect_handling = f.get("defect_handling")
+            if f.get("sorting_method"): form.sa_defect_handling = f.get("sorting_method")
+            # B2 內勾選「客戶端 Sorting」→ 多列排程，反推第一列 + 整理成 sa_cust_note
+            if f.get("cust_sorting"):
+                rows = [r for r in (f.get("cust_sorting_rows") or [])
+                        if (r.get("date") or r.get("location") or r.get("workers"))]
+                if rows:
+                    form.sa_cust_sorting_workers = _int(rows[0].get("workers"))
+                    notes = []
+                    for r in rows:
+                        bits = []
+                        if r.get("date"):     bits.append(r["date"])
+                        if r.get("location"): bits.append(r["location"])
+                        if r.get("workers"):  bits.append(f"{r['workers']} 人")
+                        if bits: notes.append(" / ".join(bits))
+                    form.sa_cust_note = "\n".join(notes) if notes else None
         elif a["type"] == "B3":
-            form.sa_rework_note          = (f.get("rework_note") or "").strip() or None
-            form.lab_test_qty            = _int(f.get("lab_test_qty"))
-            form.lab_test_conditions     = (f.get("lab_test_conditions") or "").strip() or None
-            form.lab_test_due_date       = (f.get("lab_test_due_date") or "").strip() or None
+            form.sa_rework_note          = (f.get("rework_method") or "").strip() or None
             form.sa_rework_pass_qty      = _int(f.get("pass_qty"))
             form.sa_rework_fail_qty      = _int(f.get("fail_qty"))
             form.sa_rework_defect_handling = (f.get("defect_handling") or "").strip() or None
-        elif a["type"] == "B4":
-            form.sa_cust_sorting_hours   = _float(f.get("hours"))
-            form.sa_cust_sorting_workers = _int(f.get("workers"))
-            if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
-        elif a["type"] == "B5":
-            form.sa_cust_rework_hours    = _float(f.get("hours"))
-            form.sa_cust_rework_workers  = _int(f.get("workers"))
-            if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
+            # B3 內勾選「小批樣品測試」→ 反推 lab_test_*
+            if f.get("need_lab_test"):
+                form.lab_test_qty        = _int(f.get("lab_test_qty"))
+                form.lab_test_conditions = (f.get("lab_test_conditions") or "").strip() or None
+                form.lab_test_due_date   = (f.get("lab_test_due_date") or "").strip() or None
+            # B3 內勾選「客戶端 Rework」→ 反推 sa_cust_rework_*
+            if f.get("cust_rework"):
+                form.sa_cust_rework_hours    = _float(f.get("cust_hours"))
+                form.sa_cust_rework_workers  = _int(f.get("cust_workers"))
+                if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
         elif a["type"] == "HE":
             rows = []
             for r in (f.get("rows") or []):
@@ -747,6 +792,18 @@ async def set_disposition(
     form.disposition_note = note.strip() or None
     form.disposition_at   = datetime.utcnow()
     form.disposition_by   = current_user.id
+
+    # ── 附件：B2 Sorting 需求 / B3 Rework SOP（依卡片類型分類）──
+    sort_files = [f for f in fd.getlist("b2_sorting_files")
+                  if hasattr(f, "filename") and f.filename]
+    if sort_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                sort_files, ["Sorting 需求"] * len(sort_files))
+    sop_files = [f for f in fd.getlist("b3_rework_files")
+                 if hasattr(f, "filename") and f.filename]
+    if sop_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                sop_files, ["Rework SOP"] * len(sop_files))
 
     # ── 狀態流轉 ───────────────────────────────────
     notify_pc = (fd.get("notify_pc") == "1")
@@ -826,6 +883,73 @@ async def action_send(
         await qc_notif._ntf._notify_roles(db, info["units"], msg)
     except Exception:
         logging.exception("action_send notify failed")
+    return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
+
+
+@router.post("/{form_id}/action/{action_id}/update-fields")
+async def action_update_fields(
+    form_id: str, action_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """允許對應角色更新某張卡片的 fields（A2 → 業助填寫退貨資訊）"""
+    form = await _get_or_404(form_id, db)
+    actions = _load_actions(form)
+    target = next((a for a in actions if a.get("id") == action_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="找不到該處理項目")
+    info = ACTION_TYPE_INFO.get(target["type"], {})
+    # 權限：該 type 通知角色 + 品保 + admin 可填；B2/B3 額外允許產線主管
+    allowed = list(info.get("units", [])) + [Role.QC, Role.ADMIN]
+    if target["type"] in ("B2", "B3"):
+        allowed.append(Role.PROD_MGR)
+    if current_user.role not in allowed:
+        raise HTTPException(status_code=403, detail="無權限填寫此項目資訊")
+    UPDATABLE = {
+        "A2": ["replenish_note", "pickup_location", "pickup_contact",
+               "pickup_time", "pickup_note", "pickup_actual_at"],
+        "B2": ["station", "completed_at", "pass_qty", "fail_qty"],
+        "B3": ["pass_qty", "fail_qty", "defect_handling"],
+    }
+    keys = UPDATABLE.get(target["type"])
+    if not keys:
+        raise HTTPException(status_code=400, detail="此類別不支援欄位填寫")
+
+    def _int(s):
+        try: return int(s)
+        except (TypeError, ValueError): return None
+
+    fd = await request.form()
+    f = target.setdefault("fields", {})
+    for k in keys:
+        v = fd.get(k)
+        if v is None:
+            continue
+        if k in ("pass_qty", "fail_qty"):
+            f[k] = _int(v) if str(v).strip() else None
+        else:
+            f[k] = v.strip() if isinstance(v, str) else v
+    target["updated_at"] = datetime.utcnow().isoformat()
+    target["updated_by"] = current_user.id
+    form.actions_json = json.dumps(actions, ensure_ascii=False)
+    # 反推進舊欄位
+    if target["type"] == "A2":
+        form.rts_replenish_note  = f.get("replenish_note") or None
+        form.rts_pickup_required = True
+        form.rts_pickup_note     = f.get("pickup_note") or None
+    elif target["type"] == "B2":
+        if f.get("station"): form.sa_station = f.get("station")
+        form.sa_sorting_pass_qty = f.get("pass_qty")
+        form.sa_sorting_fail_qty = f.get("fail_qty")
+    elif target["type"] == "B3":
+        form.sa_rework_pass_qty = f.get("pass_qty")
+        form.sa_rework_fail_qty = f.get("fail_qty")
+        form.sa_rework_defect_handling = f.get("defect_handling") or None
+    form.updated_at = datetime.utcnow()
+    db.add(_log(form, current_user, "ACTION_UPDATE", form.status, form.status,
+                f"更新 {info.get('label','')} 欄位（{current_user.role.value}）"))
+    await db.commit()
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
 
 
