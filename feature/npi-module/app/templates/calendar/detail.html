@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}事件 #{{ ev.id }}{% endblock %}
+{% block content %}
+{% set t = ev.event_type.value %}
+{% set s = ev.status.value %}
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-calendar-event me-2" style="color:{{ type_color[t] }}"></i>
+    {{ type_label[t] }} #{{ ev.id }}
+  </h4>
+  <a href="/calendar/" class="btn btn-outline-secondary ms-auto btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>返回月曆
+  </a>
+</div>
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="card-title">
+      <span class="badge me-2" style="background:{{ type_color[t] }}">{{ type_label[t] }}</span>
+      {{ ev.title }}
+      <span class="badge {% if s == 'APPROVED' %}bg-success{% elif s == 'PENDING' %}bg-warning text-dark{% elif s == 'REJECTED' %}bg-danger{% elif s == 'CANCELLED' %}bg-secondary{% else %}bg-light text-dark{% endif %} ms-2">
+        {{ status_label[s] }}
+      </span>
+    </h5>
+    <table class="table table-sm mt-3">
+      <tr><th style="width:120px">時段</th><td>
+        <strong>{{ ev.start_at.strftime('%Y-%m-%d %H:%M') }}</strong> ~
+        <strong>{{ ev.end_at.strftime('%Y-%m-%d %H:%M') }}</strong>
+        {% if ev.all_day %}<span class="badge bg-info text-dark ms-1">全天</span>{% endif %}
+      </td></tr>
+      <tr><th>申請人</th><td>{{ ev.user.display_name if ev.user else '—' }}</td></tr>
+      {% if ev.resource %}
+      <tr><th>資源</th><td>
+        <span class="badge bg-light text-dark border">{{ ev.resource.type.value }}</span>
+        {{ ev.resource.name }}
+        {% if ev.resource.location %}— {{ ev.resource.location }}{% endif %}
+      </td></tr>
+      {% endif %}
+      {% if ev.customer_name %}
+      <tr><th>客戶</th><td>{{ ev.customer_name }}</td></tr>
+      {% endif %}
+      {% if ev.leave_type %}
+      {% set _ll = {'ANNUAL':'特休','SICK':'病假','PERSONAL':'事假'} %}
+      <tr><th>假別</th><td><span class="badge bg-info text-dark">{{ _ll.get(ev.leave_type, ev.leave_type) }}</span></td></tr>
+      {% set _days = ((ev.end_at - ev.start_at).total_seconds() / 86400) %}
+      <tr><th>請假天數</th><td><strong>{{ '%.1f' % _days }}</strong> 天</td></tr>
+      {% if ev.approver %}
+      <tr><th>簽核者</th><td>{{ ev.approver.display_name }}
+        {% if ev.approver.role.value == 'admin' %}<span class="badge bg-dark ms-1">總經理</span>
+        {% elif ev.approver.role.value == 'bu' %}<span class="badge bg-primary ms-1">單位主管</span>{% endif %}
+      </td></tr>
+      {% endif %}
+      {% if ev.approved_at %}
+      <tr><th>核准時間</th><td class="text-success">{{ ev.approved_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+      {% endif %}
+      {% if ev.reject_reason %}
+      <tr><th>退回原因</th><td class="text-danger">{{ ev.reject_reason }}</td></tr>
+      {% endif %}
+      {% endif %}
+      {% if ev.notes %}
+      <tr><th>備註</th><td><pre class="mb-0" style="white-space:pre-wrap">{{ ev.notes }}</pre></td></tr>
+      {% endif %}
+      {% if ev.raw_text %}
+      <tr><th>LINE 原文</th><td><code>{{ ev.raw_text }}</code></td></tr>
+      {% endif %}
+      <tr><th>建立</th><td class="text-muted small">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+    </table>
+
+    <div class="d-flex gap-2 flex-wrap mt-2">
+      {% if ev.status.value == 'PENDING' and (ev.approver_id == user.id or user.role.value == 'admin') %}
+      <form method="post" action="/calendar/events/{{ ev.id }}/approve" class="d-inline"
+            onsubmit="return confirm('核准此請假？');">
+        <button class="btn btn-success btn-sm">
+          <i class="bi bi-check-circle me-1"></i>核准
+        </button>
+      </form>
+      <button class="btn btn-outline-danger btn-sm" id="btnReject">
+        <i class="bi bi-x-circle me-1"></i>退回
+      </button>
+      <form method="post" action="/calendar/events/{{ ev.id }}/reject"
+            class="d-none" id="rejForm">
+        <input type="hidden" name="reason" id="rejReason">
+      </form>
+      {% endif %}
+
+      {% if (ev.user_id == user.id or user.role.value == 'admin') and ev.status.value not in ('CANCELLED','REJECTED') %}
+      <form method="post" action="/calendar/events/{{ ev.id }}/cancel" class="d-inline"
+            onsubmit="return confirm('確認取消這筆事件？')">
+        <button class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-x-circle me-1"></i>取消事件
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+    <script>
+    (function(){
+      const b = document.getElementById('btnReject');
+      if (!b) return;
+      b.addEventListener('click', () => {
+        const reason = prompt('退回原因（可空）：');
+        if (reason === null) return;
+        document.getElementById('rejReason').value = reason || '';
+        document.getElementById('rejForm').submit();
+      });
+    })();
+    </script>
+  </div>
+</div>
+{% endblock %}

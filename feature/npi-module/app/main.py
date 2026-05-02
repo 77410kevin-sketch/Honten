@@ -20,13 +20,17 @@ from app.models.pcn_form import PCNForm, PCNDocument, PCNApproval
 from app.models.supplier import Supplier, SupplierType
 from app.models.customer import Customer
 from app.models.npi_form import NPIForm, NPIDocument, NPIApproval, NPISupplierInvite
+from app.models.calendar import (
+    CalendarResource, CalendarEvent, ResourceType, EventType, EventStatus,
+    LeaveType, LeaveBalance, LineMessageLog,
+)
 from app.models.qc_exception import (
     QCException, QCExceptionDocument, QCExceptionApproval,
 )
 from app.services.auth import hash_password
 from app.routes import (
     auth, pcn_forms, drawing_checker, npi_forms, suppliers, customers, title_block,
-    qc_exceptions,
+    qc_exceptions, calendar as calendar_route,
 )
 
 
@@ -89,6 +93,46 @@ async def seed_suppliers():
                 ))
         await db.commit()
     print("✅ 範例供應商建立完成")
+
+
+async def seed_calendar_resources():
+    """會議室（大/小）／公務車（小藍/小綠）主檔 + 假別主檔"""
+    RESOURCES = [
+        {"type": ResourceType.ROOM, "code": "ROOM-1", "name": "大會議室", "capacity": 20, "location": "3F"},
+        {"type": ResourceType.ROOM, "code": "ROOM-2", "name": "小會議室", "capacity": 6,  "location": "3F"},
+        {"type": ResourceType.CAR,  "code": "CAR-1",  "name": "小藍", "location": "B1 停車場"},
+        {"type": ResourceType.CAR,  "code": "CAR-2",  "name": "小綠", "location": "B1 停車場"},
+    ]
+    LEAVE_TYPES = [
+        {"code": "ANNUAL",   "name": "特休",  "is_paid": True,  "max_days_per_year": 14, "color": "#0d6efd"},
+        {"code": "SICK",     "name": "病假",  "is_paid": False, "max_days_per_year": 30, "color": "#fd7e14"},
+        {"code": "PERSONAL", "name": "事假",  "is_paid": False, "max_days_per_year": 14, "color": "#6c757d"},
+    ]
+    async with AsyncSessionLocal() as db:
+        # 先 upsert：用 code 對齊，更新名稱與位置
+        for r in RESOURCES:
+            existing = await db.execute(select(CalendarResource).where(CalendarResource.code == r["code"]))
+            row = existing.scalars().first()
+            if row:
+                row.name = r["name"]
+                row.location = r.get("location")
+                row.capacity = r.get("capacity")
+                row.active = True
+            else:
+                db.add(CalendarResource(**r, active=True))
+        # 移除舊版多餘的資源（視訊會議室 / 舊車牌）— 軟刪 active=False 避免破壞外鍵
+        OLD_CODES = {"ROOM-3"}
+        OLD_NAMES = {"視訊會議室", "TOYOTA-3168", "NISSAN-5566"}
+        all_q = await db.execute(select(CalendarResource))
+        for row in all_q.scalars().all():
+            if row.code in OLD_CODES or row.name in OLD_NAMES:
+                row.active = False
+        for t in LEAVE_TYPES:
+            existing = await db.execute(select(LeaveType).where(LeaveType.code == t["code"]))
+            if not existing.scalars().first():
+                db.add(LeaveType(**t))
+        await db.commit()
+    print("✅ 行事曆資源／假別主檔建立完成")
 
 
 async def migrate_users_role_check():
@@ -233,6 +277,7 @@ async def lifespan(app: FastAPI):
     # 植入測試資料
     await seed_users()
     await seed_suppliers()
+    await seed_calendar_resources()
     # 初始化圖面量測檢表 DB
     drawing_checker.init()
     yield
@@ -265,6 +310,7 @@ app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(title_block.router)
 app.include_router(qc_exceptions.router)
+app.include_router(calendar_route.router)
 
 
 @app.get("/")
