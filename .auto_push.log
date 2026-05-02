@@ -8083,3 +8083,32 @@ hint: the same ref. If you want to integrate the remote changes, use
 hint: 'git pull' before pushing again.
 hint: See the 'Note about fast-forwards' in 'git push --help' for details.
 [2026-05-02 20:56] push failed
+[main ed6be33] 自動備份 2026-05-02 21:56
+ Committer: kevin <kevin@kevindeMac-mini.local>
+Your name and email address were configured automatically based
+on your username and hostname. Please check that they are accurate.
+You can suppress this message by setting them explicitly. Run the
+following command and follow the instructions in your editor to edit
+your configuration file:
+
+    git config --global --edit
+
+After doing this, you may fix the identity used for this commit with:
+
+    git commit --amend --reset-author
+
+ 9 files changed, 970 insertions(+), 9 deletions(-)
+ create mode 100644 feature/npi-module/app/routes/calendar_line.py
+ create mode 100644 feature/npi-module/app/services/calendar_intent.py
+ create mode 100644 feature/npi-module/app/services/line_bot.py
+ create mode 100644 feature/npi-module/app/templates/calendar/line_console.html
+[2026-05-02 21:56] commit on main
+To github.com:77410kevin-sketch/Honten-archive.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'github.com:77410kevin-sketch/Honten-archive.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+[2026-05-02 21:56] push failed
