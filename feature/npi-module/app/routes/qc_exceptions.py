@@ -43,7 +43,8 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP",
+ATTACH_CATEGORIES = ["異常照片", "不良照片", "實驗報告", "圖面",
+                     "Sorting 需求", "Rework SOP",
                      "根因附件", "改善方案附件", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
@@ -81,6 +82,32 @@ UNIT_LABEL = {
 def _action_unit_labels(action_type: str) -> str:
     info = ACTION_TYPE_INFO.get(action_type, {})
     return "、".join(UNIT_LABEL.get(u.value, u.value) for u in info.get("units", []))
+
+
+# 權責單位填寫的欄位（B2/B3 生管/sorting / A1 採購生管 / A2 業助 / B3 工程師）
+# 品保 reopen 編輯模式重新提交時，這些 keys 若 client 端是空值 → 保留舊值，避免覆蓋
+_RESPONSIBLE_KEYS = {
+    "station", "completed_at",
+    "pass_qty", "fail_items",
+    "replenish_due_date", "replenish_qty", "return_logs",
+    "pickup_location", "pickup_contact", "pickup_time", "pickup_actual_at",
+    "fixture_done_at", "fixture_to_production", "fixture_eng_no", "fixture_eval_note",
+}
+
+
+def _is_meaningful(v) -> bool:
+    """判斷值是否「實質有資料」(非空、非全空 list)"""
+    if v is None or v == "" or v == []:
+        return False
+    if isinstance(v, list):
+        for it in v:
+            if isinstance(it, dict):
+                if any(str(x).strip() not in ("", "None") for x in it.values()):
+                    return True
+            elif str(it).strip() != "":
+                return True
+        return False
+    return str(v).strip() != ""
 
 
 def _load_actions(form: QCException) -> list:
@@ -196,9 +223,19 @@ async def list_qc(
          .order_by(QCException.created_at.desc()))
     r = await db.execute(q)
     forms = list(r.scalars().all())
+    action_labels_by_form: dict = {}
+    for f in forms:
+        labels = []
+        for a in _load_actions(f):
+            t = a.get("type")
+            info = ACTION_TYPE_INFO.get(t)
+            if info:
+                labels.append(info["label"])
+        action_labels_by_form[f.id] = labels
     return templates.TemplateResponse("qc_exceptions/list.html", {
         "request": request, "user": current_user,
         "forms": forms,
+        "action_labels_by_form": action_labels_by_form,
         "QCExceptionStatus": QCExceptionStatus,
         "QCDisposition": QCDisposition,
     })
@@ -718,9 +755,14 @@ async def set_disposition(
     for c in new_cards:
         old = by_id.get(c["id"], {})
         old_fields = old.get("fields") or {}
-        # merge：client 傳的 fields 蓋過舊值；client 沒帶的 key 保留舊值
-        # （避免品保重新編輯時把採購/生管已填的 return_logs / replenish_qty 等清掉）
-        merged_fields = {**old_fields, **c["fields"]}
+        # merge：先繼承舊值，client 傳的 fields 才覆蓋
+        # 對「權責單位 keys」(_RESPONSIBLE_KEYS)，client 傳空值不覆蓋舊值
+        # → 避免品保 reopen 編輯時把採購/生管/業助/工程師已填的內容清掉
+        merged_fields = dict(old_fields)
+        for k, v in (c["fields"] or {}).items():
+            if k in _RESPONSIBLE_KEYS and not _is_meaningful(v):
+                continue   # 保留舊值
+            merged_fields[k] = v
         actions.append({
             "id":        c["id"],
             "type":      c["type"],
@@ -883,7 +925,7 @@ async def set_disposition(
                          if hasattr(f, "filename") and f.filename]
     if defect_files:
         await _save_attachments(db, form.id, current_user.id,
-                                defect_files, ["異常照片"] * len(defect_files))
+                                defect_files, ["不良照片"] * len(defect_files))
 
     # ── 狀態流轉 ───────────────────────────────────
     notify_pc = (fd.get("notify_pc") == "1")
@@ -1104,7 +1146,7 @@ async def action_update_fields(
                          if hasattr(x, "filename") and x.filename]
     if defect_files:
         await _save_attachments(db, form.id, current_user.id,
-                                defect_files, ["異常照片"] * len(defect_files))
+                                defect_files, ["不良照片"] * len(defect_files))
 
     target["updated_at"] = datetime.utcnow().isoformat()
     target["updated_by"] = current_user.id

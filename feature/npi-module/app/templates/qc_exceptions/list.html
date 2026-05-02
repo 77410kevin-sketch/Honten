@@ -21,7 +21,7 @@
             <th>單號</th>
             <th>狀態</th>
             <th>品號</th>
-            <th>批號</th>
+            <th>異常原因</th>
             <th>工段 / 來源</th>
             <th class="text-end">不良率</th>
             <th>處理判斷</th>
@@ -43,7 +43,12 @@
               {% endif %}
             </td>
             <td><strong>{{ f.part_no }}</strong></td>
-            <td class="small text-muted">{{ f.lot_no or '—' }}</td>
+            <td class="small" style="max-width:220px">
+              {% if f.defect_cause %}
+              <span class="text-truncate d-inline-block" style="max-width:200px"
+                    title="{{ f.defect_cause }}">{{ f.defect_cause }}</span>
+              {% else %}<span class="text-muted">—</span>{% endif %}
+            </td>
             <td class="small">
               <span class="badge bg-light text-dark border">{{ f.stage.value }}</span>
               {% set _sv = f.source_type.value if f.source_type else 'SUPPLIER' %}
@@ -60,8 +65,13 @@
                 <small class="text-muted d-block">{{ f.defect_qty }} / {{ f.sample_qty }}</small>
               {% else %}—{% endif %}
             </td>
-            <td>
-              {% if f.disposition %}
+            <td class="small">
+              {% set _alabels = action_labels_by_form.get(f.id, []) %}
+              {% if _alabels %}
+                {% for lbl in _alabels %}
+                  <span class="badge bg-light text-dark border d-inline-block mb-1">{{ lbl }}</span>
+                {% endfor %}
+              {% elif f.disposition %}
                 {% set d = f.disposition.value %}
                 {% if d == 'RETURN_TO_SUPPLIER' %}<span class="badge bg-danger">退貨</span>
                 {% elif d == 'LAB_TEST' %}<span class="badge bg-info text-dark">實驗測試</span>

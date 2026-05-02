@@ -1335,13 +1335,32 @@
               {% set _bg = '' if _can_b2_edit else 'bg-light text-muted' %}
               {% set _stations = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'] %}
               {% set _fitems = _f.fail_items or [{'reason':'', 'qty':''}] %}
+              {% set _b2_total = form.receive_qty or 0 %}
+              {% set _b2_pass = (_f.pass_qty or 0) | int %}
+              {% set _b2_ns = namespace(t=0) %}
+              {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _b2_ns.t = _b2_ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+              {% set _b2_processed = _b2_pass + _b2_ns.t %}
+              {% set _b2_remain = _b2_total - _b2_processed %}
               <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
                     enctype="multipart/form-data" data-disp-form="b2"
                     class="mt-2 border border-info rounded p-2"
                     style="background:rgba(13,110,253,.06)">
-                <div class="small fw-semibold text-info mb-2">
-                  <i class="bi bi-gear me-1"></i>生管／產線主管 填寫區
+                <div class="small fw-semibold text-info mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-gear me-1"></i>生管／產線主管 填寫區</span>
                   {% if not _can_b2_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">總數
+                    <strong class="text-dark">{{ _b2_total }}</strong> ／ 良
+                    <strong class="text-success">{{ _b2_pass }}</strong> ／ 不良
+                    <strong class="text-danger">{{ _b2_ns.t }}</strong> ／ 待處理
+                    <strong class="{% if _b2_remain > 0 %}text-warning{% else %}text-muted{% endif %}">{{ _b2_remain if _b2_remain > 0 else 0 }}</strong>
+                    {% if _b2_total > 0 %}
+                      {% if _b2_remain == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _b2_remain < 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ -_b2_remain }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
                 </div>
                 <div class="row g-2 mb-2">
                   <div class="col-md-6"><label class="form-label small">執行單位（生管選）</label>
@@ -1404,10 +1423,10 @@
                 </button>
                 {% endif %}
                 <input type="hidden" name="fail_items_json" data-fail-json>
-                {% if '異常照片' in docs_by_cat %}
+                {% if '不良照片' in docs_by_cat %}
                 <div class="small mt-2">
-                  <strong><i class="bi bi-images me-1"></i>已上傳異常照片：</strong>
-                  {% for d in docs_by_cat['異常照片'] %}
+                  <strong><i class="bi bi-images me-1"></i>已上傳不良照片：</strong>
+                  {% for d in docs_by_cat['不良照片'] %}
                   <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
                      class="badge bg-light text-dark border me-1">
                     <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
@@ -1508,13 +1527,32 @@
               {% set _ro3 = '' if _can_b3_edit else 'readonly disabled' %}
               {% set _bg3 = '' if _can_b3_edit else 'bg-light text-muted' %}
               {% set _fitems3 = _f.fail_items or [{'reason':'', 'qty':''}] %}
+              {% set _b3_total = form.receive_qty or 0 %}
+              {% set _b3_pass = (_f.pass_qty or 0) | int %}
+              {% set _b3_ns = namespace(t=0) %}
+              {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _b3_ns.t = _b3_ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+              {% set _b3_processed = _b3_pass + _b3_ns.t %}
+              {% set _b3_remain = _b3_total - _b3_processed %}
               <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
                     enctype="multipart/form-data" data-disp-form="b3"
                     class="mt-2 border border-success rounded p-2"
                     style="background:rgba(25,135,84,.06)">
-                <div class="small fw-semibold text-success mb-2">
-                  <i class="bi bi-people-fill me-1"></i>生管／產線主管 回填區
+                <div class="small fw-semibold text-success mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-people-fill me-1"></i>生管／產線主管 回填區</span>
                   {% if not _can_b3_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">總數
+                    <strong class="text-dark">{{ _b3_total }}</strong> ／ 良
+                    <strong class="text-success">{{ _b3_pass }}</strong> ／ 不良
+                    <strong class="text-danger">{{ _b3_ns.t }}</strong> ／ 待處理
+                    <strong class="{% if _b3_remain > 0 %}text-warning{% else %}text-muted{% endif %}">{{ _b3_remain if _b3_remain > 0 else 0 }}</strong>
+                    {% if _b3_total > 0 %}
+                      {% if _b3_remain == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _b3_remain < 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ -_b3_remain }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
                 </div>
                 {% set _stations3 = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'] %}
                 <div class="row g-2 mb-2">
@@ -1579,10 +1617,10 @@
                 </button>
                 {% endif %}
                 <input type="hidden" name="fail_items_json" data-fail-json>
-                {% if '異常照片' in docs_by_cat %}
+                {% if '不良照片' in docs_by_cat %}
                 <div class="small mt-2">
-                  <strong><i class="bi bi-images me-1"></i>已上傳異常照片：</strong>
-                  {% for d in docs_by_cat['異常照片'] %}
+                  <strong><i class="bi bi-images me-1"></i>已上傳不良照片：</strong>
+                  {% for d in docs_by_cat['不良照片'] %}
                   <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
                      class="badge bg-light text-dark border me-1">
                     <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
@@ -1651,7 +1689,7 @@
                 </button>
               </form>
               {% endif %}
-              {% if a.sent_at and _meta.units %}
+              {% if a.sent_at and _meta.units and a.type not in ('B2','B3') %}
                 {% set _unit_roles = _meta.units | map(attribute='role') | list %}
                 {% if user.role.value in _unit_roles or user.role.value in ('qc','admin') %}
                 <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/reply"
@@ -1775,51 +1813,114 @@
             </span>
           </div>
           {% if qc_actions %}
-          {% for a in qc_actions %}
-            {% set _meta = qc_action_types_meta.get(a.type, {}) %}
-            {% set _f = a.fields or {} %}
-            <div class="border rounded p-2 mb-2 small" style="background:#fff">
-              <div class="fw-semibold text-{{ _meta.color }} d-flex align-items-center flex-wrap gap-1">
-                <span><i class="bi {{ _meta.icon }} me-1"></i>{{ _meta.label }}</span>
-                {% if a.sent_at %}
-                <span class="badge bg-success">已送出 {{ a.sent_at[:16] | replace('T',' ') }}</span>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-2 bg-white" style="font-size:.85rem">
+              <thead class="table-light">
+                <tr class="text-center">
+                  <th style="width:170px">處理項目</th>
+                  <th style="width:90px">數量</th>
+                  <th style="width:90px">不良數</th>
+                  <th>處理方式</th>
+                  <th style="width:90px">不良率</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for a in qc_actions %}
+                {% set _meta = qc_action_types_meta.get(a.type, {}) %}
+                {% set _f = a.fields or {} %}
+                {% set _qty = 0 %}
+                {% set _bad = 0 %}
+                {% set _method = '' %}
+                {% set _detail = '' %}
+                {% if a.type == 'A1' %}
+                  {% set _qty = (_f.return_qty_total or form.receive_qty or 0) | int %}
+                  {% set _bad = _qty %}
+                  {% set _method = 'A1 退貨廠商：' ~ (_f.replenish_note or '—') %}
+                {% elif a.type == 'A2' %}
+                  {% set _qty = (_f.replenish_qty or form.receive_qty or 0) | int %}
+                  {% set _bad = _qty %}
+                  {% set _method = 'A2 客戶退貨：' ~ (_f.replenish_note or '—') %}
+                {% elif a.type == 'B1' %}
+                  {% set _qty = (form.receive_qty or 0) | int %}
+                  {% set _bad = 0 %}
+                  {% set _method = 'B1 直接進料/出貨：' ~ (_f.note or '不需卡控') %}
+                {% elif a.type == 'B2' %}
+                  {% set _ns2 = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns2.t = _ns2.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {% set _pass2 = (_f.pass_qty or 0) | int %}
+                  {% set _qty = _pass2 + _ns2.t %}
+                  {% set _bad = _ns2.t %}
+                  {% set _method = 'B2 Sorting（' ~ (_f.station or '—') ~ '）：' ~ (_f.sorting_method or '—') %}
+                {% elif a.type == 'B3' %}
+                  {% set _ns3 = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns3.t = _ns3.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {% set _pass3 = (_f.pass_qty or 0) | int %}
+                  {% set _qty = _pass3 + _ns3.t %}
+                  {% set _bad = _ns3.t %}
+                  {% set _method = 'B3 Rework（' ~ (_f.station or '—') ~ '）：' ~ (_f.rework_method or '—') %}
+                {% elif a.type == 'HE' %}
+                  {% set _qty = ((form.he_customer_qty or 0)|int) + ((form.he_inhouse_qty or 0)|int) + ((form.he_supplier_qty or 0)|int) %}
+                  {% set _bad = 0 %}
+                  {% set _method = 'C 物料盤點：客 ' ~ (form.he_customer_qty or 0) ~ ' / 廠 ' ~ (form.he_inhouse_qty or 0) ~ ' / 供 ' ~ (form.he_supplier_qty or 0) %}
                 {% endif %}
-                {% if a.updated_at %}
-                <span class="badge bg-info text-dark" title="最後更新">
-                  <i class="bi bi-pencil me-1"></i>{{ a.updated_at[:16] | replace('T',' ') }}
-                </span>
-                {% endif %}
-                {% if a.replies %}
-                <span class="badge bg-secondary">回覆 {{ a.replies | length }}</span>
-                {% endif %}
-              </div>
-              {% if a.type == 'A1' %}
-                {% set _qty_total_s = _f.return_qty_total or form.receive_qty or 0 %}
-                {% set _planned_s = (_f.replenish_qty or 0) | int %}
-                {% set _ns_s = namespace(t=0) %}
-                {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_s.t = _ns_s.t + (_l.qty|int) %}{% endif %}{% endfor %}
-                {% set _diff_s = _ns_s.t - _planned_s %}
-                <div>補貨需求：{{ _f.replenish_note or '—' }}
-                  {% if _f.pickup_required %}／<span class="badge bg-warning text-dark">需我方派車</span> {{ _f.pickup_note or '' }}{% endif %}
-                </div>
-                <div class="text-muted">
-                  退貨 <strong class="text-dark">{{ _qty_total_s }}</strong>
-                  ／ 預計回補 <strong class="text-primary">{{ _planned_s if _planned_s else '—' }}</strong>
-                  {% if _f.replenish_due_date %}（{{ _f.replenish_due_date }}）{% endif %}
-                  ／ 實際已回 <strong class="text-success">{{ _ns_s.t }}</strong>
-                  {% if _planned_s > 0 %}
-                    {% if _diff_s == 0 %}<span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
-                    {% elif _diff_s > 0 %}<span class="badge bg-warning text-dark ms-1">超出 {{ _diff_s }}</span>
-                    {% else %}<span class="badge bg-danger ms-1">差 {{ -_diff_s }}</span>
+                <tr>
+                  <td class="text-{{ _meta.color }} fw-semibold">
+                    <i class="bi {{ _meta.icon }} me-1"></i>{{ _meta.label }}
+                    <div class="small fw-normal mt-1">
+                      {% if a.sent_at %}<span class="badge bg-success">已送 {{ a.sent_at[:10] }}</span>{% endif %}
+                      {% if a.updated_at %}<span class="badge bg-info text-dark">{{ a.updated_at[:10] }}</span>{% endif %}
+                      {% if a.replies %}<span class="badge bg-secondary">回覆 {{ a.replies | length }}</span>{% endif %}
+                    </div>
+                  </td>
+                  <td class="text-end fw-semibold">{{ _qty if _qty else '—' }}</td>
+                  <td class="text-end fw-semibold {% if _bad > 0 %}text-danger{% endif %}">{{ _bad if _bad else '—' }}</td>
+                  <td class="small">
+                    {{ _method }}
+                    {% if a.type == 'A1' %}
+                      {% set _planned_s = (_f.replenish_qty or 0) | int %}
+                      {% set _ns_s = namespace(t=0) %}
+                      {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_s.t = _ns_s.t + (_l.qty|int) %}{% endif %}{% endfor %}
+                      <div class="text-muted mt-1">預計回補 <strong class="text-primary">{{ _planned_s or '—' }}</strong>
+                        {% if _f.replenish_due_date %}（{{ _f.replenish_due_date }}）{% endif %}
+                        ／ 實際已回 <strong class="text-success">{{ _ns_s.t }}</strong>
+                        {% if _planned_s > 0 %}
+                          {% set _diff_s = _ns_s.t - _planned_s %}
+                          {% if _diff_s == 0 %}<span class="badge bg-success ms-1">對上</span>
+                          {% elif _diff_s > 0 %}<span class="badge bg-warning text-dark ms-1">超 {{ _diff_s }}</span>
+                          {% else %}<span class="badge bg-danger ms-1">差 {{ -_diff_s }}</span>{% endif %}
+                        {% endif %}
+                      </div>
+                    {% elif a.type == 'A2' %}
+                      <div class="text-muted mt-1">
+                        地點 {{ _f.pickup_location or '—' }} ／ 預計 {{ _f.pickup_time or '—' }} ／ 實際
+                        {% if _f.pickup_actual_at %}<span class="text-success fw-semibold">{{ _f.pickup_actual_at }}</span>
+                        {% else %}<span class="text-warning">待業助</span>{% endif %}
+                      </div>
+                    {% elif a.type in ('B2','B3') %}
+                      {% if _f.completed_at %}<div class="text-muted mt-1">完成日 {{ _f.completed_at }}</div>{% endif %}
+                      {% if _f.fail_items %}
+                      <div class="text-muted">不良明細：
+                        {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
+                      </div>
+                      {% endif %}
+                      {% if a.type == 'B3' and _f.need_fixture %}
+                      <div class="text-warning small">
+                        <i class="bi bi-wrench-adjustable me-1"></i>檢治具完成 {{ _f.fixture_done_at or '—' }}
+                        {% if _f.fixture_eng_no %}／ {{ _f.fixture_eng_no }}{% endif %}
+                      </div>
+                      {% endif %}
                     {% endif %}
-                  {% endif %}
-                </div>
-                {% if _f.return_logs %}
-                <div class="mt-2">
-                  <div class="small fw-semibold text-info mb-1">
-                    <i class="bi bi-truck me-1"></i>採購／生管 回貨紀錄
-                  </div>
-                  <div class="table-responsive">
+                  </td>
+                  <td class="text-end fw-semibold {% if _qty > 0 and _bad > 0 %}text-danger{% endif %}">
+                    {% if _qty > 0 %}{{ '%.1f' % (_bad / _qty * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+                {% if a.type == 'A1' and _f.return_logs %}
+                <tr>
+                  <td colspan="5" class="bg-light">
+                    <div class="small fw-semibold text-info mb-1">
+                      <i class="bi bi-truck me-1"></i>採購／生管 回貨紀錄
+                    </div>
                     <table class="table table-sm table-bordered align-middle mb-0">
                       <thead class="table-light"><tr>
                         <th style="width:40px">#</th>
@@ -1828,7 +1929,9 @@
                         <th>備註</th>
                       </tr></thead>
                       <tbody>
+                        {% set _ns_t = namespace(t=0) %}
                         {% for r in _f.return_logs %}
+                        {% if r.qty %}{% set _ns_t.t = _ns_t.t + (r.qty|int) %}{% endif %}
                         {% if r.date or r.qty or r.note %}
                         <tr>
                           <td class="text-center">{{ loop.index }}</td>
@@ -1840,95 +1943,18 @@
                         {% endfor %}
                         <tr class="table-light">
                           <td colspan="2" class="text-end fw-semibold">累計</td>
-                          <td class="text-end fw-semibold text-success">{{ _ns_s.t }}</td>
-                          <td>
-                            {% if _planned_s > 0 %}
-                              {% if _diff_s == 0 %}
-                              <span class="badge bg-success"><i class="bi bi-check2 me-1"></i>對上預計</span>
-                              {% elif _diff_s > 0 %}
-                              <span class="badge bg-warning text-dark">超出預計 {{ _diff_s }}</span>
-                              {% else %}
-                              <span class="badge bg-danger">尚差 {{ -_diff_s }} 才對上</span>
-                              {% endif %}
-                            {% endif %}
-                          </td>
+                          <td class="text-end fw-semibold text-success">{{ _ns_t.t }}</td>
+                          <td></td>
                         </tr>
                       </tbody>
                     </table>
-                  </div>
-                </div>
+                  </td>
+                </tr>
                 {% endif %}
-              {% elif a.type == 'A2' %}
-                <div>退貨/補貨：{{ _f.replenish_note or '—' }}</div>
-                <div class="text-muted">
-                  地點 {{ _f.pickup_location or '—' }} ／ 聯絡人 {{ _f.pickup_contact or '—' }}
-                  ／ 預計 {{ _f.pickup_time or '—' }} ／ 實際回廠
-                  {% if _f.pickup_actual_at %}
-                  <span class="text-success fw-semibold">{{ _f.pickup_actual_at }}</span>
-                  {% else %}<span class="text-warning">待業助回填</span>{% endif %}
-                </div>
-              {% elif a.type == 'B1' %}
-                <div>{{ _f.note or '不需卡控，直接過站' }}</div>
-              {% elif a.type == 'B2' %}
-                <div>Sorting 手法：{{ _f.sorting_method or '—' }}</div>
-                <div>執行 <strong>{{ _f.station or '—' }}</strong>　完成 <strong>{{ _f.completed_at or '—' }}</strong>
-                  良 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }} ／ 不良
-                  {% set _ns = namespace(t=0) %}
-                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns.t = _ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
-                  {{ _ns.t if _ns.t else '—' }}
-                </div>
-                {% if _f.fail_items %}
-                <div class="text-muted">
-                  {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
-                </div>
-                {% endif %}
-                {% if _f.cust_sorting and _f.cust_sorting_rows %}
-                <div class="text-primary mt-1">
-                  <i class="bi bi-person-check me-1"></i>客戶端 Sorting：
-                  {% for r in _f.cust_sorting_rows %}{% if r.date or r.location or r.workers %}{{ r.date or '—' }}/{{ r.location or '—' }}/{{ r.workers or '—' }}人{% if not loop.last %} ；{% endif %}{% endif %}{% endfor %}
-                </div>
-                {% endif %}
-              {% elif a.type == 'B3' %}
-                <div>Rework 需求：{{ _f.rework_method or '—' }}</div>
-                <div>執行 <strong>{{ _f.station or '—' }}</strong>　完成 <strong>{{ _f.completed_at or '—' }}</strong>
-                  良 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }} ／ 不良
-                  {% set _ns = namespace(t=0) %}
-                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns.t = _ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
-                  {{ _ns.t if _ns.t else '—' }}
-                  {% if _f.defect_handling %}　處理 {{ _f.defect_handling }}{% endif %}
-                </div>
-                {% if _f.fail_items %}
-                <div class="text-muted">
-                  {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
-                </div>
-                {% endif %}
-                {% if _f.need_lab_test %}
-                <div class="text-info">
-                  <i class="bi bi-flask me-1"></i>樣品測試：{{ _f.lab_test_qty or '—' }} pcs / {{ _f.lab_test_due_date or '—' }}
-                  {% if _f.lab_test_sample_no %}／ <a href="/sample-requests/{{ _f.lab_test_sample_no }}" target="_blank">{{ _f.lab_test_sample_no }}</a>{% endif %}
-                </div>
-                {% endif %}
-                {% if _f.need_fixture %}
-                <div class="text-warning">
-                  <i class="bi bi-wrench-adjustable me-1"></i>檢治具：完成 <strong>{{ _f.fixture_done_at or '—' }}</strong>　量產
-                  {% if _f.fixture_to_production == 'yes' %}<span class="text-success fw-semibold">是</span>
-                  {% elif _f.fixture_to_production == 'no' %}<span class="text-danger fw-semibold">否</span>
-                  {% elif _f.fixture_to_production == 'conditional' %}<span class="fw-semibold">有條件</span>
-                  {% else %}<span class="text-muted">—</span>{% endif %}
-                  {% if _f.fixture_eng_no %}／ {{ _f.fixture_eng_no }}{% endif %}
-                </div>
-                {% endif %}
-                {% if _f.cust_rework and _f.cust_rework_rows %}
-                <div class="text-primary mt-1">
-                  <i class="bi bi-person-gear me-1"></i>客戶端 Rework：
-                  {% for r in _f.cust_rework_rows %}{% if r.date or r.location or r.workers %}{{ r.date or '—' }}/{{ r.location or '—' }}/{{ r.workers or '—' }}人{% if not loop.last %} ；{% endif %}{% endif %}{% endfor %}
-                </div>
-                {% endif %}
-              {% elif a.type == 'HE' %}
-                <div>盤點 {{ (_f.rows or []) | length }} 列；客戶端 {{ form.he_customer_qty or '—' }} ／ 廠內 {{ form.he_inhouse_qty or '—' }} ／ 供應商 {{ form.he_supplier_qty or '—' }}</div>
-              {% endif %}
-            </div>
-          {% endfor %}
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
           {% else %}
           <div class="small text-muted">尚無立即處理項目</div>
           {% endif %}
