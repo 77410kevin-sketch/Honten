@@ -552,6 +552,30 @@ async def detail_qc(
     })
 
 
+# ── 異常報告預覽頁（可編輯 + 列印成 PDF）─────────
+@router.get("/{form_id}/report", response_class=HTMLResponse)
+async def report_preview(
+    form_id: str, request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """列印用 HTML 預覽 — 內容可直接編輯後 Ctrl+P 列印 / 另存 PDF"""
+    if current_user.role not in _VIEW_ROLES:
+        raise HTTPException(status_code=403)
+    form = await _get_or_404(form_id, db)
+    action_types_meta = {
+        k: {"label": v["label"], "color": v["color"], "icon": v["icon"],
+            "units": [{"role": u.value, "label": UNIT_LABEL.get(u.value, u.value)} for u in v["units"]]}
+        for k, v in ACTION_TYPE_INFO.items()
+    }
+    return templates.TemplateResponse("qc_exceptions/report.html", {
+        "request": request, "user": current_user, "form": form,
+        "qc_actions": _load_actions(form),
+        "qc_action_types_meta": action_types_meta,
+        "docs_by_cat": _docs_by_cat(form.documents),
+    })
+
+
 # ── 供應商主檔查詢（建單/處理判斷時 auto-fill 用）───
 @router.get("/api/supplier-lookup")
 async def supplier_lookup(
@@ -686,20 +710,26 @@ async def set_disposition(
     if not new_cards:
         raise HTTPException(status_code=400, detail="請至少新增一個處理項目")
 
-    # 沿用既有 actions 的 sent_at / replies（依 id 配對）
+    # 沿用既有 actions 的 sent_at / replies / 已被權責單位填寫的 fields（依 id 配對）
     existing = _load_actions(form)
     by_id = {a.get("id"): a for a in existing}
     now_iso = datetime.utcnow().isoformat()
     actions = []
     for c in new_cards:
         old = by_id.get(c["id"], {})
+        old_fields = old.get("fields") or {}
+        # merge：client 傳的 fields 蓋過舊值；client 沒帶的 key 保留舊值
+        # （避免品保重新編輯時把採購/生管已填的 return_logs / replenish_qty 等清掉）
+        merged_fields = {**old_fields, **c["fields"]}
         actions.append({
             "id":        c["id"],
             "type":      c["type"],
-            "fields":    c["fields"],
+            "fields":    merged_fields,
             "created_at": old.get("created_at") or now_iso,
             "sent_at":   old.get("sent_at"),
             "sent_by":   old.get("sent_by"),
+            "updated_at": old.get("updated_at"),
+            "updated_by": old.get("updated_by"),
             "replies":   old.get("replies") or [],
         })
     form.actions_json = json.dumps(actions, ensure_ascii=False)
@@ -1284,9 +1314,11 @@ async def save_improvement(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    silent: int = 0,
 ):
     """改善方案：可選擇推進 LINKED_ECN 或直接結案。品保 / 產線主管 / admin 可編輯。
-    支援根因附件 (rca_files) 與改善方案附件 (imp_files) 上傳。"""
+    支援根因附件 (rca_files) 與改善方案附件 (imp_files) 上傳。
+    silent=1 → autosave 模式，回 JSON 不 redirect"""
     form = await _get_or_404(form_id, db)
     if current_user.role not in (Role.QC, Role.PROD_MGR, Role.ADMIN):
         raise HTTPException(status_code=403)
@@ -1334,6 +1366,9 @@ async def save_improvement(
         db.add(_log(form, current_user, "CLOSE", old, form.status, "結案"))
     form.updated_at = datetime.utcnow()
     await db.commit()
+    if silent:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"ok": True, "saved_at": datetime.utcnow().isoformat()})
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
 
 

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ form.form_id }} — QC 異常報告</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    body { background: #f5f5f5; font-family: 'Microsoft JhengHei', 'PingFang TC', sans-serif; }
+    .page {
+      background: white; max-width: 210mm; margin: 24px auto; padding: 22mm 18mm;
+      box-shadow: 0 0 8px rgba(0,0,0,.1); min-height: 297mm;
+    }
+    .toolbar {
+      max-width: 210mm; margin: 16px auto; display: flex; gap: 8px;
+      padding: 10px 16px; background: white; border-radius: 8px;
+      box-shadow: 0 0 6px rgba(0,0,0,.08); align-items: center;
+    }
+    h1 { font-size: 22px; font-weight: 700; border-bottom: 3px double #333; padding-bottom: 6px; margin-bottom: 16px; }
+    h2 { font-size: 16px; font-weight: 700; background: #f0f3f8; padding: 6px 10px; border-left: 4px solid #1a56db; margin-top: 20px; margin-bottom: 8px; }
+    table.report-tbl { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 13px; }
+    table.report-tbl th, table.report-tbl td { border: 1px solid #555; padding: 4px 8px; }
+    table.report-tbl thead { background: #f0f3f8; }
+    .meta-row { display: flex; flex-wrap: wrap; gap: 16px 24px; font-size: 13px; margin-bottom: 8px; }
+    .meta-row > div { min-width: 140px; }
+    .editable {
+      border: 1px dashed #cfd6df; padding: 8px 10px; border-radius: 4px; min-height: 60px;
+      white-space: pre-wrap; line-height: 1.6; font-size: 13px;
+    }
+    .editable:focus { outline: 2px solid #1a56db; border-style: solid; background: #fffbe6; }
+    .text-muted-print { color: #666; font-size: 12px; }
+    .sign-row td { height: 60px; vertical-align: top; padding-top: 4px; }
+    .badge-print { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; border: 1px solid #999; }
+
+    @media print {
+      body { background: white; }
+      .toolbar, .no-print { display: none !important; }
+      .page { box-shadow: none; margin: 0; padding: 18mm 16mm; max-width: none; min-height: auto; }
+      .editable { border: 1px solid #ddd; }
+      h2 { background: #eaeef5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      table.report-tbl thead { background: #eaeef5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    @page { size: A4; margin: 12mm; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <a href="/qc-exceptions/{{ form.form_id }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>回詳細頁
+  </a>
+  <span class="text-muted small">⚠️ 文字區可直接點擊編輯（修改僅影響本次列印，不會儲存到資料庫）</span>
+  <button class="btn btn-sm btn-warning ms-auto" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>列印 / 另存 PDF
+  </button>
+</div>
+
+<div class="page">
+
+  <div class="d-flex align-items-center mb-3" style="border-bottom: 3px double #333; padding-bottom: 10px;">
+    <img src="/static/ht_logo.png" alt="鴻騰電子" style="height: 56px;">
+    <h1 class="ms-3 mb-0" style="border:none;padding:0;font-size:26px;flex-grow:1">
+      QC 異常改善報告
+    </h1>
+    <div class="text-end small">
+      <div><strong>{{ form.form_id }}</strong></div>
+      <div class="text-muted-print">{{ form.created_at.strftime('%Y-%m-%d') if form.created_at }}</div>
+    </div>
+  </div>
+
+  {# ── 1. 異常反饋（IPC 資訊）──────────────── #}
+  <h2>1. 異常反饋（IPC 異常資訊）</h2>
+  {% set _doc_lbl = {'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'} %}
+  {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
+  {% set _stage_lbl = {'IQC':'IQC','IPQC':'IPQC','OQC':'OQC','INSPECTION':'品檢',
+                       'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
+  {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
+  {% set _src_v = form.source_type.value if form.source_type else 'SUPPLIER' %}
+  <div class="meta-row">
+    <div><strong>品號：</strong>{{ form.part_no }}</div>
+    <div><strong>{{ _doc_lbl.get(form.doc_type.value, '單號') if form.doc_type else '單號' }}：</strong>{{ form.receive_doc_no or '—' }}</div>
+    <div><strong>{{ _date_lbl.get(form.event_date_type.value, '日期') if form.event_date_type else '日期' }}：</strong>{{ form.receive_date or '—' }}</div>
+    <div><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
+    <div><strong>工段+來源：</strong>{{ _stage_lbl.get(form.stage.value, '—') }} / {{ _src_lbl.get(_src_v, '廠商') }} {{ form.supplier_name or '' }}</div>
+  </div>
+  {% set _items = (form.defect_items_json | fromjson) if form.defect_items_json else None %}
+  {% if _items %}
+  <table class="report-tbl">
+    <thead>
+      <tr>
+        <th style="width:40px">#</th>
+        <th>異常原因</th>
+        <th style="width:90px">類型</th>
+        <th style="width:80px" class="text-end">抽樣</th>
+        <th style="width:80px" class="text-end">不良</th>
+        <th style="width:80px" class="text-end">不良率</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in _items %}
+      {% set _r = (it.defect_qty / it.sample_qty) if (it.sample_qty and it.defect_qty is not none) else None %}
+      <tr>
+        <td class="text-center">{{ loop.index }}</td>
+        <td>{{ it.cause }}</td>
+        <td>
+          {% if 'EXTERIOR' in (it.types or []) %}外觀{% endif %}
+          {% if 'DIMENSION' in (it.types or []) %}{% if 'EXTERIOR' in (it.types or []) %}/{% endif %}尺寸{% endif %}
+        </td>
+        <td class="text-end">{{ it.sample_qty if it.sample_qty is not none else '—' }}</td>
+        <td class="text-end">{{ it.defect_qty if it.defect_qty is not none else '—' }}</td>
+        <td class="text-end fw-semibold">{% if _r is not none %}{{ '%.1f' % (_r * 100) }}%{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>異常原因：{{ form.defect_cause }}</p>
+  {% endif %}
+  {# 異常照片 #}
+  {% set _img_exts = ('png','jpg','jpeg','gif','webp','bmp') %}
+  {% if '異常照片' in docs_by_cat %}
+  <div class="d-flex flex-wrap gap-2 mt-2">
+    {% for d in docs_by_cat['異常照片'] %}
+    {% set _ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+    {% if _ext in _img_exts %}
+    <div style="max-width:240px">
+      <img src="/qc-exceptions/doc/preview/{{ d.id }}" alt="{{ d.original_name }}"
+           style="max-width:240px;max-height:180px;border:1px solid #ccc">
+      <div class="small text-muted-print">{{ d.original_name }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── 2. 短期處理 ──────────────── #}
+  <h2>2. 短期處理（立即處理彙總）</h2>
+  {% if qc_actions %}
+  <table class="report-tbl">
+    <thead>
+      <tr>
+        <th style="width:130px">處理項目</th>
+        <th>內容摘要</th>
+        <th style="width:120px">送出時間</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in qc_actions %}
+      {% set _meta = qc_action_types_meta.get(a.type, {}) %}
+      {% set _f = a.fields or {} %}
+      <tr>
+        <td><strong>{{ _meta.label }}</strong></td>
+        <td contenteditable="true" class="editable" style="min-height:auto">
+          {%- if a.type == 'A1' -%}
+          補貨需求：{{ _f.replenish_note or '—' }}
+          {%- if _f.pickup_required %} ／ 需我方協助派車{% endif %}
+          ｜退貨總數：{{ _f.return_qty_total or form.receive_qty or '—' }} pcs
+          ｜預計回補：{{ _f.replenish_qty or '—' }} pcs ({{ _f.replenish_due_date or '—' }})
+          {%- set _ns = namespace(t=0) -%}
+          {%- for _l in (_f.return_logs or []) -%}{%- if _l.qty -%}{%- set _ns.t = _ns.t + (_l.qty|int) -%}{%- endif -%}{%- endfor -%}
+          ｜實際已回：{{ _ns.t }} pcs
+          {%- if _f.return_logs %}
+          {% for r in _f.return_logs %}{% if r.date or r.qty %}
+　　* {{ r.date or '—' }} → {{ r.qty or 0 }} pcs{% if r.note %}（{{ r.note }}）{% endif %}{% endif %}{% endfor %}{% endif %}
+          {%- elif a.type == 'A2' -%}
+          客戶退貨：{{ _f.replenish_note or '—' }}
+          ｜地點：{{ _f.pickup_location or '—' }}
+          ｜聯絡人：{{ _f.pickup_contact or '—' }}
+          ｜預計：{{ _f.pickup_time or '—' }}
+          ｜實際回廠：{{ _f.pickup_actual_at or '待回填' }}
+          {%- elif a.type == 'B1' -%}
+          直接進料/出貨：{{ _f.note or '此批不需卡控，可直接過站' }}
+          {%- elif a.type == 'B2' -%}
+          Sorting 手法：{{ _f.sorting_method or '—' }}
+          ｜執行單位：{{ _f.station or '—' }}
+          ｜完成時間：{{ _f.completed_at or '—' }}
+          ｜良品 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }}
+          {%- set _nb = namespace(t=0) -%}
+          {%- for _it in (_f.fail_items or []) -%}{%- if _it.qty -%}{%- set _nb.t = _nb.t + (_it.qty|int) -%}{%- endif -%}{%- endfor -%}
+          ／不良 {{ _nb.t if _nb.t else '—' }}
+          {%- if _f.fail_items %}
+          {% for it in _f.fail_items %}{% if it.reason or it.qty %}
+　　* {{ it.reason or '—' }} ({{ it.qty or 0 }}){% endif %}{% endfor %}{% endif %}
+          {%- elif a.type == 'B3' -%}
+          Rework 需求：{{ _f.rework_method or '—' }}
+          ｜執行：{{ _f.station or '—' }} ({{ _f.completed_at or '—' }})
+          ｜良 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }}
+          {%- set _nb3 = namespace(t=0) -%}
+          {%- for _it in (_f.fail_items or []) -%}{%- if _it.qty -%}{%- set _nb3.t = _nb3.t + (_it.qty|int) -%}{%- endif -%}{%- endfor -%}
+          ／不良 {{ _nb3.t if _nb3.t else '—' }}
+          ｜不良處理：{{ _f.defect_handling or '—' }}
+          {%- if _f.need_lab_test %}
+　　樣品測試：{{ _f.lab_test_qty or '—' }} pcs / {{ _f.lab_test_due_date or '—' }} / 條件 {{ _f.lab_test_conditions or '—' }}{% endif %}
+          {%- if _f.need_fixture %}
+　　工程檢治具：完成 {{ _f.fixture_done_at or '—' }} / 量產 {{ _f.fixture_to_production or '—' }} / {{ _f.fixture_eng_no or '' }}{% if _f.fixture_eval_note %}　{{ _f.fixture_eval_note }}{% endif %}{% endif %}
+          {%- elif a.type == 'HE' -%}
+          物料盤點 {{ (_f.rows or [])|length }} 列；客戶端 {{ form.he_customer_qty or '—' }} ／ 廠內 {{ form.he_inhouse_qty or '—' }} ／ 供應商 {{ form.he_supplier_qty or '—' }}
+          {%- endif -%}
+        </td>
+        <td class="text-muted-print">
+          {{ a.sent_at[:16] | replace('T',' ') if a.sent_at else '尚未送出' }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted-print">無立即處理項目</p>
+  {% endif %}
+  {# 短期處理相關截圖（Sorting 需求 / Rework SOP）#}
+  {% set _short_imgs = (docs_by_cat.get('Sorting 需求', []) | list) + (docs_by_cat.get('Rework SOP', []) | list) %}
+  {% if _short_imgs %}
+  <div class="d-flex flex-wrap gap-2 mt-2">
+    {% for d in _short_imgs %}
+    {% set _ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+    {% if _ext in _img_exts %}
+    <div style="max-width:240px">
+      <img src="/qc-exceptions/doc/preview/{{ d.id }}" alt="{{ d.original_name }}"
+           style="max-width:240px;max-height:180px;border:1px solid #ccc">
+      <div class="small text-muted-print">{{ d.category }}：{{ d.original_name }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── 3. 異常根因 ──────────────── #}
+  <h2>3. 異常根因（5Why / 魚骨圖）</h2>
+  <div contenteditable="true" class="editable">{{ form.root_cause or '（尚未填寫）' }}</div>
+  {% if '根因附件' in docs_by_cat %}
+  <div class="d-flex flex-wrap gap-2 mt-2">
+    {% for d in docs_by_cat['根因附件'] %}
+    {% set _ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+    {% if _ext in _img_exts %}
+    <div style="max-width:300px">
+      <img src="/qc-exceptions/doc/preview/{{ d.id }}" alt="{{ d.original_name }}"
+           style="max-width:300px;max-height:220px;border:1px solid #ccc">
+      <div class="small text-muted-print">{{ d.original_name }}</div>
+    </div>
+    {% else %}
+    <span class="badge-print">{{ d.original_name }}</span>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── 4. 長期改善 ──────────────── #}
+  <h2>4. 長期改善（SOP / SIP / 製程修訂）</h2>
+  <div contenteditable="true" class="editable">{{ form.improvement_plan or '（尚未填寫）' }}</div>
+  <div class="mt-2 small">
+    {% if form.need_drawing_rev %}<span class="badge-print">需修訂圖面</span>{% endif %}
+    {% if form.need_sop_rev %}<span class="badge-print">需修訂 SOP</span>{% endif %}
+    {% if form.need_sip_rev %}<span class="badge-print">需修訂 SIP / 製程</span>{% endif %}
+  </div>
+  {% if form.linked_ecn %}
+  <div class="mt-2"><strong>已綁定 ECN：</strong>{{ form.linked_ecn.form_id }}</div>
+  {% endif %}
+  {% if '改善方案附件' in docs_by_cat %}
+  <div class="d-flex flex-wrap gap-2 mt-2">
+    {% for d in docs_by_cat['改善方案附件'] %}
+    {% set _ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+    {% if _ext in _img_exts %}
+    <div style="max-width:300px">
+      <img src="/qc-exceptions/doc/preview/{{ d.id }}" alt="{{ d.original_name }}"
+           style="max-width:300px;max-height:220px;border:1px solid #ccc">
+      <div class="small text-muted-print">{{ d.original_name }}</div>
+    </div>
+    {% else %}
+    <span class="badge-print">{{ d.original_name }}</span>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── 簽署欄 ──────────────── #}
+  <h2>5. 簽署</h2>
+  <table class="report-tbl">
+    <thead>
+      <tr>
+        <th>建立人（品保）</th>
+        <th>處理判定（品保）</th>
+        <th>產線主管</th>
+        <th>BU 主管</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="sign-row">
+        <td>{{ form.creator.display_name if form.creator else '' }}</td>
+        <td>{{ form.dispositioner.display_name if form.dispositioner else '' }}</td>
+        <td></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+// 列印前清掉「（尚未填寫）」placeholder（如果用戶沒填）
+window.addEventListener('beforeprint', () => {
+  document.querySelectorAll('.editable').forEach(el => {
+    if (el.textContent.trim() === '（尚未填寫）') el.dataset.wasPlaceholder = '1';
+  });
+});
+window.addEventListener('afterprint', () => {
+  // 不還原 — 用戶可繼續編輯
+});
+</script>
+</body>
+</html>

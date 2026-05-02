@@ -411,9 +411,11 @@
             </div>
             <div class="form-text small mt-1"><i class="bi bi-info-circle me-1"></i>實際回貨明細（每筆日期 / 數量）由<strong>採購／生管</strong>於送出後在顯示頁回填，須與<strong>預計回補數量</strong>對上</div>
             ${(() => {
-              const logs = fields.return_logs || [];
-              if (!logs.length) return '';
+              const due = fields.replenish_due_date || '';
               const planned = parseInt(fields.replenish_qty) || 0;
+              const logs = fields.return_logs || [];
+              const hasAny = due || planned || logs.length;
+              if (!hasAny) return '';
               let totalDone = 0;
               const trs = logs.map((r, i) => {
                 const q = parseInt(r.qty) || 0;
@@ -435,9 +437,20 @@
               return `
                 <div class="border-top pt-2 mt-2">
                   <div class="small fw-semibold text-info mb-1">
-                    <i class="bi bi-truck me-1"></i>採購／生管 已回填的回貨紀錄（唯讀）
-                    <span class="ms-2">已回 <strong class="text-success">${totalDone}</strong>${badge}</span>
+                    <i class="bi bi-truck me-1"></i>採購／生管 已回填資訊（唯讀，自動同步）
                   </div>
+                  <div class="row g-2 mb-2 small">
+                    <div class="col-md-4"><strong>預計回補時間：</strong>
+                      ${due ? esc(due) : '<span class="text-muted">未填</span>'}
+                    </div>
+                    <div class="col-md-4"><strong>預計回補數量：</strong>
+                      ${planned ? `<span class="text-primary fw-semibold">${planned}</span> pcs` : '<span class="text-muted">未填</span>'}
+                    </div>
+                    <div class="col-md-4"><strong>實際已回：</strong>
+                      <span class="text-success fw-semibold">${totalDone}</span> pcs ${badge}
+                    </div>
+                  </div>
+                  ${logs.length ? `
                   <div class="table-responsive">
                     <table class="table table-sm table-bordered align-middle mb-0">
                       <thead class="table-light"><tr>
@@ -446,7 +459,7 @@
                       </tr></thead>
                       <tbody>${trs}</tbody>
                     </table>
-                  </div>
+                  </div>` : '<div class="small text-muted">尚無回貨紀錄</div>'}
                 </div>
               `;
             })()}
@@ -1169,19 +1182,26 @@
                     {% endif %}
                   </span>
                 </div>
+                <div class="alert alert-light border small mb-2 py-1 px-2">
+                  <i class="bi bi-info-circle me-1"></i>立即處理階段品保已填：
+                  退貨原因「<strong>{{ _f.replenish_note or '—' }}</strong>」／ 退貨總數
+                  <strong>{{ _f.return_qty_total or form.receive_qty or '—' }}</strong> pcs
+                  {% if _f.pickup_required %}／<span class="badge bg-warning text-dark"><i class="bi bi-truck-flatbed me-1"></i>需我方協助派車</span>{% endif %}
+                </div>
                 <div class="row g-2 mb-2">
                   <div class="col-md-3"><label class="form-label small">退貨總數（pcs）</label>
                     <input type="number" min="0" name="return_qty_total" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
-                           value="{{ _f.return_qty_total or '' }}" placeholder="{{ form.receive_qty or '' }}"></div>
+                           value="{{ _f.return_qty_total or form.receive_qty or '' }}" placeholder="{{ form.receive_qty or '' }}"></div>
                   <div class="col-md-3"><label class="form-label small">預計回補時間</label>
                     <input type="date" name="replenish_due_date" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
                            value="{{ _f.replenish_due_date or '' }}"></div>
                   <div class="col-md-3"><label class="form-label small">預計回補數量（pcs）</label>
                     <input type="number" min="0" name="replenish_qty" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
-                           value="{{ _f.replenish_qty or '' }}" placeholder="廠商承諾數"></div>
+                           value="{{ _f.replenish_qty if _f.replenish_qty not in (None, '') else (_f.return_qty_total or form.receive_qty or '') }}"
+                           placeholder="預設＝退貨總數，可調整"></div>
                   <div class="col-md-3"><label class="form-label small">補貨備註</label>
                     <input name="replenish_note" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
-                           value="{{ _f.replenish_note or '' }}" placeholder="批次說明 / PO 編號"></div>
+                           value="{{ _f.replenish_note or '' }}" placeholder="退貨原因 / 批次 / PO 編號"></div>
                 </div>
                 <div class="small fw-semibold text-info mb-1">回貨紀錄（日期 / 數量 / 備註）— 多次到貨可新增</div>
                 <div class="table-responsive">
@@ -1666,7 +1686,11 @@
           <i class="bi bi-box-arrow-up-right ms-1"></i>
         </a>
         {% endif %}
-        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+        <a href="/qc-exceptions/{{ form.form_id }}/report" target="_blank"
+           class="btn btn-sm btn-outline-primary ms-auto me-2" title="預覽異常報告，可編輯後列印 / 另存 PDF">
+          <i class="bi bi-file-earmark-pdf me-1"></i>輸出異常報告
+        </a>
+        <button type="button" class="btn btn-sm btn-link p-0 collapse-toggle" data-bs-toggle="collapse"
                 data-bs-target="#improveBody" aria-expanded="true" title="收合 / 展開">
           <i class="bi bi-chevron-up"></i>
         </button>
@@ -1791,15 +1815,47 @@
                   {% endif %}
                 </div>
                 {% if _f.return_logs %}
-                <div class="mt-1">
-                  <strong>回貨紀錄：</strong>
-                  {% for r in _f.return_logs %}
-                  {% if r.date or r.qty %}
-                  <span class="badge bg-light text-dark border me-1">
-                    {{ r.date or '—' }} · {{ r.qty or 0 }} pcs{% if r.note %} · {{ r.note }}{% endif %}
-                  </span>
-                  {% endif %}
-                  {% endfor %}
+                <div class="mt-2">
+                  <div class="small fw-semibold text-info mb-1">
+                    <i class="bi bi-truck me-1"></i>採購／生管 回貨紀錄
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                      <thead class="table-light"><tr>
+                        <th style="width:40px">#</th>
+                        <th style="width:140px">回貨日期</th>
+                        <th class="text-end" style="width:110px">回貨數量</th>
+                        <th>備註</th>
+                      </tr></thead>
+                      <tbody>
+                        {% for r in _f.return_logs %}
+                        {% if r.date or r.qty or r.note %}
+                        <tr>
+                          <td class="text-center">{{ loop.index }}</td>
+                          <td>{{ r.date or '—' }}</td>
+                          <td class="text-end fw-semibold">{{ r.qty if r.qty not in (None, '') else '—' }}</td>
+                          <td>{{ r.note or '—' }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="table-light">
+                          <td colspan="2" class="text-end fw-semibold">累計</td>
+                          <td class="text-end fw-semibold text-success">{{ _ns_s.t }}</td>
+                          <td>
+                            {% if _planned_s > 0 %}
+                              {% if _diff_s == 0 %}
+                              <span class="badge bg-success"><i class="bi bi-check2 me-1"></i>對上預計</span>
+                              {% elif _diff_s > 0 %}
+                              <span class="badge bg-warning text-dark">超出預計 {{ _diff_s }}</span>
+                              {% else %}
+                              <span class="badge bg-danger">尚差 {{ -_diff_s }} 才對上</span>
+                              {% endif %}
+                            {% endif %}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
                 {% endif %}
               {% elif a.type == 'A2' %}
@@ -1998,6 +2054,60 @@
             }
             bindPaste(rcaText, rcaFile, '.rca-paste-status');
             bindPaste(impText, impFile, '.imp-paste-status');
+
+            // 自動儲存（debounce 1.5 秒）— 不打擾正在輸入
+            const autoStatus = document.createElement('div');
+            autoStatus.className = 'small text-muted mt-2';
+            autoStatus.id = 'improveAutoStatus';
+            autoStatus.textContent = '';
+            f.appendChild(autoStatus);
+            let timer = null, lastSent = '';
+            async function autosave() {
+              const fd = new FormData();
+              fd.append('root_cause', rcaText ? rcaText.value : '');
+              fd.append('improvement_plan', impText ? impText.value : '');
+              ['need_drawing_rev','need_sop_rev','need_sip_rev'].forEach(n => {
+                const c = f.querySelector(`input[name="${n}"]`);
+                if (c && c.checked) fd.append(n, '1');
+              });
+              const sig = JSON.stringify([fd.get('root_cause'), fd.get('improvement_plan'),
+                                          fd.get('need_drawing_rev'), fd.get('need_sop_rev'), fd.get('need_sip_rev')]);
+              if (sig === lastSent) return;
+              autoStatus.textContent = '⏳ 自動儲存中…';
+              try {
+                const r = await fetch(`/qc-exceptions/{{ form.form_id }}/save-improvement?silent=1`,
+                                       {method: 'POST', body: fd});
+                if (r.ok) {
+                  lastSent = sig;
+                  const t = new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+                  autoStatus.textContent = `✅ 自動儲存於 ${t}`;
+                  autoStatus.classList.remove('text-danger');
+                  autoStatus.classList.add('text-success');
+                } else {
+                  autoStatus.textContent = `❌ 自動儲存失敗（HTTP ${r.status}）`;
+                  autoStatus.classList.add('text-danger');
+                }
+              } catch (e) {
+                autoStatus.textContent = `❌ 自動儲存失敗：${e}`;
+                autoStatus.classList.add('text-danger');
+              }
+            }
+            function scheduleSave() {
+              clearTimeout(timer);
+              autoStatus.textContent = '✏️ 編輯中…（1.5 秒後自動儲存）';
+              autoStatus.classList.remove('text-success', 'text-danger');
+              timer = setTimeout(autosave, 1500);
+            }
+            ['root_cause','improvement_plan'].forEach(n => {
+              const el = f.querySelector(`textarea[name="${n}"]`);
+              if (el) el.addEventListener('input', scheduleSave);
+            });
+            ['need_drawing_rev','need_sop_rev','need_sip_rev'].forEach(n => {
+              const el = f.querySelector(`input[name="${n}"]`);
+              if (el) el.addEventListener('change', scheduleSave);
+            });
+            // 離開頁面前若還有未儲存變更，強制送一次
+            window.addEventListener('beforeunload', () => { if (timer) { clearTimeout(timer); autosave(); } });
           })();
           </script>
 
