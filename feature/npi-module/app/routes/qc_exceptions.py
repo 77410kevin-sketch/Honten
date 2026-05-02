@@ -43,7 +43,7 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "不良照片", "其它"]
+ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
 _CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.ADMIN)  # 建單權限：品保 + 產線主管 + 生管 + 業助
@@ -765,11 +765,28 @@ async def set_disposition(
                 form.lab_test_qty        = _int(f.get("lab_test_qty"))
                 form.lab_test_conditions = (f.get("lab_test_conditions") or "").strip() or None
                 form.lab_test_due_date   = (f.get("lab_test_due_date") or "").strip() or None
-            # B3 內勾選「客戶端 Rework」→ 反推 sa_cust_rework_*
+            # B3 內勾選「客戶端 Rework」→ 多列排程，反推第一列 + 整理成 sa_cust_note
             if f.get("cust_rework"):
-                form.sa_cust_rework_hours    = _float(f.get("cust_hours"))
-                form.sa_cust_rework_workers  = _int(f.get("cust_workers"))
-                if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
+                rwrows = [r for r in (f.get("cust_rework_rows") or [])
+                          if (r.get("date") or r.get("location") or r.get("workers"))]
+                if rwrows:
+                    form.sa_cust_rework_workers = _int(rwrows[0].get("workers"))
+                    notes = []
+                    for r in rwrows:
+                        bits = []
+                        if r.get("date"):     bits.append(r["date"])
+                        if r.get("location"): bits.append(r["location"])
+                        if r.get("workers"):  bits.append(f"{r['workers']} 人")
+                        if bits: notes.append(" / ".join(bits))
+                    form.sa_cust_note = "\n".join(notes) if notes else None
+                else:
+                    # 向下相容舊單列欄位
+                    form.sa_cust_rework_hours    = _float(f.get("cust_hours"))
+                    form.sa_cust_rework_workers  = _int(f.get("cust_workers"))
+                    if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
+            # 連結樣品需求單號（B3 內勾「小批樣品測試」→ lab_test_sample_no）
+            if f.get("lab_test_sample_no"):
+                form.linked_sample_request_no = f.get("lab_test_sample_no")
         elif a["type"] == "HE":
             rows = []
             for r in (f.get("rows") or []):
@@ -819,7 +836,7 @@ async def set_disposition(
                          if hasattr(f, "filename") and f.filename]
     if defect_files:
         await _save_attachments(db, form.id, current_user.id,
-                                defect_files, ["不良照片"] * len(defect_files))
+                                defect_files, ["異常照片"] * len(defect_files))
 
     # ── 狀態流轉 ───────────────────────────────────
     notify_pc = (fd.get("notify_pc") == "1")
@@ -920,13 +937,19 @@ async def action_update_fields(
     allowed = list(info.get("units", [])) + [Role.QC, Role.ADMIN]
     if target["type"] in ("B2", "B3"):
         allowed.append(Role.PROD_MGR)
+    # B3 工程檢治具回填：工程師 / 工程主管 也可填
+    if target["type"] == "B3":
+        allowed += [Role.ENG_MGR]
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="無權限填寫此項目資訊")
     UPDATABLE = {
         "A2": ["replenish_note", "pickup_location", "pickup_contact",
                "pickup_time", "pickup_note", "pickup_actual_at"],
         "B2": ["station", "completed_at", "pass_qty"],
-        "B3": ["pass_qty", "defect_handling"],
+        "B3": ["pass_qty", "defect_handling",
+               # 工程師回填（B3 內勾「工程檢治具設計」後）
+               "fixture_done_at", "fixture_to_production",
+               "fixture_eng_no", "fixture_eval_note"],
     }
     keys = UPDATABLE.get(target["type"])
     if not keys:
@@ -968,7 +991,7 @@ async def action_update_fields(
                          if hasattr(x, "filename") and x.filename]
     if defect_files:
         await _save_attachments(db, form.id, current_user.id,
-                                defect_files, ["不良照片"] * len(defect_files))
+                                defect_files, ["異常照片"] * len(defect_files))
 
     target["updated_at"] = datetime.utcnow().isoformat()
     target["updated_by"] = current_user.id
