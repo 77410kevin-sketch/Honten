@@ -57,9 +57,7 @@
         <select name="resource_id" class="form-select" id="resSel">
           <option value="">— 不選 —</option>
           {% for r in resources %}
-          <option value="{{ r.id }}" data-type="{{ r.type.value }}">
-            [{{ r.type.value }}] {{ r.name }}{% if r.capacity %}（{{ r.capacity }}人）{% endif %}{% if r.location %} · {{ r.location }}{% endif %}
-          </option>
+          <option value="{{ r.id }}" data-type="{{ r.type.value }}">[{{ r.type.value }}] {{ r.name }}</option>
           {% endfor %}
         </select>
       </div>

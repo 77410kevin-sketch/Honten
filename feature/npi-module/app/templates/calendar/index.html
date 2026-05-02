@@ -93,9 +93,7 @@
             <select name="resource_id" id="qmRes" class="form-select form-select-sm">
               <option value="">— 請選擇 —</option>
               {% for r in resources %}
-              <option value="{{ r.id }}" data-type="{{ r.type.value }}">
-                {{ r.name }}{% if r.capacity %}（{{ r.capacity }}人）{% endif %}{% if r.location %} · {{ r.location }}{% endif %}
-              </option>
+              <option value="{{ r.id }}" data-type="{{ r.type.value }}">{{ r.name }}</option>
               {% endfor %}
             </select>
           </div>
@@ -142,7 +140,7 @@
 </style>
 
 <script>
-(function() {
+window.addEventListener('DOMContentLoaded', function() {
   const TYPE_META = {
     ROOM:   {label:'借會議室', icon:'bi-door-open', color:'#198754'},
     CAR:    {label:'借公務車', icon:'bi-truck', color:'#0d6efd'},
@@ -319,6 +317,10 @@
     e.preventDefault();
     syncDT();
     const fd = new FormData(e.target);
+    // 移除空欄位（避免 FastAPI 422：resource_id="" 無法轉 int）
+    for (const k of ['resource_id','leave_type','customer_name']) {
+      if (fd.get(k) === '' || fd.get(k) === null) fd.delete(k);
+    }
     const btn = $('qmSubmit');
     btn.disabled = true;
     $('qmAlert').classList.add('d-none');
@@ -356,6 +358,6 @@
     document.body.appendChild(f);
     setTimeout(() => f.remove(), 2500);
   }
-})();
+});
 </script>
 {% endblock %}

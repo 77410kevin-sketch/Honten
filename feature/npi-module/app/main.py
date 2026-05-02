@@ -30,7 +30,7 @@ from app.models.qc_exception import (
 from app.services.auth import hash_password
 from app.routes import (
     auth, pcn_forms, drawing_checker, npi_forms, suppliers, customers, title_block,
-    qc_exceptions, calendar as calendar_route,
+    qc_exceptions, calendar as calendar_route, calendar_line,
 )
 
 
@@ -311,6 +311,7 @@ app.include_router(customers.router)
 app.include_router(title_block.router)
 app.include_router(qc_exceptions.router)
 app.include_router(calendar_route.router)
+app.include_router(calendar_line.router)
 
 
 @app.get("/")

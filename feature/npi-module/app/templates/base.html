@@ -96,6 +96,11 @@
       <i class="bi bi-clipboard-check me-2"></i>請假待簽核
     </a>
     {% endif %}
+    {% if user.role.value == 'admin' %}
+    <a href="/calendar/line/console" class="nav-link {% if '/calendar/line' in request.url.path %}active{% endif %}">
+      <i class="bi bi-robot me-2"></i>LINE 機器人
+    </a>
+    {% endif %}
 
     {# ── 主檔（置底）── #}
     <div class="text-white-50 px-3 mb-1 mt-3" style="font-size:0.7rem;letter-spacing:1px">主檔</div>
