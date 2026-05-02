@@ -223,6 +223,17 @@
                           class="form-control form-control-sm font-monospace" style="font-size:12px"
                           placeholder="信件內容…">{{ qc_supplier_mail_tpl }}</textarea>
               </div>
+              <div class="col-12 d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-info btn-sm text-white" id="sendMailBtn">
+                  <i class="bi bi-send me-1"></i>立即寄出通知信
+                </button>
+                {% if form.supplier_mail_sent_at %}
+                <span class="badge bg-success ms-1">
+                  已寄出 {{ form.supplier_mail_sent_at.strftime('%m-%d %H:%M') }}
+                </span>
+                {% endif %}
+                <span class="text-muted small ms-auto">寄信後仍可繼續編輯處理項目</span>
+              </div>
             </div>
           </div>
 
@@ -273,6 +284,19 @@
       const PART_NO  = {{ form.part_no | tojson }};
       const TOTAL_QTY = {{ (form.receive_qty or 0) | tojson }};
       const MAIL_TPL  = {{ qc_supplier_mail_tpl | tojson }};
+      {% set _ipc_items_for_js = (form.defect_items_json | fromjson) if form.defect_items_json else [] %}
+      const IPC_ITEMS = {{ _ipc_items_for_js | tojson }};
+
+      function ipcDefectSummary() {
+        if (!Array.isArray(IPC_ITEMS) || !IPC_ITEMS.length) return '';
+        return IPC_ITEMS.map(it => {
+          const c = (it.cause || '').trim();
+          if (!c) return '';
+          if (it.defect_qty != null && it.sample_qty != null) return `${c}(${it.defect_qty}/${it.sample_qty})`;
+          if (it.defect_qty != null) return `${c}(不良 ${it.defect_qty})`;
+          return c;
+        }).filter(Boolean).join('；');
+      }
       const DOCS_BY_CAT = {{ qc_docs_by_cat_json | tojson }};
 
       // 多列「不良原因 / 不良數 / 截圖」渲染（B2/B3 共用）
@@ -358,26 +382,75 @@
         if (type === 'A1') {
           return `
             <div class="alert alert-light border small mb-2 py-1 px-2">
-              <i class="bi bi-info-circle me-1"></i>流程：品保送出退貨 Mail（Step 1）→ 採購／生管安排與廠商對接 → 廠商派車載回 + 回覆補貨數量／預計交期
+              <i class="bi bi-info-circle me-1"></i>流程：品保送出退貨 Mail（Step 1）→ 採購／生管安排與廠商對接 → 廠商派車載回 + 回覆補貨數量／預計交期 → 採購/生管回填回貨明細
             </div>
           ` + qcSec(`
-            <label class="form-label small">補貨資訊請求（給採購/生管/廠商）</label>
-            <textarea class="form-control form-control-sm mb-2" rows="2" data-bind="replenish_note"
-                      placeholder="請廠商回覆補貨數量 / 預計交期；採購／生管追蹤回覆">${esc(fields.replenish_note)}</textarea>
-            <div class="form-check">
+            <div class="row g-2">
+              <div class="col-md-4"><label class="form-label small">退貨總數（pcs）</label>
+                <input type="number" min="0" class="form-control form-control-sm" data-bind="return_qty_total"
+                       value="${esc(fields.return_qty_total)}" placeholder="${esc(TOTAL_QTY) || ''}"></div>
+              <div class="col-md-8"><label class="form-label small">退貨原因 / 說明
+                <span class="text-muted small">（自動帶 IPC 異常原因，可修改）</span>
+              </label>
+                <input class="form-control form-control-sm" data-bind="replenish_note"
+                       placeholder="例：總長超規 5/315；本批不符允收標準"
+                       value="${esc((fields.replenish_note != null && fields.replenish_note !== '') ? fields.replenish_note : ipcDefectSummary())}"></div>
+            </div>
+            <div class="form-text small mt-1 text-muted">
+              預計回補時間／預計回補數量 由<strong>採購／生管</strong>於送出後在顯示頁回填
+            </div>
+            <div class="form-check mt-2">
               <input type="checkbox" class="form-check-input" data-bind="pickup_required" data-toggle-target=".a1-pickup-fields" ${fields.pickup_required ? 'checked' : ''}>
               <label class="form-check-label fw-semibold">
                 <i class="bi bi-truck-flatbed me-1"></i>例外：需我方協助派車（預設由廠商派車載回）
               </label>
             </div>
-          `) + `
             <div class="a1-pickup-fields ${fields.pickup_required ? '' : 'd-none'}">
-              ${respSec(`
-                <input class="form-control form-control-sm" data-bind="pickup_note"
-                       placeholder="派車備註（地點 / 聯絡人 / 預計時間）" value="${esc(fields.pickup_note)}">
-              `, '採購／生管 填寫區', 'info')}
+              <input class="form-control form-control-sm mt-1" data-bind="pickup_note"
+                     placeholder="派車備註（地點 / 聯絡人 / 預計時間）" value="${esc(fields.pickup_note)}">
             </div>
-          `;
+            <div class="form-text small mt-1"><i class="bi bi-info-circle me-1"></i>實際回貨明細（每筆日期 / 數量）由<strong>採購／生管</strong>於送出後在顯示頁回填，須與<strong>預計回補數量</strong>對上</div>
+            ${(() => {
+              const logs = fields.return_logs || [];
+              if (!logs.length) return '';
+              const planned = parseInt(fields.replenish_qty) || 0;
+              let totalDone = 0;
+              const trs = logs.map((r, i) => {
+                const q = parseInt(r.qty) || 0;
+                totalDone += q;
+                return `<tr>
+                  <td class="text-center">${i + 1}</td>
+                  <td>${esc(r.date) || '—'}</td>
+                  <td class="text-end">${esc(r.qty) || '—'}</td>
+                  <td>${esc(r.note) || '—'}</td>
+                </tr>`;
+              }).join('');
+              const diff = totalDone - planned;
+              let badge = '';
+              if (planned > 0) {
+                if (diff === 0) badge = '<span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>';
+                else if (diff > 0) badge = `<span class="badge bg-warning text-dark ms-1">超出 ${diff}</span>`;
+                else badge = `<span class="badge bg-danger ms-1">差 ${-diff}</span>`;
+              }
+              return `
+                <div class="border-top pt-2 mt-2">
+                  <div class="small fw-semibold text-info mb-1">
+                    <i class="bi bi-truck me-1"></i>採購／生管 已回填的回貨紀錄（唯讀）
+                    <span class="ms-2">已回 <strong class="text-success">${totalDone}</strong>${badge}</span>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                      <thead class="table-light"><tr>
+                        <th style="width:40px">#</th><th style="width:140px">回貨日期</th>
+                        <th class="text-end" style="width:110px">回貨數量</th><th>備註</th>
+                      </tr></thead>
+                      <tbody>${trs}</tbody>
+                    </table>
+                  </div>
+                </div>
+              `;
+            })()}
+          `);
         }
         if (type === 'A2') {
           return `
@@ -725,8 +798,8 @@
           ? `<span class="badge bg-${meta.color} ms-2">通知 ${meta.units.map(u => u.label).join('、')}</span>`
           : `<span class="badge bg-secondary ms-2">不另通知</span>`;
         const sentBadge = action.sent_at
-          ? `<span class="badge bg-success ms-auto"><i class="bi bi-check2 me-1"></i>已送出</span>`
-          : '';
+          ? `<span class="badge bg-success ms-auto" title="${esc(action.sent_at)}"><i class="bi bi-check2 me-1"></i>已送出 ${esc(String(action.sent_at).slice(0,16).replace('T',' '))}</span>`
+          : `<span class="badge bg-warning text-dark ms-auto"><i class="bi bi-hourglass-split me-1"></i>尚未送出</span>`;
         cardEl.innerHTML = `
           <div class="card-header bg-${meta.color}-subtle d-flex align-items-center py-2">
             <span class="fw-semibold text-${meta.color}">
@@ -841,6 +914,19 @@
               status.textContent = `已貼上 ${added} 張截圖（總 ${dt.files.length} 個檔案，送出後上傳）`;
             }
           }
+        });
+        // 自動同步：data-auto-from 指定來源 input；用戶手動編輯後不再自動覆寫
+        cardEl.querySelectorAll('[data-auto-from]').forEach(target => {
+          const srcKey = target.dataset.autoFrom;
+          const src = cardEl.querySelector(`[data-bind="${srcKey}"]`);
+          if (!src) return;
+          target.addEventListener('input', () => { target.dataset.userEdited = '1'; });
+          src.addEventListener('input', () => {
+            if (target.dataset.userEdited === '1' && target.value && target.value !== target.dataset.lastAuto) return;
+            target.value = src.value;
+            target.dataset.lastAuto = src.value;
+            target.dispatchEvent(new Event('input', {bubbles: true}));
+          });
         });
         cardEl.addEventListener('input', refresh);
         cardEl.addEventListener('change', e => {
@@ -963,6 +1049,32 @@
         const ta = document.getElementById('supplierMailBody');
         if (ta) ta.value = MAIL_TPL;
       });
+      // 立即寄出通知信（獨立 fetch，不影響處理項目編輯狀態）
+      const sendBtn = document.getElementById('sendMailBtn');
+      if (sendBtn) sendBtn.addEventListener('click', async () => {
+        const fd2 = new FormData();
+        const toEl = document.querySelector('input[name="supplier_mail_to"]') || document.getElementById('mailToSel');
+        fd2.append('supplier_mail_to', toEl ? toEl.value : '');
+        fd2.append('supplier_mail_cc', document.querySelector('input[name="supplier_mail_cc"]').value || '');
+        fd2.append('supplier_mail_subject', document.querySelector('input[name="supplier_mail_subject"]').value || '');
+        fd2.append('supplier_mail_body', document.getElementById('supplierMailBody').value || '');
+        if (!fd2.get('supplier_mail_to') || !fd2.get('supplier_mail_body')) {
+          alert('請選擇收件人並填寫信件內容'); return;
+        }
+        if (!confirm(`確定寄出通知信至 ${fd2.get('supplier_mail_to')}？`)) return;
+        sendBtn.disabled = true;
+        try {
+          const r = await fetch(`/qc-exceptions/{{ form.form_id }}/send-notify-mail`,
+                                 {method: 'POST', body: fd2});
+          if (r.redirected) location.href = r.url;
+          else if (r.ok) location.reload();
+          else alert(`寄信失敗：${await r.text()}`);
+        } catch (err) {
+          alert(`寄信失敗：${err}`);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
     })();
     </script>
     {% elif _has_actions %}
@@ -1025,6 +1137,93 @@
                 <span class="ms-1">{{ _f.pickup_note or '' }}</span>
                 {% endif %}
               </div>
+              {# 採購／生管 回貨回填表單 #}
+              {% set _can_a1_edit = user.role.value in ('purchase','pc','qc','admin') %}
+              {% set _ro_a1 = '' if _can_a1_edit else 'readonly disabled' %}
+              {% set _bg_a1 = '' if _can_a1_edit else 'bg-light text-muted' %}
+              {% set _qty_total = _f.return_qty_total or form.receive_qty or 0 %}
+              {% set _logs = _f.return_logs or [{'date':'', 'qty':'', 'note':''}] %}
+              {% set _ns_ret = namespace(t=0) %}
+              {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_ret.t = _ns_ret.t + (_l.qty|int) %}{% endif %}{% endfor %}
+              {% set _remain = (_qty_total|int) - _ns_ret.t %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                    class="mt-2 border border-info rounded p-2" data-disp-form="a1"
+                    style="background:rgba(13,110,253,.06)">
+                {% set _planned = (_f.replenish_qty or 0) | int %}
+                {% set _diff = _ns_ret.t - _planned %}
+                <div class="small fw-semibold text-info mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-truck me-1"></i>採購／生管 回貨回填區</span>
+                  {% if not _can_a1_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">退貨
+                    <strong class="text-dark">{{ _qty_total }}</strong> ／ 預計回補
+                    <strong class="text-primary">{{ _planned if _planned else '—' }}</strong> ／ 實際已回
+                    <strong class="text-success">{{ _ns_ret.t }}</strong>
+                    {% if _planned > 0 %}
+                      {% if _diff == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _diff > 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ _diff }}</span>
+                      {% else %}
+                      <span class="badge bg-danger ms-1">差 {{ -_diff }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-md-3"><label class="form-label small">退貨總數（pcs）</label>
+                    <input type="number" min="0" name="return_qty_total" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.return_qty_total or '' }}" placeholder="{{ form.receive_qty or '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">預計回補時間</label>
+                    <input type="date" name="replenish_due_date" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_due_date or '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">預計回補數量（pcs）</label>
+                    <input type="number" min="0" name="replenish_qty" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_qty or '' }}" placeholder="廠商承諾數"></div>
+                  <div class="col-md-3"><label class="form-label small">補貨備註</label>
+                    <input name="replenish_note" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_note or '' }}" placeholder="批次說明 / PO 編號"></div>
+                </div>
+                <div class="small fw-semibold text-info mb-1">回貨紀錄（日期 / 數量 / 備註）— 多次到貨可新增</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th>
+                      <th style="width:160px">回貨日期</th>
+                      <th style="width:120px" class="text-end">回貨數量</th>
+                      <th>備註</th>
+                      <th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="rl-tbody">
+                      {% for it in _logs %}
+                      <tr class="rl-row">
+                        <td class="text-center rl-idx">{{ loop.index }}</td>
+                        <td><input type="date" data-rl="date" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.date or '' }}"></td>
+                        <td><input type="number" min="0" data-rl="qty" class="form-control form-control-sm text-end {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.qty if it.qty not in (None, '') else '' }}" placeholder="0"></td>
+                        <td><input data-rl="note" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.note or '' }}" placeholder="批號 / PO 編號"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger rl-rm" {% if not _can_a1_edit %}disabled{% endif %}>×</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% if _can_a1_edit %}
+                <button type="button" class="btn btn-sm btn-outline-info rl-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增回貨紀錄
+                </button>
+                {% endif %}
+                <input type="hidden" name="return_logs_json" data-rl-json>
+                {% if _can_a1_edit %}
+                <button class="btn btn-sm btn-info text-white mt-2">
+                  <i class="bi bi-save me-1"></i>儲存（採購／生管）
+                </button>
+                {% endif %}
+                {% if a.updated_at %}
+                <div class="small text-muted mt-1">最後更新：{{ a.updated_at[:16] | replace('T',' ') }}</div>
+                {% endif %}
+              </form>
             {% elif a.type == 'A2' %}
               {% set _can_a2_edit = user.role.value in ('assistant','sales','qc','admin') %}
               <div><strong>退貨/補貨資訊：</strong>{{ _f.replenish_note or '—' }}</div>
@@ -1571,9 +1770,38 @@
                 {% endif %}
               </div>
               {% if a.type == 'A1' %}
+                {% set _qty_total_s = _f.return_qty_total or form.receive_qty or 0 %}
+                {% set _planned_s = (_f.replenish_qty or 0) | int %}
+                {% set _ns_s = namespace(t=0) %}
+                {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_s.t = _ns_s.t + (_l.qty|int) %}{% endif %}{% endfor %}
+                {% set _diff_s = _ns_s.t - _planned_s %}
                 <div>補貨需求：{{ _f.replenish_note or '—' }}
                   {% if _f.pickup_required %}／<span class="badge bg-warning text-dark">需我方派車</span> {{ _f.pickup_note or '' }}{% endif %}
                 </div>
+                <div class="text-muted">
+                  退貨 <strong class="text-dark">{{ _qty_total_s }}</strong>
+                  ／ 預計回補 <strong class="text-primary">{{ _planned_s if _planned_s else '—' }}</strong>
+                  {% if _f.replenish_due_date %}（{{ _f.replenish_due_date }}）{% endif %}
+                  ／ 實際已回 <strong class="text-success">{{ _ns_s.t }}</strong>
+                  {% if _planned_s > 0 %}
+                    {% if _diff_s == 0 %}<span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                    {% elif _diff_s > 0 %}<span class="badge bg-warning text-dark ms-1">超出 {{ _diff_s }}</span>
+                    {% else %}<span class="badge bg-danger ms-1">差 {{ -_diff_s }}</span>
+                    {% endif %}
+                  {% endif %}
+                </div>
+                {% if _f.return_logs %}
+                <div class="mt-1">
+                  <strong>回貨紀錄：</strong>
+                  {% for r in _f.return_logs %}
+                  {% if r.date or r.qty %}
+                  <span class="badge bg-light text-dark border me-1">
+                    {{ r.date or '—' }} · {{ r.qty or 0 }} pcs{% if r.note %} · {{ r.note }}{% endif %}
+                  </span>
+                  {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
               {% elif a.type == 'A2' %}
                 <div>退貨/補貨：{{ _f.replenish_note or '—' }}</div>
                 <div class="text-muted">
@@ -2054,6 +2282,46 @@
   </div>
 </div>
 
+{# 所有 input/textarea/select 有值 → 綠色背景（已填寫提示） #}
+<style>
+  .qc-filled, input.qc-filled, textarea.qc-filled, select.qc-filled,
+  .form-control.qc-filled, .form-select.qc-filled {
+    background-color: rgba(25,135,84,.08) !important;
+    border-color: rgba(25,135,84,.45) !important;
+  }
+</style>
+<script>
+(function(){
+  const SKIP = new Set(['checkbox','radio','file','hidden','submit','button','reset']);
+  function markEl(el) {
+    if (!el || !el.tagName) return;
+    const tag = el.tagName.toLowerCase();
+    if (!['input','textarea','select'].includes(tag)) return;
+    if (tag === 'input' && SKIP.has((el.type || '').toLowerCase())) return;
+    const v = (el.value == null ? '' : String(el.value)).trim();
+    el.classList.toggle('qc-filled', v !== '' && v !== '—');
+  }
+  function markAll(root) {
+    (root || document).querySelectorAll('input, textarea, select').forEach(markEl);
+  }
+  // page load 掃一次
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => markAll());
+  } else { markAll(); }
+  // input/change event delegation：用戶輸入時即時 mark
+  document.addEventListener('input',  e => markEl(e.target));
+  document.addEventListener('change', e => markEl(e.target));
+  // 動態卡片區（actCards）新增節點時 mark
+  const obs = new MutationObserver(muts => muts.forEach(m =>
+    m.addedNodes.forEach(n => { if (n.nodeType === 1) markAll(n); })
+  ));
+  ['actCards', 'invRows', 'defectRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el, {childList: true, subtree: true});
+  });
+})();
+</script>
+
 {# Collapse 收合圖示切換 #}
 <script>
 (function(){
@@ -2098,6 +2366,18 @@
         rate.textContent = t > 0 ? `${(total / t * 100).toFixed(1)}%` : '—';
         rate.classList.toggle('text-danger', t > 0 && (total / t) >= 0.05);
       }
+      // A1 回貨紀錄多列同步
+      const rlRows = form.querySelectorAll('.rl-row');
+      if (rlRows.length) {
+        const logs = [];
+        rlRows.forEach(tr => {
+          const r = {};
+          tr.querySelectorAll('[data-rl]').forEach(el => { r[el.dataset.rl] = el.value; });
+          logs.push(r);
+        });
+        const rlJson = form.querySelector('[data-rl-json]');
+        if (rlJson) rlJson.value = JSON.stringify(logs);
+      }
     }
     form.addEventListener('input', refresh);
     form.addEventListener('change', refresh);
@@ -2115,6 +2395,21 @@
         if (rows.length > 1) {
           e.target.closest('.fail-row').remove();
           form.querySelectorAll('.fail-row .fail-idx').forEach((td, i) => td.textContent = i + 1);
+          refresh();
+        }
+      } else if (e.target.closest('.rl-add')) {
+        const tbody = form.querySelector('.rl-tbody');
+        const tr = tbody.querySelector('.rl-row');
+        const clone = tr.cloneNode(true);
+        clone.querySelectorAll('input').forEach(i => i.value = '');
+        tbody.appendChild(clone);
+        tbody.querySelectorAll('.rl-row .rl-idx').forEach((td, i) => td.textContent = i + 1);
+        refresh();
+      } else if (e.target.closest('.rl-rm')) {
+        const rows = form.querySelectorAll('.rl-row');
+        if (rows.length > 1) {
+          e.target.closest('.rl-row').remove();
+          form.querySelectorAll('.rl-row .rl-idx').forEach((td, i) => td.textContent = i + 1);
           refresh();
         }
       }

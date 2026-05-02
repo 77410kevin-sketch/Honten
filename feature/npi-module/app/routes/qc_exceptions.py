@@ -167,7 +167,12 @@ async def _save_attachments(db, form_pk, user_id, files, categories):
         saved = f"{uuid.uuid4().hex}{ext}"
         with open(os.path.join(upload_dir, saved), "wb") as f:
             f.write(content)
-        cat = (categories[i] if i < len(categories) else "其它")
+        if i < len(categories):
+            cat = categories[i]
+        elif categories:
+            cat = categories[-1]   # 沿用最後一個分類（每列只給一個 hidden category 也能配對多檔）
+        else:
+            cat = "其它"
         if cat not in ATTACH_CATEGORIES:
             cat = "其它"
         db.add(QCExceptionDocument(
@@ -486,11 +491,12 @@ async def detail_qc(
     suppliers = [{"id": s.id, "name": s.name, "email": s.email or "",
                   "contact": s.contact or ""} for s in rs2.scalars().all() if s.email]
 
-    # 找對應該單異常廠商的 email/contact
+    # 找對應該單異常廠商的 email/contact（雙向 in 模糊匹配）
     sup_contact, sup_email = "", ""
     if form.supplier_name:
+        sn = form.supplier_name.strip()
         for s in suppliers:
-            if form.supplier_name.strip() in s["name"]:
+            if sn in s["name"] or s["name"] in sn:
                 sup_contact = s["contact"]; sup_email = s["email"]; break
 
     # 預選 email 邏輯：
@@ -855,9 +861,21 @@ async def set_disposition(
     if not notify_pc:
         form.status = QCExceptionStatus.PENDING_IMPROVEMENT
     form.updated_at = datetime.utcnow()
+    # 「推給負責單位」（notify_pc=1）：所有有對應 units 的卡片自動打時間印記
+    push_now = datetime.utcnow().isoformat()
+    pushed = []
+    if notify_pc:
+        for a in actions:
+            info = ACTION_TYPE_INFO.get(a["type"], {})
+            if info.get("units") and not a.get("sent_at"):
+                a["sent_at"] = push_now
+                a["sent_by"] = current_user.id
+                pushed.append(a)
+        form.actions_json = json.dumps(actions, ensure_ascii=False)
     summary = "+".join(ACTION_TYPE_INFO[a["type"]]["label"] for a in actions)
     if notify_pc:
-        action_lbl, log_note = "SEND_TO_PC", f"暫存處理判斷 + 送生管：{summary}"
+        action_lbl = "SEND_TO_UNITS"
+        log_note = f"推給負責單位（{len(pushed)} 項）：{summary}"
     else:
         action_lbl, log_note = "DISPOSITION", f"處理判斷：{summary}｜{note.strip()[:120]}"
     db.add(_log(form, current_user, action_lbl, old_st, form.status, log_note))
@@ -872,17 +890,23 @@ async def set_disposition(
                 await qc_notif.send_supplier_mail(form)
                 form.supplier_mail_sent_at = datetime.utcnow()
                 await db.commit()
-        if notify_pc and (form.sa_need_sorting or form.sa_need_rework):
-            form.sa_sent_to_prod_at = datetime.utcnow()
-            await db.commit()
-            pc_msg = (f"📋 【特採允收 — 待生管處理】{form.form_id}\n"
-                      f"品號：{form.part_no}　異常：{form.defect_cause}\n"
-                      f"處理：{('Sorting ' if form.sa_need_sorting else '')}"
-                      f"{('Rework ' if form.sa_need_rework else '')}\n"
-                      f"請填執行單位 + 安排執行後回填數量。\n"
-                      f"系統：/qc-exceptions/{form.form_id}")
-            await qc_notif._send_line_group(qc_notif.LINE_QC_GROUP, pc_msg)
-            await qc_notif._ntf._notify_roles(db, [Role.PC], pc_msg)
+        # 推給負責單位：對每張新標記送出的卡片，通知對應單位
+        if notify_pc:
+            for a in pushed:
+                info = ACTION_TYPE_INFO.get(a["type"], {})
+                msg = (f"📋 【QC 異常 — {info.get('label','')}】{form.form_id}\n"
+                       f"品號：{form.part_no}　異常：{form.defect_cause}\n"
+                       f"處理對象：{_action_unit_labels(a['type'])}\n"
+                       f"系統：/qc-exceptions/{form.form_id}")
+                try:
+                    await qc_notif._send_line_group(qc_notif.LINE_QC_GROUP, msg)
+                    await qc_notif._ntf._notify_roles(db, info["units"], msg)
+                except Exception:
+                    logging.exception("push notify failed for action %s", a.get("id"))
+            # 維持 SA 卡片兼容：若有 sorting/rework，也記 form.sa_sent_to_prod_at
+            if form.sa_need_sorting or form.sa_need_rework:
+                form.sa_sent_to_prod_at = datetime.utcnow()
+                await db.commit()
     except Exception:
         logging.exception("notify_disposition pipeline failed")
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
@@ -930,6 +954,36 @@ async def action_send(
     return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
 
 
+@router.post("/{form_id}/send-notify-mail")
+async def send_notify_mail(
+    form_id: str, request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """寄出 Step 1 通知信給供應商/工站；不影響處理判斷流程"""
+    form = await _get_or_404(form_id, db)
+    if current_user.role not in (Role.QC, Role.PROD_MGR, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    fd = await request.form()
+    form.supplier_mail_to      = (fd.get("supplier_mail_to") or "").strip() or None
+    form.supplier_mail_cc      = (fd.get("supplier_mail_cc") or "").strip() or None
+    form.supplier_mail_subject = (fd.get("supplier_mail_subject") or "").strip() or None
+    form.supplier_mail_body    = (fd.get("supplier_mail_body") or "").strip() or None
+    if not form.supplier_mail_to or not form.supplier_mail_body:
+        raise HTTPException(status_code=400, detail="收件人與信件內容必填")
+    try:
+        await qc_notif.send_supplier_mail(form)
+        form.supplier_mail_sent_at = datetime.utcnow()
+        db.add(_log(form, current_user, "MAIL_SENT", form.status, form.status,
+                    f"寄出通知信 → {form.supplier_mail_to}"))
+        form.updated_at = datetime.utcnow()
+        await db.commit()
+    except Exception as e:
+        logging.exception("send_notify_mail failed")
+        raise HTTPException(status_code=500, detail=f"寄信失敗：{e}")
+    return RedirectResponse(url=f"/qc-exceptions/{form_id}", status_code=303)
+
+
 @router.post("/{form_id}/action/{action_id}/update-fields")
 async def action_update_fields(
     form_id: str, action_id: str,
@@ -954,6 +1008,8 @@ async def action_update_fields(
     if current_user.role not in allowed:
         raise HTTPException(status_code=403, detail="無權限填寫此項目資訊")
     UPDATABLE = {
+        "A1": ["return_qty_total", "replenish_note", "pickup_required", "pickup_note",
+               "replenish_due_date", "replenish_qty"],
         "A2": ["replenish_note", "pickup_location", "pickup_contact",
                "pickup_time", "pickup_note", "pickup_actual_at"],
         "B2": ["station", "completed_at", "pass_qty"],
@@ -976,10 +1032,26 @@ async def action_update_fields(
         v = fd.get(k)
         if v is None:
             continue
-        if k in ("pass_qty",):
+        if k in ("pass_qty", "return_qty_total", "replenish_qty"):
             f[k] = _int(v) if str(v).strip() else None
         else:
             f[k] = v.strip() if isinstance(v, str) else v
+    # A1 回貨紀錄多列（採購/生管填）
+    raw_logs = fd.get("return_logs_json")
+    if raw_logs:
+        try:
+            logs = json.loads(raw_logs)
+            if isinstance(logs, list):
+                clean = []
+                for it in logs:
+                    date = (it.get("date") or "").strip()
+                    qty = _int(it.get("qty"))
+                    note = (it.get("note") or "").strip()
+                    if date or qty or note:
+                        clean.append({"date": date or None, "qty": qty, "note": note or None})
+                f["return_logs"] = clean
+        except Exception:
+            pass
     # fail_items_json：多列「不良原因 + 不良數」
     raw = fd.get("fail_items_json")
     if raw:

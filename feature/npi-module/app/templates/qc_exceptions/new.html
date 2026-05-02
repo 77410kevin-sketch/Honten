@@ -59,7 +59,7 @@
               <option value="{{ v }}">{{ lbl }}</option>
               {% endfor %}
             </select>
-            <input name="receive_date" class="form-control" required>
+            <input type="date" name="receive_date" class="form-control" required>
           </div>
         </div>
 
@@ -106,9 +106,10 @@
                   <th style="width:40px">#</th>
                   <th>異常原因</th>
                   <th style="width:170px">類型</th>
-                  <th style="width:100px" class="text-end">抽樣數</th>
-                  <th style="width:100px" class="text-end">不良數</th>
-                  <th style="width:90px" class="text-end">不良率</th>
+                  <th style="width:90px" class="text-end">抽樣數</th>
+                  <th style="width:90px" class="text-end">不良數</th>
+                  <th style="width:80px" class="text-end">不良率</th>
+                  <th style="width:200px">異常照片</th>
                   <th style="width:40px"></th>
                 </tr>
               </thead>
@@ -138,6 +139,11 @@
                            class="form-control form-control-sm text-end df-dq">
                   </td>
                   <td class="text-end small df-rate text-muted">—</td>
+                  <td>
+                    <input type="file" name="attach_files" accept="image/*,.pdf"
+                           capture="environment" class="form-control form-control-sm">
+                    <input type="hidden" name="attach_categories" value="異常照片">
+                  </td>
                   <td class="text-center">
                     <button type="button" class="btn btn-sm btn-outline-danger df-remove"
                             title="移除此列">×</button>
@@ -150,7 +156,7 @@
                   <td class="text-end fw-semibold" id="totalSq">0</td>
                   <td class="text-end fw-semibold" id="totalDq">0</td>
                   <td class="text-end fw-semibold text-danger" id="totalRate">—</td>
-                  <td></td>
+                  <td colspan="2"></td>
                 </tr>
               </tfoot>
             </table>
