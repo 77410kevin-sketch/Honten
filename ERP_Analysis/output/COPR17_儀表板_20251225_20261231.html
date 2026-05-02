@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>COPR17 訂單預計出貨明細 — 儀表板</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  body{font-family:"Microsoft JhengHei",Arial,sans-serif;background:#f4f6f9;}
+  .header{background:linear-gradient(135deg,#1b5e20 0%,#2e7d32 60%,#388e3c 100%);
+           color:#fff;padding:24px 32px;border-radius:0 0 16px 16px;margin-bottom:24px;}
+  .header h1{font-size:1.5rem;font-weight:700;margin:0;}
+  .header .sub{font-size:.85rem;opacity:.8;margin-top:4px;}
+  .kpi-card{background:#fff;border-radius:12px;padding:20px 24px;box-shadow:0 2px 8px rgba(0,0,0,.07);
+             border-left:5px solid;}
+  .kpi-card .val{font-size:1.7rem;font-weight:700;}
+  .kpi-card .lbl{font-size:.8rem;color:#666;margin-top:2px;}
+  .nav-tabs .nav-link{color:#555;font-weight:600;}
+  .nav-tabs .nav-link.active{color:#1b5e20;border-bottom:3px solid #1b5e20;}
+  .chart-wrap{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.07);}
+  .pivot-wrap{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.07);overflow-x:auto;}
+  .accordion-button:not(.collapsed){background:#e8f5e9;color:#1b5e20;}
+  .section-title{font-size:1rem;font-weight:700;color:#1b5e20;margin-bottom:12px;
+                  border-left:4px solid #1b5e20;padding-left:10px;}
+  .badge-date{background:#e8f5e9;color:#1b5e20;border-radius:6px;padding:4px 10px;font-size:.8rem;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>COPR17 訂單預計出貨明細 — 分析儀表板</h1>
+  <div class="sub">
+    交貨日期：2025-12-25 ～ 2026-12-31 ｜
+    統計單別：2201, 2202, 2203 ｜
+    USD 匯率：29.5 ｜
+    更新：2026/05/02
+  </div>
+</div>
+
+<div class="container-fluid px-4">
+
+  <!-- KPI 卡片 -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#1b5e20;">
+        <div class="val text-success">132.1M</div>
+        <div class="lbl">台幣總金額（NT$）</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#1565c0;">
+        <div class="val" style="color:#1565c0;">32</div>
+        <div class="lbl">客戶數</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#f9a825;">
+        <div class="val" style="color:#f57f17;">222</div>
+        <div class="lbl">訂單張數</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#c62828;">
+        <div class="val" style="color:#c62828;">35</div>
+        <div class="lbl">本週新單筆數 <span class="badge-date">2026-04-27~2026-05-03</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab -->
+  <ul class="nav nav-tabs mb-3" id="mainTab">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab1">月別×客戶</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab2">客戶彙總</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab3">本週新單
+      <span class="badge rounded-pill bg-danger ms-1">35</span></a></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- Tab 1 月別×客戶 -->
+    <div class="tab-pane fade show active" id="tab1">
+      <div class="row g-3 mb-3">
+        <div class="col-12">
+          <div class="chart-wrap">
+            <div class="section-title">月別×客戶 台幣金額（堆疊長條圖）</div>
+            <canvas id="barChart" style="max-height:420px;"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="pivot-wrap">
+        <div class="section-title">月別×客戶 Pivot（台幣）</div>
+        <table class="table table-sm table-bordered" style="font-size:0.82rem;"><thead><tr><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:left;border:1px solid #388e3c;">月份</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">順達</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">愛爾蘭金士頓</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">海盜船</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">遠東金士頓</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">宇瞻</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">十銓</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">晶達光電</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">巨輪</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">宜鼎</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">三晰電工</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">景利</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">圓剛</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">佐茂</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">宸曜</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">創見</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">巨博</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">聰泰</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">全何</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">太業</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">芝奇</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">系統電子</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">銘異</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">電統</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">嘉彰</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">艾思科(科賦)</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">禾日泰</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">泰博</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">興能高科技</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">超眾</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">傑新</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">台北文華東方酒店</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">群聯</th><th style="background:#1b5e20;color:#fff;padding:8px 12px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">月合計</th></tr></thead><tbody><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2025-12</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">454,341</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">20,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">474,341</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-01</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">21,371,135</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">6,354,742</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">2,245,392</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,490,340</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">410,416</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,661,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">272,677</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">546,100</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">227,214</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">535,860</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">80,220</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">702,100</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">350,240</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">7,596</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">380,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">49,182</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">38,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">42,408</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">135,700</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">36,900,322</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-02</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">15,085,318</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">2,107,763</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,085,600</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">851,370</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">22,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">768,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">617,400</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">441,525</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">768,960</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">177,285</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">174,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">38,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">27,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">35,198</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">22,199,919</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-03</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">20,389,890</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,907,904</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">757,412</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">354,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">241,220</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">290,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">199,960</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">392,402</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">173,350</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">241,918</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">240,900</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">48,044</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">62,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">208,400</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">38,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">69,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">115,906</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">114,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">35,250</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">15,374</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">31,481</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">25,926,911</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-04</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">15,590,460</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">649,264</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,099,170</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">922,170</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">787,367</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,190,380</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">76,032</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">185,616</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">279,100</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">117,600</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">46,282</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">18,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">376,400</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">285,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">7,900</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,080</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">80,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">7,340</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">21,719,161</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-05</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">10,039,440</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,219,114</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,105,955</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">396,008</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">871,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">375,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">511,535</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">441,811</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">126,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">392,857</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">127,700</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">527,688</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">38,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">27,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">6,900</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">37,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">16,244,508</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-06</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,215,548</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">542,800</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">461,970</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">70,587</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">184,305</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">370,300</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">40,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">2,885,510</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-07</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">599,670</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">736,320</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">501,731</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">155,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">1,992,721</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-08</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">47,495</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">13,620</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">162,230</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">96,350</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">319,695</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-09</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">354,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">423,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">5,194</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">782,194</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-10</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">283,200</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,783,180</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">107,820</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">69,580</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">2,243,780</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-11</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">345,269</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">345,269</td></tr><tr><td style="padding:6px 12px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-12</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">26,218</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">68,900</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">-</td><td style="padding:6px 12px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">95,118</td></tr><tr><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">總計</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">82,476,243</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">14,054,004</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">6,883,825</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">5,849,378</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">4,897,572</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">3,094,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">2,519,275</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">2,498,227</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,895,065</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,039,274</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">990,201</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">858,336</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">854,832</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">819,700</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">396,522</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">388,300</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">383,996</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">380,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">347,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">231,082</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">209,480</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">154,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">149,908</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">135,906</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">135,700</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">114,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">90,250</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">80,000</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">69,580</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">64,812</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">37,500</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">31,481</td><td style="padding:6px 12px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">132,129,449</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <!-- Tab 2 客戶彙總 -->
+    <div class="tab-pane fade" id="tab2">
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-lg-5">
+          <div class="chart-wrap">
+            <div class="section-title">客戶金額占比</div>
+            <canvas id="pieChart" style="max-height:380px;"></canvas>
+          </div>
+        </div>
+        <div class="col-12 col-lg-7">
+          <div class="chart-wrap">
+            <div class="section-title">月別趨勢</div>
+            <canvas id="lineChart" style="max-height:380px;"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="accordion" id="custAccordion">
+        <div class="section-title">客戶月份展開</div>
+        
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c0">
+              <span class="badge me-2" style="background:#1b5e20">●</span>
+              <strong>順達</strong>
+              <span class="ms-auto fw-bold" style="color:#1b5e20">NT$ 82,476,243</span>
+            </button>
+          </h2>
+          <div id="c0" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 21,371,135</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 15,085,318</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 20,389,890</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 15,590,460</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 10,039,440</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c1">
+              <span class="badge me-2" style="background:#2e7d32">●</span>
+              <strong>愛爾蘭金士頓</strong>
+              <span class="ms-auto fw-bold" style="color:#2e7d32">NT$ 14,054,004</span>
+            </button>
+          </h2>
+          <div id="c1" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 6,354,742</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 2,107,763</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 1,907,904</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 649,264</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 1,219,114</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 1,215,548</td></tr><tr><td>2026-07</td><td class="text-end fw-bold">NT$ 599,670</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c2">
+              <span class="badge me-2" style="background:#388e3c">●</span>
+              <strong>海盜船</strong>
+              <span class="ms-auto fw-bold" style="color:#388e3c">NT$ 6,883,825</span>
+            </button>
+          </h2>
+          <div id="c2" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 2,245,392</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 1,085,600</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 757,412</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 1,099,170</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 1,105,955</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 542,800</td></tr><tr><td>2026-08</td><td class="text-end fw-bold">NT$ 47,495</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c3">
+              <span class="badge me-2" style="background:#43a047">●</span>
+              <strong>遠東金士頓</strong>
+              <span class="ms-auto fw-bold" style="color:#43a047">NT$ 5,849,378</span>
+            </button>
+          </h2>
+          <div id="c3" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 1,490,340</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 851,370</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 354,000</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 922,170</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 396,008</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 461,970</td></tr><tr><td>2026-07</td><td class="text-end fw-bold">NT$ 736,320</td></tr><tr><td>2026-09</td><td class="text-end fw-bold">NT$ 354,000</td></tr><tr><td>2026-10</td><td class="text-end fw-bold">NT$ 283,200</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c4">
+              <span class="badge me-2" style="background:#66bb6a">●</span>
+              <strong>宇瞻</strong>
+              <span class="ms-auto fw-bold" style="color:#66bb6a">NT$ 4,897,572</span>
+            </button>
+          </h2>
+          <div id="c4" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 410,416</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 22,000</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 241,220</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 787,367</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 871,500</td></tr><tr><td>2026-08</td><td class="text-end fw-bold">NT$ 13,620</td></tr><tr><td>2026-09</td><td class="text-end fw-bold">NT$ 423,000</td></tr><tr><td>2026-10</td><td class="text-end fw-bold">NT$ 1,783,180</td></tr><tr><td>2026-11</td><td class="text-end fw-bold">NT$ 345,269</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c5">
+              <span class="badge me-2" style="background:#0d47a1">●</span>
+              <strong>十銓</strong>
+              <span class="ms-auto fw-bold" style="color:#0d47a1">NT$ 3,094,000</span>
+            </button>
+          </h2>
+          <div id="c5" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 1,661,000</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 768,000</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 290,000</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 375,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c6">
+              <span class="badge me-2" style="background:#1565c0">●</span>
+              <strong>晶達光電</strong>
+              <span class="ms-auto fw-bold" style="color:#1565c0">NT$ 2,519,275</span>
+            </button>
+          </h2>
+          <div id="c6" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 617,400</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 199,960</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 1,190,380</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 511,535</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c7">
+              <span class="badge me-2" style="background:#1976d2">●</span>
+              <strong>巨輪</strong>
+              <span class="ms-auto fw-bold" style="color:#1976d2">NT$ 2,498,227</span>
+            </button>
+          </h2>
+          <div id="c7" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 272,677</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 441,525</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 392,402</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 76,032</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 441,811</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 70,587</td></tr><tr><td>2026-07</td><td class="text-end fw-bold">NT$ 501,731</td></tr><tr><td>2026-08</td><td class="text-end fw-bold">NT$ 162,230</td></tr><tr><td>2026-09</td><td class="text-end fw-bold">NT$ 5,194</td></tr><tr><td>2026-10</td><td class="text-end fw-bold">NT$ 107,820</td></tr><tr><td>2026-12</td><td class="text-end fw-bold">NT$ 26,218</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c8">
+              <span class="badge me-2" style="background:#2196f3">●</span>
+              <strong>宜鼎</strong>
+              <span class="ms-auto fw-bold" style="color:#2196f3">NT$ 1,895,065</span>
+            </button>
+          </h2>
+          <div id="c8" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 546,100</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 768,960</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 173,350</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 126,000</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 184,305</td></tr><tr><td>2026-08</td><td class="text-end fw-bold">NT$ 96,350</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c9">
+              <span class="badge me-2" style="background:#64b5f6">●</span>
+              <strong>三晰電工</strong>
+              <span class="ms-auto fw-bold" style="color:#64b5f6">NT$ 1,039,274</span>
+            </button>
+          </h2>
+          <div id="c9" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 227,214</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 177,285</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 241,918</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 392,857</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c10">
+              <span class="badge me-2" style="background:#f57f17">●</span>
+              <strong>景利</strong>
+              <span class="ms-auto fw-bold" style="color:#f57f17">NT$ 990,201</span>
+            </button>
+          </h2>
+          <div id="c10" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2025-12</td><td class="text-end fw-bold">NT$ 454,341</td></tr><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 535,860</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c11">
+              <span class="badge me-2" style="background:#f9a825">●</span>
+              <strong>圓剛</strong>
+              <span class="ms-auto fw-bold" style="color:#f9a825">NT$ 858,336</span>
+            </button>
+          </h2>
+          <div id="c11" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 80,220</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 240,900</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 185,616</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 127,700</td></tr><tr><td>2026-07</td><td class="text-end fw-bold">NT$ 155,000</td></tr><tr><td>2026-12</td><td class="text-end fw-bold">NT$ 68,900</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c12">
+              <span class="badge me-2" style="background:#fbc02d">●</span>
+              <strong>佐茂</strong>
+              <span class="ms-auto fw-bold" style="color:#fbc02d">NT$ 854,832</span>
+            </button>
+          </h2>
+          <div id="c12" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 48,044</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 279,100</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 527,688</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c13">
+              <span class="badge me-2" style="background:#fdd835">●</span>
+              <strong>宸曜</strong>
+              <span class="ms-auto fw-bold" style="color:#fdd835">NT$ 819,700</span>
+            </button>
+          </h2>
+          <div id="c13" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 702,100</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 117,600</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c14">
+              <span class="badge me-2" style="background:#fff176">●</span>
+              <strong>創見</strong>
+              <span class="ms-auto fw-bold" style="color:#fff176">NT$ 396,522</span>
+            </button>
+          </h2>
+          <div id="c14" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 350,240</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 46,282</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c15">
+              <span class="badge me-2" style="background:#b71c1c">●</span>
+              <strong>巨博</strong>
+              <span class="ms-auto fw-bold" style="color:#b71c1c">NT$ 388,300</span>
+            </button>
+          </h2>
+          <div id="c15" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 18,000</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 370,300</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c16">
+              <span class="badge me-2" style="background:#c62828">●</span>
+              <strong>聰泰</strong>
+              <span class="ms-auto fw-bold" style="color:#c62828">NT$ 383,996</span>
+            </button>
+          </h2>
+          <div id="c16" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 7,596</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 376,400</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c17">
+              <span class="badge me-2" style="background:#d32f2f">●</span>
+              <strong>全何</strong>
+              <span class="ms-auto fw-bold" style="color:#d32f2f">NT$ 380,000</span>
+            </button>
+          </h2>
+          <div id="c17" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 380,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c18">
+              <span class="badge me-2" style="background:#e53935">●</span>
+              <strong>太業</strong>
+              <span class="ms-auto fw-bold" style="color:#e53935">NT$ 347,000</span>
+            </button>
+          </h2>
+          <div id="c18" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 62,000</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 285,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c19">
+              <span class="badge me-2" style="background:#ef9a9a">●</span>
+              <strong>芝奇</strong>
+              <span class="ms-auto fw-bold" style="color:#ef9a9a">NT$ 231,082</span>
+            </button>
+          </h2>
+          <div id="c19" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 49,182</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 174,000</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 7,900</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c20">
+              <span class="badge me-2" style="background:#4a148c">●</span>
+              <strong>系統電子</strong>
+              <span class="ms-auto fw-bold" style="color:#4a148c">NT$ 209,480</span>
+            </button>
+          </h2>
+          <div id="c20" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 208,400</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 1,080</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c21">
+              <span class="badge me-2" style="background:#6a1b9a">●</span>
+              <strong>銘異</strong>
+              <span class="ms-auto fw-bold" style="color:#6a1b9a">NT$ 154,000</span>
+            </button>
+          </h2>
+          <div id="c21" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 38,000</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 38,000</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 38,000</td></tr><tr><td>2026-06</td><td class="text-end fw-bold">NT$ 40,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c22">
+              <span class="badge me-2" style="background:#7b1fa2">●</span>
+              <strong>電統</strong>
+              <span class="ms-auto fw-bold" style="color:#7b1fa2">NT$ 149,908</span>
+            </button>
+          </h2>
+          <div id="c22" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 42,408</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 38,000</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 69,500</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c23">
+              <span class="badge me-2" style="background:#ab47bc">●</span>
+              <strong>嘉彰</strong>
+              <span class="ms-auto fw-bold" style="color:#ab47bc">NT$ 135,906</span>
+            </button>
+          </h2>
+          <div id="c23" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2025-12</td><td class="text-end fw-bold">NT$ 20,000</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 115,906</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c24">
+              <span class="badge me-2" style="background:#ce93d8">●</span>
+              <strong>艾思科(科賦)</strong>
+              <span class="ms-auto fw-bold" style="color:#ce93d8">NT$ 135,700</span>
+            </button>
+          </h2>
+          <div id="c24" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-01</td><td class="text-end fw-bold">NT$ 135,700</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c25">
+              <span class="badge me-2" style="background:#e65100">●</span>
+              <strong>禾日泰</strong>
+              <span class="ms-auto fw-bold" style="color:#e65100">NT$ 114,000</span>
+            </button>
+          </h2>
+          <div id="c25" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 114,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c26">
+              <span class="badge me-2" style="background:#ef6c00">●</span>
+              <strong>泰博</strong>
+              <span class="ms-auto fw-bold" style="color:#ef6c00">NT$ 90,250</span>
+            </button>
+          </h2>
+          <div id="c26" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 27,500</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 35,250</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 27,500</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c27">
+              <span class="badge me-2" style="background:#f57c00">●</span>
+              <strong>興能高科技</strong>
+              <span class="ms-auto fw-bold" style="color:#f57c00">NT$ 80,000</span>
+            </button>
+          </h2>
+          <div id="c27" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 80,000</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c28">
+              <span class="badge me-2" style="background:#fb8c00">●</span>
+              <strong>超眾</strong>
+              <span class="ms-auto fw-bold" style="color:#fb8c00">NT$ 69,580</span>
+            </button>
+          </h2>
+          <div id="c28" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-10</td><td class="text-end fw-bold">NT$ 69,580</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c29">
+              <span class="badge me-2" style="background:#ffa726">●</span>
+              <strong>傑新</strong>
+              <span class="ms-auto fw-bold" style="color:#ffa726">NT$ 64,812</span>
+            </button>
+          </h2>
+          <div id="c29" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-02</td><td class="text-end fw-bold">NT$ 35,198</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 15,374</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">NT$ 7,340</td></tr><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 6,900</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c30">
+              <span class="badge me-2" style="background:#006064">●</span>
+              <strong>台北文華東方酒店</strong>
+              <span class="ms-auto fw-bold" style="color:#006064">NT$ 37,500</span>
+            </button>
+          </h2>
+          <div id="c30" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-05</td><td class="text-end fw-bold">NT$ 37,500</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#c31">
+              <span class="badge me-2" style="background:#00838f">●</span>
+              <strong>群聯</strong>
+              <span class="ms-auto fw-bold" style="color:#00838f">NT$ 31,481</span>
+            </button>
+          </h2>
+          <div id="c31" class="accordion-collapse collapse">
+            <div class="accordion-body p-2">
+              <table class="table table-sm mb-0" style="font-size:.82rem;max-width:300px;">
+                <thead class="table-dark"><tr><th>月份</th><th class="text-end">台幣金額</th></tr></thead>
+                <tbody><tr><td>2026-03</td><td class="text-end fw-bold">NT$ 31,481</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3 本週新單 -->
+    <div class="tab-pane fade" id="tab3">
+      <div class="alert alert-success d-flex align-items-center mb-3" style="border-radius:10px;">
+        <span>本週（2026-04-27 ～ 2026-05-03）共 <strong>35</strong> 筆新單，
+        台幣合計 <strong>NT$ 1,215,045</strong></span>
+      </div>
+      <div class="accordion" id="weekAccordion">
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button " type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk0">
+              <span class="badge me-2" style="background:#1b5e20">●</span>
+              <strong>宇瞻</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">8 筆</span>
+              <span class="ms-auto fw-bold" style="color:#1b5e20">NT$ 826,800</span>
+            </button>
+          </h2>
+          <div id="wk0" class="accordion-collapse collapse show">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260427001</td><td>AP10B-5W1-01P-1</td><td>DDR5 ZADAK SPARK後板白-印刷白LOGO-薄背膠</td><td class="text-end">100</td><td>NTD</td><td class="text-end">46.690</td><td class="text-end fw-bold">4,669</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10B-5W1-01P-1</td><td>DDR5 ZADAK SPARK後板白-印刷白LOGO-薄背膠</td><td class="text-end">4,900</td><td>NTD</td><td class="text-end">46.690</td><td class="text-end fw-bold">228,781</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10B-5D1-01P-1</td><td>DDR5 ZADAK SPARK後板黑-印刷灰LOGO-薄背膠</td><td class="text-end">100</td><td>NTD</td><td class="text-end">46.690</td><td class="text-end fw-bold">4,669</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10B-5D1-01P-1</td><td>DDR5 ZADAK SPARK後板黑-印刷灰LOGO-薄背膠</td><td class="text-end">4,900</td><td>NTD</td><td class="text-end">46.690</td><td class="text-end fw-bold">228,781</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10A-5D1-01E-1</td><td>DDR5 ZADAK SPARK前板黑-印刷灰LOGO-厚背膠</td><td class="text-end">100</td><td>NTD</td><td class="text-end">35.990</td><td class="text-end fw-bold">3,599</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10A-5D1-01E-1</td><td>DDR5 ZADAK SPARK前板黑-印刷灰LOGO-厚背膠</td><td class="text-end">4,900</td><td>NTD</td><td class="text-end">35.990</td><td class="text-end fw-bold">176,351</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10A-5W1-01E-1</td><td>DDR5 ZADAK SPARK前板白-印刷白LOGO-厚背膠</td><td class="text-end">100</td><td>NTD</td><td class="text-end">35.990</td><td class="text-end fw-bold">3,599</td><td>2026-05-05</td></tr><tr><td>260427001</td><td>AP10A-5W1-01E-1</td><td>DDR5 ZADAK SPARK前板白-印刷白LOGO-厚背膠</td><td class="text-end">4,900</td><td>NTD</td><td class="text-end">35.990</td><td class="text-end fw-bold">176,351</td><td>2026-05-05</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk1">
+              <span class="badge me-2" style="background:#2e7d32">●</span>
+              <strong>宜鼎</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">4 筆</span>
+              <span class="ms-auto fw-bold" style="color:#2e7d32">NT$ 280,655</span>
+            </button>
+          </h2>
+          <div id="wk1" class="accordion-collapse collapse ">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260428004</td><td>IN04A-5G2</td><td>INO HS344本體鐵灰</td><td class="text-end">15,000</td><td>NTD</td><td class="text-end">11.620</td><td class="text-end fw-bold">174,300</td><td>2026-06-22</td></tr><tr><td>260428004</td><td>IN01A-5G2</td><td>INO Cap鋁帽蓋鐵灰</td><td class="text-end">1,500</td><td>NTD</td><td class="text-end">6.670</td><td class="text-end fw-bold">10,005</td><td>2026-06-22</td></tr><tr><td>260428004</td><td>IN01A-5G2</td><td>INO Cap鋁帽蓋鐵灰</td><td class="text-end">5,000</td><td>NTD</td><td class="text-end">6.670</td><td class="text-end fw-bold">33,350</td><td>2026-08-05</td></tr><tr><td>260428004</td><td>IN02A-5G2-02</td><td>INO HS286本體鐵灰-印刷紅白LOGO</td><td class="text-end">5,000</td><td>NTD</td><td class="text-end">12.600</td><td class="text-end fw-bold">63,000</td><td>2026-08-05</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk2">
+              <span class="badge me-2" style="background:#388e3c">●</span>
+              <strong>圓剛</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">1 筆</span>
+              <span class="ms-auto fw-bold" style="color:#388e3c">NT$ 71,000</span>
+            </button>
+          </h2>
+          <div id="wk2" class="accordion-collapse collapse ">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260428005</td><td>AV16P-5S1-01</td><td>T2508P HOUSING銀本色(陽極)-AVerMedia</td><td class="text-end">1,000</td><td>NTD</td><td class="text-end">71.000</td><td class="text-end fw-bold">71,000</td><td>2026-05-06</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk3">
+              <span class="badge me-2" style="background:#43a047">●</span>
+              <strong>巨博</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">4 筆</span>
+              <span class="ms-auto fw-bold" style="color:#43a047">NT$ 18,000</span>
+            </button>
+          </h2>
+          <div id="wk3" class="accordion-collapse collapse ">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260430001</td><td>JB001-01</td><td>aer-holder-connection-1</td><td class="text-end">15</td><td>NTD</td><td class="text-end">288.700</td><td class="text-end fw-bold">4,331</td><td>2026-04-30</td></tr><tr><td>260430001</td><td>JB001-02</td><td>aer-holder-connection-2</td><td class="text-end">10</td><td>NTD</td><td class="text-end">336.900</td><td class="text-end fw-bold">3,369</td><td>2026-04-30</td></tr><tr><td>260430001</td><td>JB001-03</td><td>aer-handle-frame-side</td><td class="text-end">5</td><td>NTD</td><td class="text-end">673.800</td><td class="text-end fw-bold">3,369</td><td>2026-04-30</td></tr><tr><td>260430001</td><td>JB001-04</td><td>aer-handle-frame-top</td><td class="text-end">2</td><td>NTD</td><td class="text-end">3,465.500</td><td class="text-end fw-bold">6,931</td><td>2026-04-30</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk4">
+              <span class="badge me-2" style="background:#66bb6a">●</span>
+              <strong>傑新</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">16 筆</span>
+              <span class="ms-auto fw-bold" style="color:#66bb6a">NT$ 12,490</span>
+            </button>
+          </h2>
+          <div id="wk4" class="accordion-collapse collapse ">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260428002</td><td>AL13A-5B1-06</td><td>U10本體陽極,藍_16G</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.700</td><td class="text-end fw-bold">670</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL13A-5B1-07</td><td>U10本體陽極,藍_32G</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.700</td><td class="text-end fw-bold">670</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL13A-5H1-06</td><td>U10本體陽極,金_16G</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.700</td><td class="text-end fw-bold">670</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL13A-5H1-07</td><td>U10本體陽極,金_32G</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.700</td><td class="text-end fw-bold">670</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL13A-5G1-06</td><td>U10本體陽極,灰_16G</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.700</td><td class="text-end fw-bold">670</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL19A-5S1-06</td><td>U30本體銀色16G</td><td class="text-end">200</td><td>NTD</td><td class="text-end">5.600</td><td class="text-end fw-bold">1,120</td><td>2026-04-28</td></tr><tr><td>260428002</td><td>AL19A-5S1-07</td><td>U30本體銀色32G</td><td class="text-end">200</td><td>NTD</td><td class="text-end">5.600</td><td class="text-end fw-bold">1,120</td><td>2026-04-28</td></tr><tr><td>260428003</td><td>AL01P-5Z0-06</td><td>16GB Micro SD 3.0 C10  addlink(ad16GBMSH310A)</td><td class="text-end">300</td><td>NTD</td><td class="text-end">2.500</td><td class="text-end fw-bold">750</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL01P-5Z0-07</td><td>Micro SD 3.0 C10(ad32GBMSH310A)</td><td class="text-end">300</td><td>NTD</td><td class="text-end">2.500</td><td class="text-end fw-bold">750</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL13P-5B1-06</td><td>U10陽極,藍_16G(ad16GBU10B2)</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">600</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL13P-5H1-06</td><td>U10陽極,金_16G(ad16GBU10C2)</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">600</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL13P-5G1-06</td><td>U10陽極,灰_16G(ad16GBU10G2)</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">600</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL19P-5S1-06</td><td>U30陽極,銀_16G(ad16GBU30S2)</td><td class="text-end">200</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">1,200</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL13P-5B1-07</td><td>U10陽極,藍_32G(ad32GBU10B2)</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">600</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL13P-5H1-07</td><td>U10陽極,金_32G(ad32GBU10C2)</td><td class="text-end">100</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">600</td><td>2026-05-05</td></tr><tr><td>260428003</td><td>AL19P-5S1-07</td><td>U30陽極,銀_32G(ad32GBU30S2)</td><td class="text-end">200</td><td>NTD</td><td class="text-end">6.000</td><td class="text-end fw-bold">1,200</td><td>2026-05-05</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#wk5">
+              <span class="badge me-2" style="background:#0d47a1">●</span>
+              <strong>晶達光電</strong>
+              <span class="ms-3 text-muted" style="font-size:.85rem;">2 筆</span>
+              <span class="ms-auto fw-bold" style="color:#0d47a1">NT$ 6,100</span>
+            </button>
+          </h2>
+          <div id="wk5" class="accordion-collapse collapse ">
+            <div class="accordion-body p-2">
+              <table class="table table-sm table-hover mb-0" style="font-size:.82rem;">
+                <thead class="table-dark">
+                  <tr><th>訂單號</th><th>品號</th><th>品名</th><th class="text-end">數量</th>
+                      <th>幣別</th><th class="text-end">單價</th><th class="text-end">台幣金額</th><th>交貨日</th></tr>
+                </thead>
+                <tbody><tr><td>260430002</td><td>JD003-06</td><td>1330-Back Cover</td><td class="text-end">5</td><td>NTD</td><td class="text-end">730.000</td><td class="text-end fw-bold">3,650</td><td>2026-05-20</td></tr><tr><td>260430002</td><td>JD003-05</td><td>1330-Down BackCover</td><td class="text-end">5</td><td>NTD</td><td class="text-end">490.000</td><td class="text-end fw-bold">2,450</td><td>2026-05-20</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div></div>
+    </div>
+
+  </div><!-- tab-content -->
+</div><!-- container -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const months   = ["2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
+const datasets = [{"label": "順達", "data": [0.0, 21371135.0, 15085318.0, 20389890.0, 15590460.0, 10039440.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#1b5e20", "stack": "s"}, {"label": "愛爾蘭金士頓", "data": [0.0, 6354742.0, 2107763.0, 1907904.0, 649264.0, 1219114.0, 1215548.0, 599670.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#2e7d32", "stack": "s"}, {"label": "海盜船", "data": [0.0, 2245392.0, 1085600.0, 757412.0, 1099170.0, 1105955.0, 542800.0, 0.0, 47495.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#388e3c", "stack": "s"}, {"label": "遠東金士頓", "data": [0.0, 1490340.0, 851370.0, 354000.0, 922170.0, 396008.0, 461970.0, 736320.0, 0.0, 354000.0, 283200.0, 0.0, 0.0], "backgroundColor": "#43a047", "stack": "s"}, {"label": "宇瞻", "data": [0.0, 410416.0, 22000.0, 241220.0, 787367.0, 871500.0, 0.0, 0.0, 13620.0, 423000.0, 1783180.0, 345269.0, 0.0], "backgroundColor": "#66bb6a", "stack": "s"}, {"label": "十銓", "data": [0.0, 1661000.0, 768000.0, 290000.0, 0.0, 375000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#0d47a1", "stack": "s"}, {"label": "晶達光電", "data": [0.0, 0.0, 617400.0, 199960.0, 1190380.0, 511535.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#1565c0", "stack": "s"}, {"label": "巨輪", "data": [0.0, 272677.0, 441525.0, 392402.0, 76032.0, 441811.0, 70587.0, 501731.0, 162230.0, 5194.0, 107820.0, 0.0, 26218.0], "backgroundColor": "#1976d2", "stack": "s"}, {"label": "宜鼎", "data": [0.0, 546100.0, 768960.0, 173350.0, 0.0, 126000.0, 184305.0, 0.0, 96350.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#2196f3", "stack": "s"}, {"label": "三晰電工", "data": [0.0, 227214.0, 177285.0, 241918.0, 0.0, 392857.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#64b5f6", "stack": "s"}, {"label": "景利", "data": [454341.0, 535860.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#f57f17", "stack": "s"}, {"label": "圓剛", "data": [0.0, 80220.0, 0.0, 240900.0, 185616.0, 127700.0, 0.0, 155000.0, 0.0, 0.0, 0.0, 0.0, 68900.0], "backgroundColor": "#f9a825", "stack": "s"}, {"label": "佐茂", "data": [0.0, 0.0, 0.0, 48044.0, 279100.0, 527688.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#fbc02d", "stack": "s"}, {"label": "宸曜", "data": [0.0, 702100.0, 0.0, 0.0, 117600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#fdd835", "stack": "s"}, {"label": "創見", "data": [0.0, 350240.0, 0.0, 0.0, 46282.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#fff176", "stack": "s"}, {"label": "巨博", "data": [0.0, 0.0, 0.0, 0.0, 18000.0, 0.0, 370300.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#b71c1c", "stack": "s"}, {"label": "聰泰", "data": [0.0, 7596.0, 0.0, 0.0, 376400.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#c62828", "stack": "s"}, {"label": "全何", "data": [0.0, 380000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#d32f2f", "stack": "s"}, {"label": "太業", "data": [0.0, 0.0, 0.0, 62000.0, 285000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#e53935", "stack": "s"}, {"label": "芝奇", "data": [0.0, 49182.0, 174000.0, 0.0, 7900.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#ef9a9a", "stack": "s"}, {"label": "系統電子", "data": [0.0, 0.0, 0.0, 208400.0, 1080.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#4a148c", "stack": "s"}, {"label": "銘異", "data": [0.0, 38000.0, 0.0, 38000.0, 0.0, 38000.0, 40000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#6a1b9a", "stack": "s"}, {"label": "電統", "data": [0.0, 42408.0, 38000.0, 69500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#7b1fa2", "stack": "s"}, {"label": "嘉彰", "data": [20000.0, 0.0, 0.0, 115906.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#ab47bc", "stack": "s"}, {"label": "艾思科(科賦)", "data": [0.0, 135700.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#ce93d8", "stack": "s"}, {"label": "禾日泰", "data": [0.0, 0.0, 0.0, 114000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#e65100", "stack": "s"}, {"label": "泰博", "data": [0.0, 0.0, 27500.0, 35250.0, 0.0, 27500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#ef6c00", "stack": "s"}, {"label": "興能高科技", "data": [0.0, 0.0, 0.0, 0.0, 80000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#f57c00", "stack": "s"}, {"label": "超眾", "data": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 69580.0, 0.0, 0.0], "backgroundColor": "#fb8c00", "stack": "s"}, {"label": "傑新", "data": [0.0, 0.0, 35198.0, 15374.0, 7340.0, 6900.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#ffa726", "stack": "s"}, {"label": "台北文華東方酒店", "data": [0.0, 0.0, 0.0, 0.0, 0.0, 37500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#006064", "stack": "s"}, {"label": "群聯", "data": [0.0, 0.0, 0.0, 31481.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "backgroundColor": "#00838f", "stack": "s"}];
+const monthly  = [474341.0, 36900322.0, 22199919.0, 25926911.0, 21719161.0, 16244508.0, 2885510.0, 1992721.0, 319695.0, 782194.0, 2243780.0, 345269.0, 95118.0];
+const weekData = {"宇瞻": {"total": 826800.0, "rows": [{"order_no": "260427001", "item_code": "AP10B-5W1-01P-1", "item_name": "DDR5 ZADAK SPARK後板白-印刷白LOGO-薄背膠", "qty": 100, "currency": "NTD", "unit_price": 46.69, "amount_twd": 4669.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10B-5W1-01P-1", "item_name": "DDR5 ZADAK SPARK後板白-印刷白LOGO-薄背膠", "qty": 4900, "currency": "NTD", "unit_price": 46.69, "amount_twd": 228781.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10B-5D1-01P-1", "item_name": "DDR5 ZADAK SPARK後板黑-印刷灰LOGO-薄背膠", "qty": 100, "currency": "NTD", "unit_price": 46.69, "amount_twd": 4669.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10B-5D1-01P-1", "item_name": "DDR5 ZADAK SPARK後板黑-印刷灰LOGO-薄背膠", "qty": 4900, "currency": "NTD", "unit_price": 46.69, "amount_twd": 228781.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10A-5D1-01E-1", "item_name": "DDR5 ZADAK SPARK前板黑-印刷灰LOGO-厚背膠", "qty": 100, "currency": "NTD", "unit_price": 35.99, "amount_twd": 3599.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10A-5D1-01E-1", "item_name": "DDR5 ZADAK SPARK前板黑-印刷灰LOGO-厚背膠", "qty": 4900, "currency": "NTD", "unit_price": 35.99, "amount_twd": 176351.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10A-5W1-01E-1", "item_name": "DDR5 ZADAK SPARK前板白-印刷白LOGO-厚背膠", "qty": 100, "currency": "NTD", "unit_price": 35.99, "amount_twd": 3599.0, "delivery": "2026-05-05"}, {"order_no": "260427001", "item_code": "AP10A-5W1-01E-1", "item_name": "DDR5 ZADAK SPARK前板白-印刷白LOGO-厚背膠", "qty": 4900, "currency": "NTD", "unit_price": 35.99, "amount_twd": 176351.0, "delivery": "2026-05-05"}]}, "宜鼎": {"total": 280655.0, "rows": [{"order_no": "260428004", "item_code": "IN04A-5G2", "item_name": "INO HS344本體鐵灰", "qty": 15000, "currency": "NTD", "unit_price": 11.62, "amount_twd": 174300.0, "delivery": "2026-06-22"}, {"order_no": "260428004", "item_code": "IN01A-5G2", "item_name": "INO Cap鋁帽蓋鐵灰", "qty": 1500, "currency": "NTD", "unit_price": 6.67, "amount_twd": 10005.0, "delivery": "2026-06-22"}, {"order_no": "260428004", "item_code": "IN01A-5G2", "item_name": "INO Cap鋁帽蓋鐵灰", "qty": 5000, "currency": "NTD", "unit_price": 6.67, "amount_twd": 33350.0, "delivery": "2026-08-05"}, {"order_no": "260428004", "item_code": "IN02A-5G2-02", "item_name": "INO HS286本體鐵灰-印刷紅白LOGO", "qty": 5000, "currency": "NTD", "unit_price": 12.6, "amount_twd": 63000.0, "delivery": "2026-08-05"}]}, "圓剛": {"total": 71000.0, "rows": [{"order_no": "260428005", "item_code": "AV16P-5S1-01", "item_name": "T2508P HOUSING銀本色(陽極)-AVerMedia", "qty": 1000, "currency": "NTD", "unit_price": 71.0, "amount_twd": 71000.0, "delivery": "2026-05-06"}]}, "巨博": {"total": 18000.0, "rows": [{"order_no": "260430001", "item_code": "JB001-01", "item_name": "aer-holder-connection-1", "qty": 15, "currency": "NTD", "unit_price": 288.7, "amount_twd": 4331.0, "delivery": "2026-04-30"}, {"order_no": "260430001", "item_code": "JB001-02", "item_name": "aer-holder-connection-2", "qty": 10, "currency": "NTD", "unit_price": 336.9, "amount_twd": 3369.0, "delivery": "2026-04-30"}, {"order_no": "260430001", "item_code": "JB001-03", "item_name": "aer-handle-frame-side", "qty": 5, "currency": "NTD", "unit_price": 673.8, "amount_twd": 3369.0, "delivery": "2026-04-30"}, {"order_no": "260430001", "item_code": "JB001-04", "item_name": "aer-handle-frame-top", "qty": 2, "currency": "NTD", "unit_price": 3465.5, "amount_twd": 6931.0, "delivery": "2026-04-30"}]}, "傑新": {"total": 12490.0, "rows": [{"order_no": "260428002", "item_code": "AL13A-5B1-06", "item_name": "U10本體陽極,藍_16G", "qty": 100, "currency": "NTD", "unit_price": 6.7, "amount_twd": 670.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL13A-5B1-07", "item_name": "U10本體陽極,藍_32G", "qty": 100, "currency": "NTD", "unit_price": 6.7, "amount_twd": 670.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL13A-5H1-06", "item_name": "U10本體陽極,金_16G", "qty": 100, "currency": "NTD", "unit_price": 6.7, "amount_twd": 670.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL13A-5H1-07", "item_name": "U10本體陽極,金_32G", "qty": 100, "currency": "NTD", "unit_price": 6.7, "amount_twd": 670.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL13A-5G1-06", "item_name": "U10本體陽極,灰_16G", "qty": 100, "currency": "NTD", "unit_price": 6.7, "amount_twd": 670.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL19A-5S1-06", "item_name": "U30本體銀色16G", "qty": 200, "currency": "NTD", "unit_price": 5.6, "amount_twd": 1120.0, "delivery": "2026-04-28"}, {"order_no": "260428002", "item_code": "AL19A-5S1-07", "item_name": "U30本體銀色32G", "qty": 200, "currency": "NTD", "unit_price": 5.6, "amount_twd": 1120.0, "delivery": "2026-04-28"}, {"order_no": "260428003", "item_code": "AL01P-5Z0-06", "item_name": "16GB Micro SD 3.0 C10  addlink(ad16GBMSH310A)", "qty": 300, "currency": "NTD", "unit_price": 2.5, "amount_twd": 750.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL01P-5Z0-07", "item_name": "Micro SD 3.0 C10(ad32GBMSH310A)", "qty": 300, "currency": "NTD", "unit_price": 2.5, "amount_twd": 750.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL13P-5B1-06", "item_name": "U10陽極,藍_16G(ad16GBU10B2)", "qty": 100, "currency": "NTD", "unit_price": 6.0, "amount_twd": 600.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL13P-5H1-06", "item_name": "U10陽極,金_16G(ad16GBU10C2)", "qty": 100, "currency": "NTD", "unit_price": 6.0, "amount_twd": 600.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL13P-5G1-06", "item_name": "U10陽極,灰_16G(ad16GBU10G2)", "qty": 100, "currency": "NTD", "unit_price": 6.0, "amount_twd": 600.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL19P-5S1-06", "item_name": "U30陽極,銀_16G(ad16GBU30S2)", "qty": 200, "currency": "NTD", "unit_price": 6.0, "amount_twd": 1200.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL13P-5B1-07", "item_name": "U10陽極,藍_32G(ad32GBU10B2)", "qty": 100, "currency": "NTD", "unit_price": 6.0, "amount_twd": 600.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL13P-5H1-07", "item_name": "U10陽極,金_32G(ad32GBU10C2)", "qty": 100, "currency": "NTD", "unit_price": 6.0, "amount_twd": 600.0, "delivery": "2026-05-05"}, {"order_no": "260428003", "item_code": "AL19P-5S1-07", "item_name": "U30陽極,銀_32G(ad32GBU30S2)", "qty": 200, "currency": "NTD", "unit_price": 6.0, "amount_twd": 1200.0, "delivery": "2026-05-05"}]}, "晶達光電": {"total": 6100.0, "rows": [{"order_no": "260430002", "item_code": "JD003-06", "item_name": "1330-Back Cover", "qty": 5, "currency": "NTD", "unit_price": 730.0, "amount_twd": 3650.0, "delivery": "2026-05-20"}, {"order_no": "260430002", "item_code": "JD003-05", "item_name": "1330-Down BackCover", "qty": 5, "currency": "NTD", "unit_price": 490.0, "amount_twd": 2450.0, "delivery": "2026-05-20"}]}};
+const custMonthly = {"順達": {"total": 82476243.0, "monthly": {"2026-01": 21371135.0, "2026-02": 15085318.0, "2026-03": 20389890.0, "2026-04": 15590460.0, "2026-05": 10039440.0}}, "愛爾蘭金士頓": {"total": 14054004.0, "monthly": {"2026-01": 6354742.0, "2026-02": 2107763.0, "2026-03": 1907904.0, "2026-04": 649264.0, "2026-05": 1219114.0, "2026-06": 1215548.0, "2026-07": 599670.0}}, "海盜船": {"total": 6883825.0, "monthly": {"2026-01": 2245392.0, "2026-02": 1085600.0, "2026-03": 757412.0, "2026-04": 1099170.0, "2026-05": 1105955.0, "2026-06": 542800.0, "2026-08": 47495.0}}, "遠東金士頓": {"total": 5849378.0, "monthly": {"2026-01": 1490340.0, "2026-02": 851370.0, "2026-03": 354000.0, "2026-04": 922170.0, "2026-05": 396008.0, "2026-06": 461970.0, "2026-07": 736320.0, "2026-09": 354000.0, "2026-10": 283200.0}}, "宇瞻": {"total": 4897572.0, "monthly": {"2026-01": 410416.0, "2026-02": 22000.0, "2026-03": 241220.0, "2026-04": 787367.0, "2026-05": 871500.0, "2026-08": 13620.0, "2026-09": 423000.0, "2026-10": 1783180.0, "2026-11": 345269.0}}, "十銓": {"total": 3094000.0, "monthly": {"2026-01": 1661000.0, "2026-02": 768000.0, "2026-03": 290000.0, "2026-05": 375000.0}}, "晶達光電": {"total": 2519275.0, "monthly": {"2026-02": 617400.0, "2026-03": 199960.0, "2026-04": 1190380.0, "2026-05": 511535.0}}, "巨輪": {"total": 2498227.0, "monthly": {"2026-01": 272677.0, "2026-02": 441525.0, "2026-03": 392402.0, "2026-04": 76032.0, "2026-05": 441811.0, "2026-06": 70587.0, "2026-07": 501731.0, "2026-08": 162230.0, "2026-09": 5194.0, "2026-10": 107820.0, "2026-12": 26218.0}}, "宜鼎": {"total": 1895065.0, "monthly": {"2026-01": 546100.0, "2026-02": 768960.0, "2026-03": 173350.0, "2026-05": 126000.0, "2026-06": 184305.0, "2026-08": 96350.0}}, "三晰電工": {"total": 1039274.0, "monthly": {"2026-01": 227214.0, "2026-02": 177285.0, "2026-03": 241918.0, "2026-05": 392857.0}}, "景利": {"total": 990201.0, "monthly": {"2025-12": 454341.0, "2026-01": 535860.0}}, "圓剛": {"total": 858336.0, "monthly": {"2026-01": 80220.0, "2026-03": 240900.0, "2026-04": 185616.0, "2026-05": 127700.0, "2026-07": 155000.0, "2026-12": 68900.0}}, "佐茂": {"total": 854832.0, "monthly": {"2026-03": 48044.0, "2026-04": 279100.0, "2026-05": 527688.0}}, "宸曜": {"total": 819700.0, "monthly": {"2026-01": 702100.0, "2026-04": 117600.0}}, "創見": {"total": 396522.0, "monthly": {"2026-01": 350240.0, "2026-04": 46282.0}}, "巨博": {"total": 388300.0, "monthly": {"2026-04": 18000.0, "2026-06": 370300.0}}, "聰泰": {"total": 383996.0, "monthly": {"2026-01": 7596.0, "2026-04": 376400.0}}, "全何": {"total": 380000.0, "monthly": {"2026-01": 380000.0}}, "太業": {"total": 347000.0, "monthly": {"2026-03": 62000.0, "2026-04": 285000.0}}, "芝奇": {"total": 231082.0, "monthly": {"2026-01": 49182.0, "2026-02": 174000.0, "2026-04": 7900.0}}, "系統電子": {"total": 209480.0, "monthly": {"2026-03": 208400.0, "2026-04": 1080.0}}, "銘異": {"total": 154000.0, "monthly": {"2026-01": 38000.0, "2026-03": 38000.0, "2026-05": 38000.0, "2026-06": 40000.0}}, "電統": {"total": 149908.0, "monthly": {"2026-01": 42408.0, "2026-02": 38000.0, "2026-03": 69500.0}}, "嘉彰": {"total": 135906.0, "monthly": {"2025-12": 20000.0, "2026-03": 115906.0}}, "艾思科(科賦)": {"total": 135700.0, "monthly": {"2026-01": 135700.0}}, "禾日泰": {"total": 114000.0, "monthly": {"2026-03": 114000.0}}, "泰博": {"total": 90250.0, "monthly": {"2026-02": 27500.0, "2026-03": 35250.0, "2026-05": 27500.0}}, "興能高科技": {"total": 80000.0, "monthly": {"2026-04": 80000.0}}, "超眾": {"total": 69580.0, "monthly": {"2026-10": 69580.0}}, "傑新": {"total": 64812.0, "monthly": {"2026-02": 35198.0, "2026-03": 15374.0, "2026-04": 7340.0, "2026-05": 6900.0}}, "台北文華東方酒店": {"total": 37500.0, "monthly": {"2026-05": 37500.0}}, "群聯": {"total": 31481.0, "monthly": {"2026-03": 31481.0}}};
+
+// 格式化軸標籤
+function fmtY(v){
+  if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if(v>=1e4) return '$'+(v/1e4).toFixed(0)+'萬';
+  return '$'+v.toLocaleString();
+}
+
+// 1. 堆疊長條圖
+new Chart(document.getElementById('barChart'),{
+  type:'bar',
+  data:{labels:months, datasets},
+  options:{
+    responsive:true, maintainAspectRatio:true,
+    plugins:{
+      legend:{position:'right', labels:{font:{family:'Microsoft JhengHei'},boxWidth:12,padding:8}},
+      tooltip:{
+        callbacks:{
+          label:ctx=>`${ctx.dataset.label}: NT$ ${ctx.parsed.y.toLocaleString()}`
+        }
+      }
+    },
+    scales:{
+      x:{stacked:true, ticks:{font:{family:'Microsoft JhengHei'}}},
+      y:{stacked:true, ticks:{callback:fmtY, font:{family:'Microsoft JhengHei'}},
+         grid:{color:'#f0f0f0'}}
+    }
+  }
+});
+
+// 2. 圓餅圖（客戶占比）
+const custTotals = Object.entries(custMonthly).map(([k,v])=>v.total).filter(v=>v>0);
+const custLabels = Object.entries(custMonthly).filter(([k,v])=>v.total>0).map(([k])=>k);
+const pieColors  = ["#1b5e20", "#2e7d32", "#388e3c", "#43a047", "#66bb6a", "#0d47a1", "#1565c0", "#1976d2", "#2196f3", "#64b5f6", "#f57f17", "#f9a825", "#fbc02d", "#fdd835", "#fff176", "#b71c1c", "#c62828", "#d32f2f", "#e53935", "#ef9a9a", "#4a148c", "#6a1b9a", "#7b1fa2", "#ab47bc", "#ce93d8", "#e65100", "#ef6c00", "#f57c00", "#fb8c00", "#ffa726", "#006064", "#00838f", "#0097a7", "#26c6da", "#80deea"].slice(0,custLabels.length);
+new Chart(document.getElementById('pieChart'),{
+  type:'doughnut',
+  data:{labels:custLabels, datasets:[{data:custTotals,backgroundColor:pieColors,borderWidth:2}]},
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{position:'right',labels:{font:{family:'Microsoft JhengHei'},boxWidth:12}},
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: NT$ ${ctx.parsed.toLocaleString()}`}}
+    }
+  }
+});
+
+// 3. 月別趨勢折線圖
+new Chart(document.getElementById('lineChart'),{
+  type:'bar',
+  data:{
+    labels:months,
+    datasets:[{
+      label:'月別台幣合計',
+      data:monthly,
+      backgroundColor:'rgba(27,94,32,0.75)',
+      borderColor:'#1b5e20',
+      borderWidth:2,
+      borderRadius:4,
+    }]
+  },
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`NT$ ${ctx.parsed.y.toLocaleString()}`}}
+    },
+    scales:{
+      x:{ticks:{font:{family:'Microsoft JhengHei'}}},
+      y:{ticks:{callback:fmtY,font:{family:'Microsoft JhengHei'}},grid:{color:'#f0f0f0'}}
+    }
+  }
+});
+</script>
+</body>
+</html>

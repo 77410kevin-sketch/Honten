@@ -1,0 +1,6 @@
+pyodbc
+pandas
+openpyxl
+python-dotenv
+plotly
+kaleido

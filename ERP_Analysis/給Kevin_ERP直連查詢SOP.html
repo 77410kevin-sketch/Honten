@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>給 Kevin — ERP 資料庫直連查詢 SOP</title>
+<style>
+  body { font-family: "Microsoft JhengHei", Arial, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 24px; line-height: 1.7; color: #222; background: #f8f9fa; }
+  h1 { color: #1e3a5f; border-bottom: 3px solid #1e3a5f; padding-bottom: 8px; }
+  h2 { color: #1e3a5f; border-left: 5px solid #1e3a5f; padding-left: 10px; margin-top: 36px; }
+  h3 { color: #2c5282; margin-top: 24px; }
+  blockquote { background: #e8f4ff; border-left: 4px solid #2b6cb0; padding: 10px 16px; margin: 12px 0; color: #2a4365; }
+  .warn { background: #fff5f5; border-left: 4px solid #c53030; padding: 10px 16px; margin: 12px 0; color: #742a2a; }
+  .tip  { background: #f0fff4; border-left: 4px solid #2f855a; padding: 10px 16px; margin: 12px 0; color: #22543d; }
+  .info { background: #fffbeb; border-left: 4px solid #d69e2e; padding: 10px 16px; margin: 12px 0; color: #744210; }
+  code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-family: Consolas, "Courier New", monospace; color: #c53030; }
+  pre { background: #1a202c; color: #e2e8f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-family: Consolas, "Courier New", monospace; font-size: 0.9em; line-height: 1.5; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; background: #fff; }
+  th { background: #1e3a5f; color: #fff; padding: 10px; text-align: left; border: 1px solid #2d4a6e; }
+  td { padding: 10px; border: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7fafc; }
+  ul, ol { padding-left: 28px; }
+  li { margin-bottom: 6px; }
+  hr { border: 0; border-top: 2px solid #cbd5e0; margin: 28px 0; }
+  .toc { background: #fff; border: 1px solid #cbd5e0; padding: 16px 20px; border-radius: 6px; margin-bottom: 24px; }
+  .toc a { color: #2b6cb0; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .badge-danger { background: #c53030; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }
+  .badge-success { background: #2f855a; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }
+  .badge-warn { background: #d69e2e; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }
+  .meta { color: #718096; font-size: 0.9em; margin-top: -8px; }
+</style>
+</head>
+<body>
+
+<h1>🔌 給 Kevin — ERP 資料庫直連查詢 SOP</h1>
+<p class="meta">From：Alice ｜ Date：2026-04-22</p>
+
+<blockquote>
+  <strong>目的</strong>：讓 Kevin 透過自己的 Claude / 本地 Python，直接撈 ERP 原始資料做分析，不透過主系統。<br>
+  <strong>對象</strong>：鴻騰 ERP（鼎新 SQL Server）<br>
+  <strong>原則</strong>：<span class="badge-success">只讀 SELECT</span> 絕不修改 ERP 資料
+</blockquote>
+
+<div class="warn">
+  <strong>⚠️ 重要安全規則</strong>
+  <ol>
+    <li>絕對只做 <code>SELECT</code> 查詢，不要跑 <code>INSERT</code> / <code>UPDATE</code> / <code>DELETE</code> / <code>DROP</code></li>
+    <li>密碼不要 commit 到 GitHub（<code>.env</code> 已在 <code>.gitignore</code>）</li>
+    <li>撈出來的資料不要任意外傳（含客戶資料、成本、訂單金額）</li>
+    <li>查詢執行前若沒把握，<strong>先讓 Claude 幫你 review SQL</strong></li>
+  </ol>
+</div>
+
+<div class="toc">
+  <strong>目錄</strong>
+  <ul>
+    <li><a href="#sec1">一、一次性環境設定</a></li>
+    <li><a href="#sec2">二、連線基礎模板</a></li>
+    <li><a href="#sec3">三、可用的 View</a></li>
+    <li><a href="#sec4">四、常用查詢範例</a></li>
+    <li><a href="#sec5">五、搭配 Claude 工作</a></li>
+    <li><a href="#sec6">六、疑難排解</a></li>
+    <li><a href="#sec7">七、不要做的事</a></li>
+  </ul>
+</div>
+
+<hr>
+
+<h2 id="sec1">一、一次性環境設定</h2>
+
+<h3>1. 安裝 ODBC Driver（連 SQL Server 必要）</h3>
+<p>下載並安裝 <strong>Microsoft ODBC Driver 17 for SQL Server</strong>：</p>
+<p><a href="https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server" target="_blank">https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server</a></p>
+
+<p>安裝後可用以下指令確認：</p>
+<pre><code>Get-OdbcDriver | Where-Object { $_.Name -like "*SQL*" }</code></pre>
+<p>應該會看到 <code>ODBC Driver 17 for SQL Server</code>。</p>
+
+<h3>2. Python 套件（在你的開發環境安裝）</h3>
+<pre><code>pip install pyodbc pandas openpyxl python-dotenv</code></pre>
+
+<table>
+  <tr><th>套件</th><th>用途</th></tr>
+  <tr><td><code>pyodbc</code></td><td>連 SQL Server</td></tr>
+  <tr><td><code>pandas</code></td><td>資料處理、匯出 Excel</td></tr>
+  <tr><td><code>openpyxl</code></td><td>Excel 寫入</td></tr>
+  <tr><td><code>python-dotenv</code></td><td>從 <code>.env</code> 讀密碼</td></tr>
+</table>
+
+<h3>3. 建立你的個人分析資料夾</h3>
+<div class="info"><strong>不要</strong>放在主 repo 工作目錄下。建議獨立資料夾：</div>
+
+<pre><code>C:\Users\你\ERP_Analysis\
+├── .env                    ← 連線資料（不進任何 git）
+├── query_*.py              ← 你的查詢腳本
+└── output/                 ← 匯出的 Excel / CSV</code></pre>
+
+<h3>4. <code>.env</code> 內容（向 Alice 拿）</h3>
+<pre><code>ERP_SERVER=192.168.0.201
+ERP_PORT=1433
+ERP_DATABASE=HTE2026
+ERP_USER=ht_sys
+ERP_PASSWORD=&lt;向 Alice 拿&gt;
+ERP_ODBC_DRIVER=ODBC Driver 17 for SQL Server</code></pre>
+
+<hr>
+
+<h2 id="sec2">二、連線基礎模板</h2>
+<p>建議直接複製成 <code>erp_query.py</code>：</p>
+
+<pre><code>"""ERP 直連查詢 + 匯出 Excel 範本"""
+import os
+import pyodbc
+import pandas as pd
+from dotenv import load_dotenv
+
+load_dotenv()  # 載入 .env
+
+# ── 連線字串 ──
+conn_str = (
+    f"DRIVER={{{os.getenv('ERP_ODBC_DRIVER', 'ODBC Driver 17 for SQL Server')}}};"
+    f"SERVER={os.getenv('ERP_SERVER')},{os.getenv('ERP_PORT')};"
+    f"DATABASE={os.getenv('ERP_DATABASE')};"
+    f"UID={os.getenv('ERP_USER')};"
+    f"PWD={os.getenv('ERP_PASSWORD')};"
+    "TrustServerCertificate=yes;"
+    "timeout=10;"
+)
+
+
+def run_query(sql: str, params: tuple = ()) -&gt; pd.DataFrame:
+    """執行 SQL，回傳 DataFrame"""
+    conn = pyodbc.connect(conn_str)
+    try:
+        df = pd.read_sql(sql, conn, params=params)
+        # 清 SQL Server CHAR 欄尾端空白
+        for col in df.select_dtypes(include='object').columns:
+            df[col] = df[col].str.rstrip() if hasattr(df[col], 'str') else df[col]
+        return df
+    finally:
+        conn.close()
+
+
+def export_to_excel(df: pd.DataFrame, filename: str):
+    """匯出 Excel"""
+    os.makedirs("output", exist_ok=True)
+    path = f"output/{filename}"
+    df.to_excel(path, index=False)
+    print(f"✅ 已匯出：{path}（{len(df)} 筆）")
+
+
+# ── 範例 1：採購單（近 30 天）──
+if __name__ == "__main__":
+    sql = """
+    SELECT TOP 100 *
+    FROM v_ht_purchase_order
+    WHERE order_date &gt;= DATEADD(day, -30, GETDATE())
+    ORDER BY order_date DESC
+    """
+    df = run_query(sql)
+    print(df.head())
+    export_to_excel(df, "採購單_近30天.xlsx")
+</code></pre>
+
+<p>執行：</p>
+<pre><code>python erp_query.py</code></pre>
+
+<hr>
+
+<h2 id="sec3">三、可用的 View（已建好，推薦優先用）</h2>
+<p>這些 View 是主系統建好的唯讀視圖，欄位已整理乾淨：</p>
+
+<table>
+  <tr><th>View 名稱</th><th>對應 ERP 資料</th><th>主要用途</th></tr>
+  <tr><td><code>v_ht_purchase_order</code></td><td>PURTC + PURTD + PURMA</td><td>採購單 + 廠商</td></tr>
+  <tr><td><code>v_ht_manufacturing_order</code></td><td>MOCTA</td><td>製令單</td></tr>
+  <tr><td><code>v_ht_mo_routing</code></td><td>SFCTA</td><td>製令途程明細</td></tr>
+  <tr><td><code>v_ht_purchase_requisition</code></td><td>PURMA（請購）</td><td>請購單</td></tr>
+  <tr><td><code>v_ht_sales_order</code></td><td>COPTG + COPTH</td><td>銷貨單</td></tr>
+  <tr><td><code>v_ht_sales_order_lines</code></td><td>COPTH 明細</td><td>銷貨明細</td></tr>
+  <tr><td><code>v_ht_customer_order</code></td><td>COPMA + COPMB</td><td>客戶訂單</td></tr>
+  <tr><td><code>v_ht_customer_order_lines</code></td><td>COPMB 明細</td><td>客戶訂單明細</td></tr>
+</table>
+
+<p>主要欄位可以自己探：</p>
+<pre><code>SELECT COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'v_ht_purchase_order'</code></pre>
+
+<hr>
+
+<h2 id="sec4">四、常用查詢範例</h2>
+
+<h3>1. 某客戶的所有訂單（近 90 天）</h3>
+<pre><code>SELECT *
+FROM v_ht_customer_order
+WHERE customer_name LIKE N'%晶達%'
+  AND order_date &gt;= DATEADD(day, -90, GETDATE())
+ORDER BY order_date DESC</code></pre>
+
+<h3>2. 某品號的所有銷售明細</h3>
+<pre><code>SELECT *
+FROM v_ht_customer_order_lines
+WHERE part_no = 'JD14A-5Z0'
+ORDER BY order_date DESC</code></pre>
+
+<h3>3. 採購金額統計（依廠商，近一年）</h3>
+<pre><code>SELECT
+    vendor_name,
+    COUNT(*) AS 採購單數,
+    SUM(total_amount) AS 採購總金額
+FROM v_ht_purchase_order
+WHERE order_date &gt;= DATEADD(year, -1, GETDATE())
+GROUP BY vendor_name
+ORDER BY 採購總金額 DESC</code></pre>
+
+<h3>4. 製令單途程（含線別廠商）</h3>
+<pre><code>SELECT *
+FROM v_ht_mo_routing
+WHERE order_no = '25040001'
+ORDER BY process_seq</code></pre>
+
+<h3>5. 直接撈 ERP 原始表（如果 View 不夠用）</h3>
+<div class="warn">原始表欄位是 TC001、TD003 這種代碼，要對照鼎新文件。</div>
+
+<pre><code>-- 例：採購單單頭
+SELECT TOP 10 * FROM PURTC ORDER BY TC003 DESC
+
+-- 例：採購單單身
+SELECT TOP 10 * FROM PURTD</code></pre>
+
+<p>主要表：</p>
+<table>
+  <tr><th>表</th><th>用途</th></tr>
+  <tr><td><code>PURTC</code> / <code>PURTD</code></td><td>採購單頭 / 單身</td></tr>
+  <tr><td><code>PURMA</code> / <code>PURMB</code></td><td>請購單頭 / 單身</td></tr>
+  <tr><td><code>COPMA</code> / <code>COPMB</code></td><td>客戶訂單頭 / 單身</td></tr>
+  <tr><td><code>COPTG</code> / <code>COPTH</code></td><td>銷貨單頭 / 單身</td></tr>
+  <tr><td><code>MOCTA</code></td><td>製令單</td></tr>
+  <tr><td><code>SFCTA</code></td><td>製令途程</td></tr>
+  <tr><td><code>INVMA</code></td><td>品號主檔</td></tr>
+  <tr><td><code>CMSMA</code></td><td>客戶主檔</td></tr>
+</table>
+
+<hr>
+
+<h2 id="sec5">五、搭配 Claude 工作</h2>
+
+<h3>最簡單的方式：直接丟需求給 Claude</h3>
+<div class="tip">
+  範例 prompt：<br>
+  <em>「幫我寫 SQL 從 <code>v_ht_customer_order_lines</code> 撈 2025 年 Q4 所有品號的總銷售數量 + 總金額，按品號分組，金額大到小排序，然後匯出 Excel」</em>
+</div>
+
+<p>Claude 會：</p>
+<ol>
+  <li>產 SQL</li>
+  <li>改你的 <code>erp_query.py</code> 套進範本</li>
+  <li>執行並匯出</li>
+</ol>
+
+<h3>更進階：讓 Claude 做分析</h3>
+<p>匯出資料後：</p>
+<div class="tip">
+  <em>「這份 Excel 有近 3 個月採購單，幫我分析 (1) 哪些廠商交期最常延遲 (2) 哪些品號採購單價波動最大 (3) 哪些品號沒人採購過 超過 6 個月」</em>
+</div>
+<p>Claude 可以讀 Excel、跑 pandas 分析、畫圖表。</p>
+
+<h3>完整 prompt 範例</h3>
+<pre><code>目標：分析 2025 年各客戶的營收占比
+資料來源：v_ht_customer_order
+1. 幫我寫 SQL 撈出 2025 全年所有訂單（客戶名、訂單日期、金額）
+2. 按客戶分組加總
+3. 算出前 10 大客戶 + 其他，各自占總營收百分比
+4. 匯出 Excel，含長條圖</code></pre>
+
+<hr>
+
+<h2 id="sec6">六、疑難排解</h2>
+
+<h3>連不上 ERP？</h3>
+<ul>
+  <li>檢查：是否在公司網路內（<code>192.168.0.201</code> 是內網 IP）</li>
+  <li>檢查：ODBC Driver 裝了沒（見第一章第 1 點）</li>
+  <li>改連線字串裡 <code>timeout=30</code> 延長</li>
+</ul>
+
+<h3>查出來的中文是亂碼？</h3>
+<ul>
+  <li>SQL Server 用的是 BIG5，確認 <code>pd.read_sql</code> 讀出來是 <code>str</code> 型</li>
+  <li>若真的亂碼：<code>df = df.applymap(lambda x: x.encode('latin1').decode('big5', errors='ignore') if isinstance(x, str) else x)</code></li>
+</ul>
+
+<h3>查詢跑很慢？</h3>
+<ul>
+  <li>一定要加 <code>WHERE</code> 條件限縮日期範圍</li>
+  <li>用 <code>TOP N</code> 先測試</li>
+  <li>避免 <code>SELECT *</code> 撈全部欄位</li>
+  <li>超大查詢用 pandas 的 <code>chunksize</code> 分批讀</li>
+</ul>
+
+<h3>SQL 錯誤？</h3>
+<p>把錯誤訊息連同 SQL 丟給 Claude，請他除錯。</p>
+
+<hr>
+
+<h2 id="sec7">七、不要做的事</h2>
+
+<table>
+  <tr><th><span class="badge-danger">❌ 絕對不要</span></th><th>原因</th></tr>
+  <tr><td><code>INSERT</code> / <code>UPDATE</code> / <code>DELETE</code></td><td>會汙染正式 ERP 資料</td></tr>
+  <tr><td><code>DROP TABLE</code> / <code>TRUNCATE</code></td><td>災難</td></tr>
+  <tr><td><code>sp_executesql</code> 亂跑</td><td>有注入風險</td></tr>
+  <tr><td>把 ERP 資料 push 上 GitHub</td><td>機敏資料外洩</td></tr>
+  <tr><td>把 <code>.env</code> 傳給別人</td><td>帳密外洩</td></tr>
+  <tr><td>長時間鎖表的大查詢（百萬 Join）</td><td>影響 ERP 前端操作</td></tr>
+</table>
+
+<hr>
+
+<h2>八、有問題</h2>
+<p>LINE Alice，附上你的 SQL 和錯誤訊息。</p>
+
+<p style="text-align: right; color: #718096; margin-top: 48px;">— Alice</p>
+
+</body>
+</html>

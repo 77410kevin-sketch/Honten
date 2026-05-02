@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>成本分析儀表板 — PURR16 + MOCR34</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  body{font-family:"Microsoft JhengHei",Arial,sans-serif;background:#f4f6f9;}
+  .header{background:linear-gradient(135deg,#1a237e 0%,#283593 60%,#1565c0 100%);
+           color:#fff;padding:24px 32px;border-radius:0 0 16px 16px;margin-bottom:24px;}
+  .header h1{font-size:1.5rem;font-weight:700;margin:0;}
+  .header .sub{font-size:.85rem;opacity:.8;margin-top:4px;}
+  .kpi-card{background:#fff;border-radius:12px;padding:20px 24px;
+             box-shadow:0 2px 8px rgba(0,0,0,.07);border-left:5px solid;}
+  .kpi-card .val{font-size:1.7rem;font-weight:700;}
+  .kpi-card .lbl{font-size:.8rem;color:#666;margin-top:2px;}
+  .section-title{font-size:1rem;font-weight:700;color:#1565c0;margin-bottom:12px;
+                  border-left:4px solid #1565c0;padding-left:10px;}
+  .card-box{background:#fff;border-radius:12px;padding:20px;
+             box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:16px;}
+  .nav-tabs .nav-link.active{color:#1565c0;border-bottom:3px solid #1565c0;font-weight:700;}
+  .nav-tabs .nav-link{color:#555;font-weight:600;}
+  .badge-tag{background:#e3f2fd;color:#1565c0;border-radius:6px;padding:3px 8px;font-size:.78rem;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>成本分析儀表板 — PURR16 採購成本 ＋ MOCR34 委外製程成本</h1>
+  <div class="sub">期間：2026-01-01 ～ 2026-12-31 ｜ 更新：2026/05/02</div>
+</div>
+
+<div class="container-fluid px-4">
+
+  <!-- KPI -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#1565c0;">
+        <div class="val" style="color:#1565c0;">88.9M</div>
+        <div class="lbl">採購總金額（NT$）<span class="badge-tag">PURR16</span></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#0097a7;">
+        <div class="val" style="color:#0097a7;">41</div>
+        <div class="lbl">採購廠商數 <span class="badge-tag">PURR16</span></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#e65100;">
+        <div class="val" style="color:#e65100;">4.1M</div>
+        <div class="lbl">委外製程總金額（NT$）<span class="badge-tag">MOCR34</span></div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="kpi-card" style="border-color:#6a1b9a;">
+        <div class="val" style="color:#6a1b9a;">72</div>
+        <div class="lbl">委外產品種類 <span class="badge-tag">MOCR34</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="mainTab">
+    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab1">
+      採購成本（PURR16）</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab2">
+      委外製程成本（MOCR34）</a></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ════ Tab 1：PURR16 採購成本 ════ -->
+    <div class="tab-pane fade show active" id="tab1">
+
+      <div class="row g-3 mb-3">
+        <!-- 月別堆疊長條 -->
+        <div class="col-12 col-xl-8">
+          <div class="card-box">
+            <div class="section-title">月別採購金額（依廠商堆疊）</div>
+            <canvas id="poBarChart" style="max-height:380px;"></canvas>
+          </div>
+        </div>
+        <!-- 廠商圓餅 -->
+        <div class="col-12 col-xl-4">
+          <div class="card-box">
+            <div class="section-title">廠商占比（前15）</div>
+            <canvas id="poPieChart" style="max-height:380px;"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <!-- 廠商排行 -->
+        <div class="col-12 col-lg-5">
+          <div class="card-box">
+            <div class="section-title">廠商採購金額排行</div>
+            <div style="overflow-y:auto;max-height:420px;">
+              <table class="table table-sm table-hover" style="font-size:.82rem;">
+                <thead class="table-dark sticky-top">
+                  <tr><th>廠商代號</th><th>廠商名稱</th><th class="text-end">採購金額</th><th class="text-end">筆數</th></tr>
+                </thead>
+                <tbody><tr><td>101110</td><td>伸揚</td><td class="text-end fw-bold">46,766,132</td><td class="text-end">109</td></tr><tr><td>103067</td><td>合檥</td><td class="text-end fw-bold">29,393,055</td><td class="text-end">63</td></tr><tr><td>101004</td><td>奇盛</td><td class="text-end fw-bold">1,733,978</td><td class="text-end">72</td></tr><tr><td>101172</td><td>康特</td><td class="text-end fw-bold">1,647,000</td><td class="text-end">3</td></tr><tr><td>101156</td><td>展泰興</td><td class="text-end fw-bold">1,542,960</td><td class="text-end">5</td></tr><tr><td>106024</td><td>宥勝</td><td class="text-end fw-bold">1,385,000</td><td class="text-end">1</td></tr><tr><td>103033</td><td>星展</td><td class="text-end fw-bold">1,344,652</td><td class="text-end">98</td></tr><tr><td>101176</td><td>寶森</td><td class="text-end fw-bold">1,127,007</td><td class="text-end">12</td></tr><tr><td>101064</td><td>宜美</td><td class="text-end fw-bold">873,000</td><td class="text-end">6</td></tr><tr><td>103046</td><td>真讚</td><td class="text-end fw-bold">687,984</td><td class="text-end">37</td></tr><tr><td>102017</td><td>祥譽</td><td class="text-end fw-bold">481,005</td><td class="text-end">13</td></tr><tr><td>101102</td><td>東南</td><td class="text-end fw-bold">410,300</td><td class="text-end">8</td></tr><tr><td>103004</td><td>皓晟</td><td class="text-end fw-bold">324,465</td><td class="text-end">27</td></tr><tr><td>103027</td><td>立群</td><td class="text-end fw-bold">231,553</td><td class="text-end">31</td></tr><tr><td>101057</td><td>福昌</td><td class="text-end fw-bold">186,900</td><td class="text-end">2</td></tr><tr><td>105021</td><td>仲盛</td><td class="text-end fw-bold">173,280</td><td class="text-end">5</td></tr><tr><td>101180</td><td>上詰</td><td class="text-end fw-bold">89,664</td><td class="text-end">5</td></tr><tr><td>103011</td><td>三祺</td><td class="text-end fw-bold">79,431</td><td class="text-end">16</td></tr><tr><td>104009</td><td>虹都</td><td class="text-end fw-bold">70,400</td><td class="text-end">9</td></tr><tr><td>104002</td><td>廣泉</td><td class="text-end fw-bold">64,813</td><td class="text-end">9</td></tr><tr><td>107007</td><td>良盟</td><td class="text-end fw-bold">56,180</td><td class="text-end">1</td></tr><tr><td>103068</td><td>新鴻錩木業</td><td class="text-end fw-bold">53,550</td><td class="text-end">2</td></tr><tr><td>103051</td><td>健暐</td><td class="text-end fw-bold">52,196</td><td class="text-end">7</td></tr><tr><td>103041</td><td>有紳</td><td class="text-end fw-bold">48,444</td><td class="text-end">5</td></tr><tr><td>101202</td><td>嶸碩</td><td class="text-end fw-bold">32,140</td><td class="text-end">3</td></tr><tr><td>106025</td><td>向剛</td><td class="text-end fw-bold">29,000</td><td class="text-end">1</td></tr><tr><td>307024</td><td>世登</td><td class="text-end fw-bold">10,575</td><td class="text-end">3</td></tr><tr><td>103040</td><td>高誠</td><td class="text-end fw-bold">9,260</td><td class="text-end">4</td></tr><tr><td>104010</td><td>協明</td><td class="text-end fw-bold">6,663</td><td class="text-end">1</td></tr><tr><td>104013</td><td>台灣拓亞</td><td class="text-end fw-bold">4,800</td><td class="text-end">1</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- 料號排行 -->
+        <div class="col-12 col-lg-7">
+          <div class="card-box">
+            <div class="section-title">進料料號金額排行（前50）</div>
+            <div style="overflow-y:auto;max-height:420px;">
+              <table class="table table-sm table-hover" style="font-size:.82rem;">
+                <thead class="table-dark sticky-top">
+                  <tr><th>料號</th><th>品名</th><th class="text-end">數量</th><th class="text-end">採購金額</th></tr>
+                </thead>
+                <tbody><tr><td>SD01B-2E002-1</td><td>AWS-RP48防火蓋板右(多孔版)(伸揚)</td><td class="text-end">251,597</td><td class="text-end fw-bold">22,629,696</td></tr><tr><td>SD01A-2E002-1</td><td>AWS-RP48防火蓋板左(多孔版)(伸揚)</td><td class="text-end">249,081</td><td class="text-end fw-bold">22,395,708</td></tr><tr><td>ZZ138P-2E062</td><td>防火材_250x50x1.3mm</td><td class="text-end">504,980</td><td class="text-end fw-bold">14,164,690</td></tr><tr><td>ZZ137P-2E062</td><td>防火材_320.65x12.5x1.3mm</td><td class="text-end">1,009,960</td><td class="text-end fw-bold">12,018,524</td></tr><tr><td>ZZ139P-2E062</td><td>防火材_63x48x1.3mm</td><td class="text-end">253,042</td><td class="text-end fw-bold">2,264,726</td></tr><tr><td>ZY017P-2O051</td><td>拉釘-3300390KG RIVET AK43(康特)</td><td class="text-end">1,350,000</td><td class="text-end fw-bold">1,647,000</td></tr><tr><td>HT-1-084</td><td>永進NXV1020AM(綜合加工機CN11</td><td class="text-end">1</td><td class="text-end fw-bold">1,385,000</td></tr><tr><td>KS04P-2D001</td><td>CaseBody,MSFT Deco modify 4(展倚182-014)</td><td class="text-end">635,310</td><td class="text-end fw-bold">1,270,620</td></tr><tr><td>ZZ140P-2E062</td><td>防火材_25x48x1.3mm</td><td class="text-end">253,832</td><td class="text-end fw-bold">939,178</td></tr><tr><td>CS12P-2E002</td><td>KATANA本體(伸揚)</td><td class="text-end">168,099</td><td class="text-end fw-bold">643,436</td></tr><tr><td>ZY008P-2C016</td><td>螺絲-3300427GG 六角螺絲柱</td><td class="text-end">240,000</td><td class="text-end fw-bold">480,000</td></tr><tr><td>201-001</td><td>PE袋3.15*26*0.08</td><td class="text-end">12,483</td><td class="text-end fw-bold">441,166</td></tr><tr><td>ZZ081P-2E009</td><td>背膠-124.5*12*0.75</td><td class="text-end">165,469</td><td class="text-end fw-bold">437,435</td></tr><tr><td>CS12C-2G022</td><td>KATANAlight pipe(祥譽)</td><td class="text-end">79,270</td><td class="text-end fw-bold">435,985</td></tr><tr><td>AP10P-2E008</td><td>DDR4 ZADAK SPARK(東南)</td><td class="text-end">20,515</td><td class="text-end fw-bold">410,300</td></tr><tr><td>JD12B-2C056</td><td>IPPC-2158-TGL0-WP00-1001後蓋(寶森)</td><td class="text-end">32</td><td class="text-end fw-bold">382,563</td></tr><tr><td>238-004</td><td>2.5大氣泡布</td><td class="text-end">23,100</td><td class="text-end fw-bold">348,072</td></tr><tr><td>ZY007P-2C016</td><td>螺絲-3300426GG 六角螺絲柱</td><td class="text-end">120,000</td><td class="text-end fw-bold">324,000</td></tr><tr><td>226-025</td><td>皓晟 紙箱 長70x寬14x高15cm (18號箱)</td><td class="text-end">16,579</td><td class="text-end fw-bold">286,893</td></tr><tr><td>KS07A-2E003</td><td>FURY BEAST D5 RGB前板(達五)</td><td class="text-end">59,903</td><td class="text-end fw-bold">269,564</td></tr><tr><td>KS07B-2E003</td><td>FURY BEAST D5 RGB後板(達五)</td><td class="text-end">59,029</td><td class="text-end fw-bold">265,631</td></tr><tr><td>ZZ141P-2E009</td><td>背膠-133.55*6.46*0.23</td><td class="text-end">162,013</td><td class="text-end fw-bold">242,753</td></tr><tr><td>JD13A-2C056</td><td>IPPC-1902-EHL0-WP00-2001前框(寶森)</td><td class="text-end">64</td><td class="text-end fw-bold">200,011</td></tr><tr><td>AV02P-2E002</td><td>GC575(伸揚)</td><td class="text-end">4,893</td><td class="text-end fw-bold">185,934</td></tr><tr><td>TY18P-2C002</td><td>EFH12089-23_鋁擠(伸揚)</td><td class="text-end">3,593</td><td class="text-end fw-bold">177,448</td></tr><tr><td>ZZ084P-2E042</td><td>背膠-65.5*21.29*0.3</td><td class="text-end">91,200</td><td class="text-end fw-bold">173,280</td></tr><tr><td>ZZ082P-2E009</td><td>背膠-22*10*0.45</td><td class="text-end">162,581</td><td class="text-end fw-bold">149,841</td></tr><tr><td>JD02P-2A056</td><td>ACDF-WHL2本體(寶森)+8pcs螺絲-M3x5L 圓頭鍍鎳(耐落)</td><td class="text-end">815</td><td class="text-end fw-bold">143,435</td></tr><tr><td>JU32P-2E003</td><td>84-PLL176-00R無陽極</td><td class="text-end">595</td><td class="text-end fw-bold">142,800</td></tr><tr><td>KS08B-2E003</td><td>FURY BEAST D5 N-RGB後板(達五)</td><td class="text-end">36,731</td><td class="text-end fw-bold">139,578</td></tr><tr><td>KS08A-2E003</td><td>FURY BEAST D5 N-RGB前板(達五)</td><td class="text-end">36,718</td><td class="text-end fw-bold">139,528</td></tr><tr><td>JU31P-2E003</td><td>84-PLL166-01R無陽極</td><td class="text-end">540</td><td class="text-end fw-bold">135,379</td></tr><tr><td>JU36P-2E003</td><td>84-PLL1A6-00R無陽極</td><td class="text-end">1,188</td><td class="text-end fw-bold">131,512</td></tr><tr><td>JU39P-2D001-1</td><td>83-E10XX-01R 五米長料</td><td class="text-end">600</td><td class="text-end fw-bold">126,000</td></tr><tr><td>JU38P-2D001-1</td><td>83-E01XXX-00R 六米長料</td><td class="text-end">600</td><td class="text-end fw-bold">126,000</td></tr><tr><td>JD08P-2A056</td><td>ACDF-WHL1-單風扇本體(寶森)+8pcs螺絲-M3x5L 圓頭鍍鎳(耐落)</td><td class="text-end">500</td><td class="text-end fw-bold">108,815</td></tr><tr><td>YU03P-2F026</td><td>PD570 PRO EPAV-USB金屬後蓋本體(福昌)</td><td class="text-end">3,000</td><td class="text-end fw-bold">104,100</td></tr><tr><td>SX09P-2E002</td><td>月光.一聯3孔.鋁合金.面板.拉絲(伸揚)</td><td class="text-end">4,227</td><td class="text-end fw-bold">102,803</td></tr><tr><td>ZZ164P-2E009</td><td>背膠-41*15*1.1</td><td class="text-end">92,700</td><td class="text-end fw-bold">101,970</td></tr><tr><td>JD12A-2C056</td><td>IPPC-2158-TGL0-WP00-1001前框(寶森)</td><td class="text-end">32</td><td class="text-end fw-bold">101,462</td></tr><tr><td>JU22P-5Z0</td><td>84-M6406-00R無陽極</td><td class="text-end">2,700</td><td class="text-end fw-bold">93,990</td></tr><tr><td>SX11P-2E002</td><td>月光.一聯開關用..鋁合金.面板.拉絲(伸揚)</td><td class="text-end">3,625</td><td class="text-end fw-bold">90,145</td></tr><tr><td>SX06P-2E002</td><td>月光.一聯1512LED.鋁合金.面板.拉絲(伸揚)</td><td class="text-end">3,667</td><td class="text-end fw-bold">88,665</td></tr><tr><td>YU02P-2F026</td><td>PD570 PRO EPAV-SDI金屬前蓋本體(福昌)</td><td class="text-end">3,000</td><td class="text-end fw-bold">82,800</td></tr><tr><td>AV04P-2E002</td><td>SINK_GC575(伸揚)</td><td class="text-end">20,366</td><td class="text-end fw-bold">81,464</td></tr><tr><td>ZZ148P-2E009</td><td>PET背膠-122.18*18*0.95</td><td class="text-end">37,399</td><td class="text-end fw-bold">78,538</td></tr><tr><td>IJ01P-2D058</td><td>SDPOE MIDDLE(上詰)</td><td class="text-end">5,177</td><td class="text-end fw-bold">74,031</td></tr><tr><td>KS16P-2E002</td><td>DC2000B_Heatsink(伸揚)</td><td class="text-end">23,101</td><td class="text-end fw-bold">69,303</td></tr><tr><td>ZZ071P-2E009</td><td>背膠-108*11.5</td><td class="text-end">52,914</td><td class="text-end fw-bold">68,788</td></tr><tr><td>JU34P-2E003</td><td>84-PLL186-00R無陽極</td><td class="text-end">2,063</td><td class="text-end fw-bold">67,254</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pivot 表 -->
+      <div class="card-box">
+        <div class="section-title">月別 × 廠商 Pivot（採購金額）</div>
+        <div style="overflow-x:auto;"><table class="table table-sm table-bordered" style="font-size:.80rem;"><thead><tr><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:left;border:1px solid #388e3c;">月份</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">伸揚</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">合檥</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">奇盛</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">康特</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">展泰興</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">宥勝</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">星展</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">寶森</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">宜美</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">真讚</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">祥譽</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">東南</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">皓晟</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">立群</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">福昌</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">仲盛</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">上詰</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">三祺</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">虹都</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">廣泉</th><th style="background:#1b5e20;color:#fff;padding:6px 10px;white-space:nowrap;text-align:right;border:1px solid #388e3c;">月合計</th></tr></thead><tbody><tr><td style="padding:5px 10px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-01</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">20,540,226</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">12,691,458</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">819,198</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">366,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">925,020</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">1,385,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">470,195</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">88,516</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">432,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">207,242</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">123,325</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">145,491</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">58,170</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">5,771</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">52,400</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">45,600</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">27,025</td><td style="padding:5px 10px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">38,382,637</td></tr><tr><td style="padding:5px 10px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-02</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">7,735,971</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">4,833,897</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">289,885</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">307,867</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">83,832</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">111,100</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">54,034</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">68</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">95,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">3,495</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">4,800</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">37,788</td><td style="padding:5px 10px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">13,557,737</td></tr><tr><td style="padding:5px 10px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-03</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">18,406,991</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">11,867,700</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">518,999</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">732,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">365,940</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">480,599</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">842,957</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">39,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">396,910</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">246,580</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">124,940</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">169,715</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">186,900</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">78,280</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">6,029</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">10,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">20,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">34,493,540</td></tr><tr><td style="padding:5px 10px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;">2026-04</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">82,944</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">105,896</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">549,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">252,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">85,991</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">195,534</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">402,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">410,300</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">3,600</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">77,864</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">13,536</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;white-space:nowrap;">−</td><td style="padding:5px 10px;text-align:right;border:1px solid #388e3c;background:#c8e6c9;font-weight:700;">2,178,665</td></tr><tr><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">總計</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">46,766,132</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">29,393,055</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,733,978</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,647,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,542,960</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,385,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,344,652</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">1,127,007</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">873,000</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">687,984</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">481,005</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">410,300</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">324,465</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">231,553</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">186,900</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">173,280</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">89,664</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">79,431</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">70,400</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">64,813</td><td style="padding:5px 10px;text-align:right;border:1px solid #e0e0e0;background:#e8f5e9;font-weight:700;">88,612,579</td></tr></tbody></table></div>
+      </div>
+
+    </div><!-- /tab1 -->
+
+    <!-- ════ Tab 2：MOCR34 委外製程成本 ════ -->
+    <div class="tab-pane fade" id="tab2">
+
+      <div class="row g-3 mb-3">
+        <!-- 月別委外金額 -->
+        <div class="col-12 col-lg-7">
+          <div class="card-box">
+            <div class="section-title">月別委外製程金額趨勢</div>
+            <canvas id="moBarChart" style="max-height:340px;"></canvas>
+          </div>
+        </div>
+        <!-- 月別表格 -->
+        <div class="col-12 col-lg-5">
+          <div class="card-box">
+            <div class="section-title">月別委外金額</div>
+            <table class="table table-sm table-hover" style="font-size:.82rem;">
+              <thead class="table-dark">
+                <tr><th>月份</th><th class="text-end">委外淨金額（NT$）</th></tr>
+              </thead>
+              <tbody><tr><td>2026-01</td><td class="text-end fw-bold">2,671,462</td></tr><tr><td>2026-02</td><td class="text-end fw-bold">808,281</td></tr><tr><td>2026-03</td><td class="text-end fw-bold">578,499</td></tr><tr><td>2026-04</td><td class="text-end fw-bold">5,969</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <!-- 產品金額排行 -->
+        <div class="col-12 col-lg-7">
+          <div class="card-box">
+            <div class="section-title">委外產品金額排行（前50）</div>
+            <div style="overflow-y:auto;max-height:400px;">
+              <table class="table table-sm table-hover" style="font-size:.82rem;">
+                <thead class="table-dark sticky-top">
+                  <tr><th>品號</th><th>品名</th><th class="text-end">製令數</th><th class="text-end">委外淨金額</th></tr>
+                </thead>
+                <tbody><tr><td>CS12A-5D1-01P</td><td>KATANA本體黑-印刷-薄背膠+正貼</td><td class="text-end">8</td><td class="text-end fw-bold">673,327</td></tr><tr><td>CS12B-5D1-01P</td><td>KATANA本體黑-印刷-薄背膠</td><td class="text-end">6</td><td class="text-end fw-bold">565,501</td></tr><tr><td>SD01B-5Z0-P-1</td><td>AWS-RP48-5.5KW-防火蓋板右(多孔版)-防火材</td><td class="text-end">3</td><td class="text-end fw-bold">447,679</td></tr><tr><td>SD01A-5Z0-P-1</td><td>AWS-RP48-5.5KW-防火蓋板左(多孔版)-防火材</td><td class="text-end">3</td><td class="text-end fw-bold">378,143</td></tr><tr><td>KS04P-5S1-01</td><td>CaseBody,MSFT Deco modify 4銀本色(陽極)-雷雕LOGO</td><td class="text-end">3</td><td class="text-end fw-bold">326,547</td></tr><tr><td>KS12A-4PW1-01E</td><td>FURY BEAST D5 RGB白-前板印刷LOGO-厚背膠</td><td class="text-end">3</td><td class="text-end fw-bold">261,298</td></tr><tr><td>KS07A-4PD1-01E</td><td>FURY BEAST D5 RGB黑-前板雷雕LOGO-厚背膠</td><td class="text-end">8</td><td class="text-end fw-bold">234,247</td></tr><tr><td>KS12B-4PW1-P</td><td>FURY BEAST D5 RGB白-後板-薄背膠</td><td class="text-end">3</td><td class="text-end fw-bold">203,854</td></tr><tr><td>KS07B-4PD1-P</td><td>FURY BEAST D5 RGB黑-後板-薄背膠</td><td class="text-end">3</td><td class="text-end fw-bold">162,634</td></tr><tr><td>TE04A-5D1-01E</td><td>Vulcan DDR5前板黑-T-FORCE-厚背膠</td><td class="text-end">6</td><td class="text-end fw-bold">133,251</td></tr><tr><td>KS08A-4PD1-01E</td><td>FURY BEAST D5 N-RGB黑-前板雷雕LOGO-厚背膠</td><td class="text-end">5</td><td class="text-end fw-bold">59,680</td></tr><tr><td>KS08B-4PD1-P</td><td>FURY BEAST D5 N-RGB黑-後板-薄背膠</td><td class="text-end">2</td><td class="text-end fw-bold">57,280</td></tr><tr><td>AV02P-5G1-01</td><td>GC575灰-印刷斜線</td><td class="text-end">3</td><td class="text-end fw-bold">56,632</td></tr><tr><td>JU09P-5D1</td><td>83-E1025-01R 八燈頭-髮線,黑</td><td class="text-end">2</td><td class="text-end fw-bold">50,490</td></tr><tr><td>CS12C-5Z0-01</td><td>KATANAlight pipe無陽極-印刷LOGO</td><td class="text-end">5</td><td class="text-end fw-bold">49,795</td></tr><tr><td>TY18P-5S1</td><td>EFH12089-23_銀本色(陽極)</td><td class="text-end">3</td><td class="text-end fw-bold">45,684</td></tr><tr><td>YU04A-5B1-02</td><td>PD570 PRO EPAV鋁殼藍-印刷兩道</td><td class="text-end">1</td><td class="text-end fw-bold">40,560</td></tr><tr><td>IN02A-5G2-02</td><td>INO HS286本體鐵灰-印刷紅白LOGO</td><td class="text-end">1</td><td class="text-end fw-bold">39,552</td></tr><tr><td>TE04A-5D1-01P</td><td>Vulcan DDR5前板黑-T-FORCE-薄背膠</td><td class="text-end">3</td><td class="text-end fw-bold">38,806</td></tr><tr><td>KS16P-5D1</td><td>DC2000B Heatsink黑</td><td class="text-end">3</td><td class="text-end fw-bold">19,504</td></tr><tr><td>JD12B-5D1</td><td>IPPC-2158-TGL0-WP00-1001後蓋黑</td><td class="text-end">1</td><td class="text-end fw-bold">18,600</td></tr><tr><td>TS03P-5D1-01</td><td>TS-CM10G鋁殼黑-EMI</td><td class="text-end">1</td><td class="text-end fw-bold">18,365</td></tr><tr><td>KS07B-4PD1-P-1</td><td>FURY BEAST D5 RGB黑-後板-薄背膠</td><td class="text-end">2</td><td class="text-end fw-bold">16,495</td></tr><tr><td>AV04P-5D1</td><td>SINK_GC575_53.1x29.4x2陽極黑</td><td class="text-end">1</td><td class="text-end fw-bold">15,828</td></tr><tr><td>KS07A-4PD1-01P</td><td>FURY BEAST D5 RGB黑-前板雷雕LOGO-薄背膠</td><td class="text-end">3</td><td class="text-end fw-bold">15,196</td></tr><tr><td>KS08B-4PD1-P-1</td><td>FURY BEAST D5 N-RGB黑-後板-薄背膠</td><td class="text-end">1</td><td class="text-end fw-bold">13,828</td></tr><tr><td>IN02A-5G2-20</td><td>INO HS286本體鐵灰-EMI</td><td class="text-end">1</td><td class="text-end fw-bold">13,478</td></tr><tr><td>KS09A-4PD1-01E</td><td>Refresh BEAST D4 RGB黑-前板雷雕LOGO-厚背膠</td><td class="text-end">3</td><td class="text-end fw-bold">13,248</td></tr><tr><td>TE04B-5D1-P</td><td>Vulcan DDR5後板黑-薄背膠</td><td class="text-end">2</td><td class="text-end fw-bold">11,722</td></tr><tr><td>KS13A-4PW1-01P</td><td>FURY BEAST D5 N-RGB白-前板印刷LOGO-薄背膠</td><td class="text-end">1</td><td class="text-end fw-bold">9,651</td></tr><tr><td>CY03A-5D1</td><td>POC-766AWP_本體_陽極黑</td><td class="text-end">1</td><td class="text-end fw-bold">8,205</td></tr><tr><td>KS09B-4PD1-P</td><td>Refresh BEAST D4 RGB黑-後板-薄背膠</td><td class="text-end">2</td><td class="text-end fw-bold">6,774</td></tr><tr><td>SD07A-5Z0</td><td>Liteon_LNM0055B (ORV3)TOP無陽極-防火材</td><td class="text-end">1</td><td class="text-end fw-bold">6,384</td></tr><tr><td>CC01B-5S1_A</td><td>EXTRUSION_UCS-STIR後板銀本色(陽極)</td><td class="text-end">1</td><td class="text-end fw-bold">5,016</td></tr><tr><td>CC01A-5S1_A</td><td>EXTRUSION_UCS-STIR前板銀本色(陽極)</td><td class="text-end">1</td><td class="text-end fw-bold">4,975</td></tr><tr><td>KS13B-4PW1-P-1</td><td>FURY BEAST D5 N-RGB白-後板-薄背膠</td><td class="text-end">1</td><td class="text-end fw-bold">3,630</td></tr><tr><td>KS08A-4PD1-01P</td><td>FURY BEAST D5 N-RGB黑-前板雷雕LOGO-薄背膠</td><td class="text-end">1</td><td class="text-end fw-bold">3,290</td></tr><tr><td>FI01B-5S1-07</td><td>中段,Gear Lite,32GB,WEEE/CE/FCC/RCM</td><td class="text-end">2</td><td class="text-end fw-bold">2,558</td></tr><tr><td>OR01P-5S1</td><td>Aluminum soap dish 鋁製香皂碟(陽極)</td><td class="text-end">1</td><td class="text-end fw-bold">2,504</td></tr><tr><td>AP07A-5D1-01</td><td>EH353鋁殼黑-雷雕LOGO</td><td class="text-end">1</td><td class="text-end fw-bold">2,399</td></tr><tr><td>VC03A-4PD1-01P</td><td>DDR4 SKYWALKER前板組裝,黑,薄背膠(印刷XSKY)</td><td class="text-end">1</td><td class="text-end fw-bold">2,398</td></tr><tr><td>IN01A-5G2</td><td>INO Cap鋁帽蓋鐵灰</td><td class="text-end">2</td><td class="text-end fw-bold">2,295</td></tr><tr><td>KS09B-4PD1-P-1</td><td>Refresh BEAST D4 RGB黑-後板-薄背膠</td><td class="text-end">1</td><td class="text-end fw-bold">2,220</td></tr><tr><td>AP04A-5H2-01</td><td>AH25C鋁殼古銅-雷雕LOGO</td><td class="text-end">2</td><td class="text-end fw-bold">2,160</td></tr><tr><td>FI01A-5S1</td><td>Gear帽蓋銀本色(陽極)</td><td class="text-end">1</td><td class="text-end fw-bold">2,038</td></tr><tr><td>JD002-01</td><td>RS-ITRP-1045-EHL2-ZP00-1001-Front Case</td><td class="text-end">1</td><td class="text-end fw-bold">2,000</td></tr><tr><td>AP03A-5R1-02</td><td>AH25B鋁殼紅-雷雕前Brother後Apacer</td><td class="text-end">3</td><td class="text-end fw-bold">1,943</td></tr><tr><td>CS11C-5Z0-01</td><td>ALASKAlight pipe-印刷LOGO</td><td class="text-end">1</td><td class="text-end fw-bold">1,915</td></tr><tr><td>YU04A-5G3-02</td><td>PD570 PRO EPAV鋁殼綠-印刷兩道</td><td class="text-end">1</td><td class="text-end fw-bold">1,828</td></tr><tr><td>JL01A-5R1-01</td><td>鋁件XS1000 紅色上蓋</td><td class="text-end">1</td><td class="text-end fw-bold">1,659</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- 委外廠商 -->
+        <div class="col-12 col-lg-5">
+          <div class="card-box">
+            <div class="section-title">委外廠商（途程）</div>
+            <div style="overflow-y:auto;max-height:400px;">
+              <table class="table table-sm table-hover" style="font-size:.82rem;">
+                <thead class="table-dark sticky-top">
+                  <tr><th>廠商代號</th><th>廠商名稱</th><th class="text-end">關聯製令數</th></tr>
+                </thead>
+                <tbody><tr><td>111007</td><td>冠仲</td><td class="text-end">68</td></tr><tr><td>101003</td><td>銘唯</td><td class="text-end">56</td></tr><tr><td>101139</td><td>祐鋅</td><td class="text-end">44</td></tr><tr><td>101203</td><td>又全</td><td class="text-end">16</td></tr><tr><td>101004</td><td>奇盛</td><td class="text-end">13</td></tr><tr><td>107020</td><td>武德</td><td class="text-end">11</td></tr><tr><td>105001</td><td>勃宣</td><td class="text-end">10</td></tr><tr><td>111116</td><td>寶嘉福</td><td class="text-end">4</td></tr><tr><td>107029</td><td>建笠</td><td class="text-end">3</td></tr><tr><td>101110</td><td>伸揚</td><td class="text-end">3</td></tr><tr><td>101104</td><td>立丞</td><td class="text-end">2</td></tr><tr><td>101156</td><td>展泰興</td><td class="text-end">2</td></tr><tr><td>111117</td><td>亨臻</td><td class="text-end">2</td></tr><tr><td>111010</td><td>禾梧彤</td><td class="text-end">2</td></tr><tr><td>101020</td><td>長琳</td><td class="text-end">1</td></tr><tr><td>107027</td><td>金澤源</td><td class="text-end">1</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab2 -->
+
+  </div><!-- tab-content -->
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function fmtY(v){
+  if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if(v>=1e4) return '$'+(v/1e4).toFixed(0)+'萬';
+  return '$'+v.toLocaleString();
+}
+
+// PURR16 堆疊長條
+new Chart(document.getElementById('poBarChart'),{
+  type:'bar',
+  data:{labels:["2026-01", "2026-02", "2026-03", "2026-04"], datasets:[{"label": "伸揚", "data": [20540226.0, 7735971.0, 18406991.0, 82944.0], "backgroundColor": "#1b5e20", "stack": "s"}, {"label": "合檥", "data": [12691458.0, 4833897.0, 11867700.0, 0.0], "backgroundColor": "#2e7d32", "stack": "s"}, {"label": "奇盛", "data": [819198.0, 289885.0, 518999.0, 105896.0], "backgroundColor": "#388e3c", "stack": "s"}, {"label": "康特", "data": [366000.0, 0.0, 732000.0, 549000.0], "backgroundColor": "#43a047", "stack": "s"}, {"label": "展泰興", "data": [925020.0, 0.0, 365940.0, 252000.0], "backgroundColor": "#66bb6a", "stack": "s"}, {"label": "宥勝", "data": [1385000.0, 0.0, 0.0, 0.0], "backgroundColor": "#0d47a1", "stack": "s"}, {"label": "星展", "data": [470195.0, 307867.0, 480599.0, 85991.0], "backgroundColor": "#1565c0", "stack": "s"}, {"label": "寶森", "data": [88516.0, 0.0, 842957.0, 195534.0], "backgroundColor": "#1976d2", "stack": "s"}, {"label": "宜美", "data": [432000.0, 0.0, 39000.0, 402000.0], "backgroundColor": "#2196f3", "stack": "s"}, {"label": "真讚", "data": [207242.0, 83832.0, 396910.0, 0.0], "backgroundColor": "#64b5f6", "stack": "s"}, {"label": "祥譽", "data": [123325.0, 111100.0, 246580.0, 0.0], "backgroundColor": "#f57f17", "stack": "s"}, {"label": "東南", "data": [0.0, 0.0, 0.0, 410300.0], "backgroundColor": "#f9a825", "stack": "s"}, {"label": "皓晟", "data": [145491.0, 54034.0, 124940.0, 0.0], "backgroundColor": "#fbc02d", "stack": "s"}, {"label": "立群", "data": [58170.0, 68.0, 169715.0, 3600.0], "backgroundColor": "#fdd835", "stack": "s"}, {"label": "福昌", "data": [0.0, 0.0, 186900.0, 0.0], "backgroundColor": "#fff176", "stack": "s"}, {"label": "仲盛", "data": [0.0, 95000.0, 78280.0, 0.0], "backgroundColor": "#b71c1c", "stack": "s"}, {"label": "上詰", "data": [5771.0, 0.0, 6029.0, 77864.0], "backgroundColor": "#c62828", "stack": "s"}, {"label": "三祺", "data": [52400.0, 3495.0, 10000.0, 13536.0], "backgroundColor": "#d32f2f", "stack": "s"}, {"label": "虹都", "data": [45600.0, 4800.0, 20000.0, 0.0], "backgroundColor": "#e53935", "stack": "s"}, {"label": "廣泉", "data": [27025.0, 37788.0, 0.0, 0.0], "backgroundColor": "#ef9a9a", "stack": "s"}, {"label": "良盟", "data": [56180.0, 0.0, 0.0, 0.0], "backgroundColor": "#4a148c", "stack": "s"}, {"label": "新鴻錩木業", "data": [25500.0, 0.0, 28050.0, 0.0], "backgroundColor": "#6a1b9a", "stack": "s"}, {"label": "健暐", "data": [35458.0, 16738.0, 0.0, 0.0], "backgroundColor": "#7b1fa2", "stack": "s"}, {"label": "有紳", "data": [39633.0, 8811.0, 0.0, 0.0], "backgroundColor": "#ab47bc", "stack": "s"}, {"label": "嶸碩", "data": [0.0, 0.0, 160.0, 31980.0], "backgroundColor": "#ce93d8", "stack": "s"}, {"label": "向剛", "data": [29000.0, 0.0, 0.0, 0.0], "backgroundColor": "#e65100", "stack": "s"}, {"label": "世登", "data": [0.0, 0.0, 2205.0, 8370.0], "backgroundColor": "#ef6c00", "stack": "s"}, {"label": "高誠", "data": [9260.0, 0.0, 0.0, 0.0], "backgroundColor": "#f57c00", "stack": "s"}, {"label": "協明", "data": [0.0, 6663.0, 0.0, 0.0], "backgroundColor": "#fb8c00", "stack": "s"}, {"label": "台灣拓亞", "data": [0.0, 4800.0, 0.0, 0.0], "backgroundColor": "#ffa726", "stack": "s"}]},
+  options:{
+    responsive:true, maintainAspectRatio:true,
+    plugins:{
+      legend:{position:'right',labels:{font:{family:'Microsoft JhengHei'},boxWidth:12,padding:6}},
+      tooltip:{callbacks:{label:c=>`${c.dataset.label}: NT$ ${c.parsed.y.toLocaleString()}`}}
+    },
+    scales:{
+      x:{stacked:true,ticks:{font:{family:'Microsoft JhengHei'}}},
+      y:{stacked:true,ticks:{callback:fmtY,font:{family:'Microsoft JhengHei'}},grid:{color:'#f0f0f0'}}
+    }
+  }
+});
+
+// PURR16 廠商圓餅
+new Chart(document.getElementById('poPieChart'),{
+  type:'doughnut',
+  data:{labels:["伸揚", "合檥", "奇盛", "康特", "展泰興", "宥勝", "星展", "寶森", "宜美", "真讚", "祥譽", "東南", "皓晟", "立群", "福昌"],datasets:[{data:[46766132.0, 29393055.0, 1733978.0, 1647000.0, 1542960.0, 1385000.0, 1344652.0, 1127007.0, 873000.0, 687984.0, 481005.0, 410300.0, 324465.0, 231553.0, 186900.0],backgroundColor:["#1b5e20", "#2e7d32", "#388e3c", "#43a047", "#66bb6a", "#0d47a1", "#1565c0", "#1976d2", "#2196f3", "#64b5f6", "#f57f17", "#f9a825", "#fbc02d", "#fdd835", "#fff176"],borderWidth:2}]},
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{position:'bottom',labels:{font:{family:'Microsoft JhengHei'},boxWidth:12,padding:6}},
+      tooltip:{callbacks:{label:c=>`${c.label}: NT$ ${c.parsed.toLocaleString()}`}}
+    }
+  }
+});
+
+// MOCR34 月別長條
+new Chart(document.getElementById('moBarChart'),{
+  type:'bar',
+  data:{labels:["2026-01", "2026-02", "2026-03", "2026-04"],datasets:[{
+    label:'委外淨金額',
+    data:[2671462.0, 808281.0, 578499.0, 5969.0],
+    backgroundColor:'rgba(230,81,0,0.75)',
+    borderColor:'#e65100',borderWidth:2,borderRadius:4
+  }]},
+  options:{
+    responsive:true,
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:c=>`NT$ ${c.parsed.y.toLocaleString()}`}}
+    },
+    scales:{
+      x:{ticks:{font:{family:'Microsoft JhengHei'}}},
+      y:{ticks:{callback:fmtY,font:{family:'Microsoft JhengHei'}},grid:{color:'#f0f0f0'}}
+    }
+  }
+});
+</script>
+</body>
+</html>
