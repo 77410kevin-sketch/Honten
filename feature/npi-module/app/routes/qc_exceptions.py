@@ -43,7 +43,8 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "其它"]
+ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP",
+                     "根因附件", "改善方案附件", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
 _CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.ADMIN)  # 建單權限：品保 + 產線主管 + 生管 + 業助
@@ -518,6 +519,14 @@ async def detail_qc(
         } for d in items]
         for cat, items in _docs_dict.items()
     }
+    # 最近 ECN/PCN 單清單（給 datalist 自動完成用）
+    from app.models.pcn_form import PCNForm
+    rs_ecn = await db.execute(
+        select(PCNForm).order_by(PCNForm.created_at.desc()).limit(30)
+    )
+    ecn_candidates = [{"form_id": e.form_id,
+                       "title": (e.product_name or "")[:30] + " · " + (e.change_reason or "")[:30]}
+                      for e in rs_ecn.scalars().all()]
     return templates.TemplateResponse("qc_exceptions/detail.html", {
         "request": request, "user": current_user, "form": form,
         "docs_by_cat": _docs_by_cat(form.documents),
@@ -533,6 +542,7 @@ async def detail_qc(
         "qc_action_types_meta": action_types_meta,
         "qc_actions":           _load_actions(form),
         "qc_docs_by_cat_json":  docs_by_cat_json,
+        "qc_ecn_candidates":    ecn_candidates,
     })
 
 
@@ -753,6 +763,7 @@ async def set_disposition(
                     form.sa_cust_note = "\n".join(notes) if notes else None
         elif a["type"] == "B3":
             form.sa_rework_note          = (f.get("rework_method") or "").strip() or None
+            if f.get("station"): form.sa_station = f.get("station")
             form.sa_rework_pass_qty      = _int(f.get("pass_qty"))
             fitems = f.get("fail_items") or []
             if fitems:
@@ -946,7 +957,7 @@ async def action_update_fields(
         "A2": ["replenish_note", "pickup_location", "pickup_contact",
                "pickup_time", "pickup_note", "pickup_actual_at"],
         "B2": ["station", "completed_at", "pass_qty"],
-        "B3": ["pass_qty", "defect_handling",
+        "B3": ["station", "completed_at", "pass_qty", "defect_handling",
                # 工程師回填（B3 內勾「工程檢治具設計」後）
                "fixture_done_at", "fixture_to_production",
                "fixture_eng_no", "fixture_eval_note"],
@@ -1007,6 +1018,7 @@ async def action_update_fields(
         fitems = f.get("fail_items") or []
         form.sa_sorting_fail_qty = sum((it.get("qty") or 0) for it in fitems) or None
     elif target["type"] == "B3":
+        if f.get("station"): form.sa_station = f.get("station")
         form.sa_rework_pass_qty = f.get("pass_qty")
         fitems = f.get("fail_items") or []
         form.sa_rework_fail_qty = sum((it.get("qty") or 0) for it in fitems) or None
@@ -1197,38 +1209,42 @@ async def save_inventory(
 @router.post("/{form_id}/save-improvement")
 async def save_improvement(
     form_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    notify_mail_to:   str = Form(""),
-    notify_mail_cc:   str = Form(""),
-    root_cause:       str = Form(""),
-    need_drawing_rev: str = Form(""),
-    need_sop_rev:     str = Form(""),
-    need_sip_rev:     str = Form(""),
-    improvement_plan: str = Form(""),
-    advance:          str = Form(""),  # "ecn" / "close"
 ):
-    """改善方案（合併 Mail 通知 + 根因分析）：可選擇推進 LINKED_ECN 或直接結案"""
+    """改善方案：可選擇推進 LINKED_ECN 或直接結案。品保 / 產線主管 / admin 可編輯。
+    支援根因附件 (rca_files) 與改善方案附件 (imp_files) 上傳。"""
     form = await _get_or_404(form_id, db)
-    if current_user.role not in _QC_ROLES:
+    if current_user.role not in (Role.QC, Role.PROD_MGR, Role.ADMIN):
         raise HTTPException(status_code=403)
-    # PENDING_RCA 為舊狀態（已併入 IMPROVEMENT），仍接受編輯避免舊資料卡死
     if form.status not in (QCExceptionStatus.PENDING_IMPROVEMENT,
                            QCExceptionStatus.LINKED_ECN,
                            QCExceptionStatus.PENDING_RCA):
         raise HTTPException(status_code=400, detail="目前狀態無法編輯改善方案")
-    # 通知 + 根因
-    form.notify_mail_to = notify_mail_to.strip() or None
-    form.notify_mail_cc = notify_mail_cc.strip() or None
-    new_root = root_cause.strip() or None
+    fd = await request.form()
+    root_cause       = (fd.get("root_cause") or "").strip()
+    improvement_plan = (fd.get("improvement_plan") or "").strip()
+    advance          = (fd.get("advance") or "").strip()
+    new_root = root_cause or None
     if new_root and not form.root_cause:
-        form.notify_sent_at = datetime.utcnow()  # 第一次填根因時記錄
+        form.notify_sent_at = datetime.utcnow()
     form.root_cause = new_root
-    # 改善方案
-    form.need_drawing_rev = (need_drawing_rev == "1")
-    form.need_sop_rev     = (need_sop_rev == "1")
-    form.need_sip_rev     = (need_sip_rev == "1")
-    form.improvement_plan = improvement_plan.strip() or None
+    form.need_drawing_rev = (fd.get("need_drawing_rev") == "1")
+    form.need_sop_rev     = (fd.get("need_sop_rev") == "1")
+    form.need_sip_rev     = (fd.get("need_sip_rev") == "1")
+    form.improvement_plan = improvement_plan or None
+    # 附件：根因 / 改善方案
+    rca_files = [x for x in fd.getlist("rca_files")
+                 if hasattr(x, "filename") and x.filename]
+    if rca_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                rca_files, ["根因附件"] * len(rca_files))
+    imp_files = [x for x in fd.getlist("imp_files")
+                 if hasattr(x, "filename") and x.filename]
+    if imp_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                imp_files, ["改善方案附件"] * len(imp_files))
     # 把 PENDING_RCA 老資料順手推進
     if form.status == QCExceptionStatus.PENDING_RCA:
         old = form.status
@@ -1258,13 +1274,20 @@ async def link_ecn(
 ):
     """把已建立的 ECN 表單綁進來"""
     form = await _get_or_404(form_id, db)
-    if current_user.role not in _QC_ROLES:
+    if current_user.role not in (Role.QC, Role.PROD_MGR, Role.ADMIN):
         raise HTTPException(status_code=403)
     from app.models.pcn_form import PCNForm
-    r = await db.execute(select(PCNForm).where(PCNForm.form_id == ecn_form_id.strip()))
+    import re
+    raw = (ecn_form_id or "").strip()
+    # 容錯：去除重複貼上、多空格；只取第一個合法格式（PCN-/ECN- 前綴 + 日期 + 序號）
+    m = re.search(r"((?:PCN|ECN)-\d{8}-\d{3})", raw)
+    candidate = m.group(1) if m else raw.split()[0] if raw.split() else ""
+    if not candidate:
+        raise HTTPException(status_code=400, detail="請輸入合法的 ECN 單號（例：ECN-20260502-002）")
+    r = await db.execute(select(PCNForm).where(PCNForm.form_id == candidate))
     ecn = r.scalars().first()
     if not ecn:
-        raise HTTPException(status_code=404, detail="找不到該 ECN 表單")
+        raise HTTPException(status_code=404, detail=f"找不到 ECN 單 {candidate}")
     form.linked_ecn_form_id = ecn.id
     if form.status == QCExceptionStatus.PENDING_IMPROVEMENT:
         old = form.status

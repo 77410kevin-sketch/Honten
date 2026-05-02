@@ -58,8 +58,12 @@
   <div class="col-lg-8">
     {# IPC 異常資訊 #}
     <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white fw-semibold">
-        <i class="bi bi-clipboard-data me-2"></i>IPC 異常資訊
+      <div class="card-header bg-white fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-clipboard-data me-2"></i>IPC 異常資訊</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#ipcInfoBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
       </div>
       {% set _doc_lbl = {'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'} %}
       {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
@@ -67,7 +71,7 @@
                            'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
       {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
       {% set _src_color = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'} %}
-      <div class="card-body">
+      <div class="card-body collapse show" id="ipcInfoBody">
         <div class="row g-3 small">
           <div class="col-md-4"><strong>品號：</strong>{{ form.part_no }}</div>
           <div class="col-md-4">
@@ -157,10 +161,14 @@
     {% if _editable %}
     <div class="card shadow-sm mb-3 border-warning">
       <div class="card-header bg-warning-subtle fw-semibold d-flex align-items-center">
-        <i class="bi bi-lightning-charge me-2"></i>品保立即處理
+        <span><i class="bi bi-lightning-charge me-2"></i>品保立即處理</span>
         <span class="badge bg-secondary ms-2">編輯中</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#dispCardBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
       </div>
-      <div class="card-body">
+      <div class="card-body collapse show" id="dispCardBody">
         <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm"
               enctype="multipart/form-data">
 
@@ -626,6 +634,17 @@
             ${renderUploadedDocs('Rework SOP')}
           `) + respSec(`
             <div class="row g-2 mb-2">
+              <div class="col-md-6"><label class="form-label small">執行單位（生管派發）</label>
+                <select class="form-select form-select-sm" data-bind="station">
+                  <option value="">— 請選擇 —</option>
+                  ${['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'].map(s =>
+                    `<option value="${esc(s)}" ${fields.station === s ? 'selected' : ''}>${esc(s)}</option>`
+                  ).join('')}
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label small">預計完成時間</label>
+                <input type="date" class="form-control form-control-sm" data-bind="completed_at"
+                       value="${esc(fields.completed_at)}"></div>
               <div class="col-md-3"><label class="form-label small">Rework 良品數</label>
                 <input type="number" min="0" class="form-control form-control-sm" data-bind="pass_qty" value="${esc(fields.pass_qty)}"></div>
               <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
@@ -634,7 +653,7 @@
                 <input class="form-control form-control-sm" data-bind="defect_handling" placeholder="報廢 / 退廠 / 隔離" value="${esc(fields.defect_handling)}"></div>
             </div>
             <div class="small fw-semibold text-success mb-1">
-              <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 截圖（可向下新增）
+              <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 異常照片（可向下新增）
             </div>
             <div class="table-responsive">
               <table class="table table-sm table-bordered align-middle mb-1">
@@ -950,11 +969,15 @@
     {# 顯示模式：已下處理判斷 — 卡片清單 + 各自送出/回覆 #}
     <div class="card shadow-sm mb-3">
       <div class="card-header bg-white fw-semibold d-flex align-items-center">
-        <i class="bi bi-lightning-charge me-2"></i>處理判斷紀錄
+        <span><i class="bi bi-lightning-charge me-2"></i>處理判斷紀錄</span>
         <span class="text-muted ms-2 small">由 {{ form.dispositioner.display_name if form.dispositioner else '—' }}
           於 {{ form.disposition_at.strftime('%Y-%m-%d %H:%M') if form.disposition_at else '' }} 判定</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#dispLogBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
       </div>
-      <div class="card-body">
+      <div class="card-body collapse show" id="dispLogBody">
         {% if form.disposition_note %}
         <div class="small mb-3"><strong>備註：</strong>{{ form.disposition_note }}</div>
         {% endif %}
@@ -1274,7 +1297,27 @@
                   <i class="bi bi-people-fill me-1"></i>生管／產線主管 回填區
                   {% if not _can_b3_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
                 </div>
+                {% set _stations3 = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'] %}
                 <div class="row g-2 mb-2">
+                  <div class="col-md-6"><label class="form-label small">執行單位（生管派發）</label>
+                    {% if _can_b3_edit %}
+                    <select name="station" class="form-select form-select-sm">
+                      <option value="">— 請選擇 —</option>
+                      {% for opt in _stations3 %}
+                      <option value="{{ opt }}" {% if _f.station == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                      {% if _f.station and _f.station not in _stations3 %}
+                      <option value="{{ _f.station }}" selected>{{ _f.station }}（自訂）</option>
+                      {% endif %}
+                    </select>
+                    {% else %}
+                    <input class="form-control form-control-sm bg-light text-muted" readonly disabled
+                           value="{{ _f.station or '—' }}">
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6"><label class="form-label small">預計完成時間</label>
+                    <input type="date" name="completed_at" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
+                           value="{{ _f.completed_at or '' }}"></div>
                   <div class="col-md-3"><label class="form-label small">Rework 良品數</label>
                     <input name="pass_qty" type="number" min="0" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
                            value="{{ _f.pass_qty if _f.pass_qty not in (None, '') else '' }}"></div>
@@ -1285,7 +1328,7 @@
                            value="{{ _f.defect_handling or '' }}" placeholder="報廢 / 退廠 / 隔離"></div>
                 </div>
                 <div class="small fw-semibold text-success mb-1">
-                  <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 截圖（可向下新增）
+                  <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 異常照片（可向下新增）
                 </div>
                 <div class="table-responsive">
                   <table class="table table-sm table-bordered align-middle mb-1">
@@ -1410,59 +1453,339 @@
     </div>
     {% endif %}
 
-    {# 長期改善方案（合併 Mail 通知 + 根因分析）+ ECN 綁定 #}
+    {# 改善方案 — 四個 section：異常反饋 / 短期處理 / 異常根因 / 長期改善 #}
     {% if _s in ('PENDING_RCA', 'PENDING_IMPROVEMENT', 'LINKED_ECN', 'CLOSED') %}
-    {% set _can_edit_improve = _is_qc and _s in ('PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+    {% set _can_edit_improve = (user.role.value in ('qc','prod_mgr','admin')) and _s in ('PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
     <div class="card shadow-sm mb-3 {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}border-primary{% endif %}">
-      <div class="card-header {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold">
-        <i class="bi bi-tools me-2"></i>長期改善方案
+      <div class="card-header {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-tools me-2"></i>改善方案</span>
+        {% if form.linked_ecn %}
+        <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+           class="badge bg-warning text-dark ms-2 text-decoration-none"
+           title="點擊查看 ECN 進度">
+          <i class="bi bi-link-45deg me-1"></i>{{ form.linked_ecn.form_id }}
+          <i class="bi bi-box-arrow-up-right ms-1"></i>
+        </a>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#improveBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
       </div>
-      <div class="card-body">
+      <div class="card-body collapse show" id="improveBody">
+
+        {# ── 1. 異常反饋（撈取 IPC 異常資訊與附件，唯讀）────────── #}
+        {% set _doc_lbl  = {'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'} %}
+        {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
+        {% set _stage_lbl = {'IQC':'IQC','IPQC':'IPQC','OQC':'OQC','INSPECTION':'品檢',
+                             'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
+        {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
+        {% set _src_color = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'} %}
+        {% set _src_v = form.source_type.value if form.source_type else 'SUPPLIER' %}
+        {% set _items_imp = (form.defect_items_json | fromjson) if form.defect_items_json else None %}
+
+        <div class="border rounded p-3 mb-3" style="background:rgba(13,202,240,.05)">
+          <div class="fw-semibold text-info mb-2">
+            <span class="badge bg-info me-1">1</span>
+            <i class="bi bi-clipboard-data me-1"></i>異常反饋（IPC 資訊）
+          </div>
+          <div class="row g-2 small">
+            <div class="col-md-3"><strong>品號：</strong>{{ form.part_no }}</div>
+            <div class="col-md-3"><strong>{{ _doc_lbl.get(form.doc_type.value, '單號') if form.doc_type else '單號' }}：</strong>{{ form.receive_doc_no or '—' }}</div>
+            <div class="col-md-3"><strong>{{ _date_lbl.get(form.event_date_type.value, '日期') if form.event_date_type else '日期' }}：</strong>{{ form.receive_date or '—' }}</div>
+            <div class="col-md-3"><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
+            <div class="col-12"><strong>工段+來源：</strong>
+              <span class="badge bg-light text-dark border">{{ _stage_lbl.get(form.stage.value, form.stage.value) }}</span>
+              <span class="badge {{ _src_color.get(_src_v, 'bg-secondary') }}">{{ _src_lbl.get(_src_v, '廠商') }}</span>
+              {{ form.supplier_name or '—' }}
+            </div>
+          </div>
+          {% if _items_imp %}
+          <table class="table table-sm table-bordered mt-2 mb-1 small">
+            <thead class="table-light"><tr>
+              <th style="width:40px">#</th><th>異常原因</th>
+              <th style="width:120px">類型</th>
+              <th class="text-end" style="width:80px">抽樣</th>
+              <th class="text-end" style="width:80px">不良</th>
+              <th class="text-end" style="width:80px">不良率</th>
+            </tr></thead>
+            <tbody>
+              {% for it in _items_imp %}
+              {% set _r = (it.defect_qty / it.sample_qty) if (it.sample_qty and it.defect_qty is not none) else None %}
+              <tr>
+                <td class="text-center">{{ loop.index }}</td>
+                <td class="text-danger fw-semibold">{{ it.cause }}</td>
+                <td>
+                  {% if 'EXTERIOR' in (it.types or []) %}<span class="badge bg-info text-dark">外觀</span>{% endif %}
+                  {% if 'DIMENSION' in (it.types or []) %}<span class="badge bg-warning text-dark">尺寸</span>{% endif %}
+                </td>
+                <td class="text-end">{{ it.sample_qty if it.sample_qty is not none else '—' }}</td>
+                <td class="text-end">{{ it.defect_qty if it.defect_qty is not none else '—' }}</td>
+                <td class="text-end fw-semibold {% if _r and _r >= 0.05 %}text-danger{% endif %}">
+                  {% if _r is not none %}{{ '%.1f' % (_r * 100) }}%{% else %}—{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+          {% if '異常照片' in docs_by_cat %}
+          <div class="small mt-1">
+            <strong><i class="bi bi-images me-1"></i>異常照片：</strong>
+            {% for d in docs_by_cat['異常照片'] %}
+            <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+               class="badge bg-light text-dark border me-1">
+              <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        {# ── 2. 短期處理（撈 actions 摘要 — 立即處理區改動會自動同步）─ #}
+        <div class="border rounded p-3 mb-3" style="background:rgba(255,193,7,.05)">
+          <div class="fw-semibold text-warning mb-2 d-flex align-items-center">
+            <span class="badge bg-warning text-dark me-1">2</span>
+            <i class="bi bi-lightning-charge me-1"></i>短期處理（立即處理彙總）
+            <span class="ms-auto text-muted small fw-normal">
+              <i class="bi bi-arrow-repeat me-1"></i>立即處理區改動會自動同步
+            </span>
+          </div>
+          {% if qc_actions %}
+          {% for a in qc_actions %}
+            {% set _meta = qc_action_types_meta.get(a.type, {}) %}
+            {% set _f = a.fields or {} %}
+            <div class="border rounded p-2 mb-2 small" style="background:#fff">
+              <div class="fw-semibold text-{{ _meta.color }} d-flex align-items-center flex-wrap gap-1">
+                <span><i class="bi {{ _meta.icon }} me-1"></i>{{ _meta.label }}</span>
+                {% if a.sent_at %}
+                <span class="badge bg-success">已送出 {{ a.sent_at[:16] | replace('T',' ') }}</span>
+                {% endif %}
+                {% if a.updated_at %}
+                <span class="badge bg-info text-dark" title="最後更新">
+                  <i class="bi bi-pencil me-1"></i>{{ a.updated_at[:16] | replace('T',' ') }}
+                </span>
+                {% endif %}
+                {% if a.replies %}
+                <span class="badge bg-secondary">回覆 {{ a.replies | length }}</span>
+                {% endif %}
+              </div>
+              {% if a.type == 'A1' %}
+                <div>補貨需求：{{ _f.replenish_note or '—' }}
+                  {% if _f.pickup_required %}／<span class="badge bg-warning text-dark">需我方派車</span> {{ _f.pickup_note or '' }}{% endif %}
+                </div>
+              {% elif a.type == 'A2' %}
+                <div>退貨/補貨：{{ _f.replenish_note or '—' }}</div>
+                <div class="text-muted">
+                  地點 {{ _f.pickup_location or '—' }} ／ 聯絡人 {{ _f.pickup_contact or '—' }}
+                  ／ 預計 {{ _f.pickup_time or '—' }} ／ 實際回廠
+                  {% if _f.pickup_actual_at %}
+                  <span class="text-success fw-semibold">{{ _f.pickup_actual_at }}</span>
+                  {% else %}<span class="text-warning">待業助回填</span>{% endif %}
+                </div>
+              {% elif a.type == 'B1' %}
+                <div>{{ _f.note or '不需卡控，直接過站' }}</div>
+              {% elif a.type == 'B2' %}
+                <div>Sorting 手法：{{ _f.sorting_method or '—' }}</div>
+                <div>執行 <strong>{{ _f.station or '—' }}</strong>　完成 <strong>{{ _f.completed_at or '—' }}</strong>
+                  良 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }} ／ 不良
+                  {% set _ns = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns.t = _ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {{ _ns.t if _ns.t else '—' }}
+                </div>
+                {% if _f.fail_items %}
+                <div class="text-muted">
+                  {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
+                </div>
+                {% endif %}
+                {% if _f.cust_sorting and _f.cust_sorting_rows %}
+                <div class="text-primary mt-1">
+                  <i class="bi bi-person-check me-1"></i>客戶端 Sorting：
+                  {% for r in _f.cust_sorting_rows %}{% if r.date or r.location or r.workers %}{{ r.date or '—' }}/{{ r.location or '—' }}/{{ r.workers or '—' }}人{% if not loop.last %} ；{% endif %}{% endif %}{% endfor %}
+                </div>
+                {% endif %}
+              {% elif a.type == 'B3' %}
+                <div>Rework 需求：{{ _f.rework_method or '—' }}</div>
+                <div>執行 <strong>{{ _f.station or '—' }}</strong>　完成 <strong>{{ _f.completed_at or '—' }}</strong>
+                  良 {{ _f.pass_qty if _f.pass_qty not in (None, '') else '—' }} ／ 不良
+                  {% set _ns = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns.t = _ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {{ _ns.t if _ns.t else '—' }}
+                  {% if _f.defect_handling %}　處理 {{ _f.defect_handling }}{% endif %}
+                </div>
+                {% if _f.fail_items %}
+                <div class="text-muted">
+                  {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
+                </div>
+                {% endif %}
+                {% if _f.need_lab_test %}
+                <div class="text-info">
+                  <i class="bi bi-flask me-1"></i>樣品測試：{{ _f.lab_test_qty or '—' }} pcs / {{ _f.lab_test_due_date or '—' }}
+                  {% if _f.lab_test_sample_no %}／ <a href="/sample-requests/{{ _f.lab_test_sample_no }}" target="_blank">{{ _f.lab_test_sample_no }}</a>{% endif %}
+                </div>
+                {% endif %}
+                {% if _f.need_fixture %}
+                <div class="text-warning">
+                  <i class="bi bi-wrench-adjustable me-1"></i>檢治具：完成 <strong>{{ _f.fixture_done_at or '—' }}</strong>　量產
+                  {% if _f.fixture_to_production == 'yes' %}<span class="text-success fw-semibold">是</span>
+                  {% elif _f.fixture_to_production == 'no' %}<span class="text-danger fw-semibold">否</span>
+                  {% elif _f.fixture_to_production == 'conditional' %}<span class="fw-semibold">有條件</span>
+                  {% else %}<span class="text-muted">—</span>{% endif %}
+                  {% if _f.fixture_eng_no %}／ {{ _f.fixture_eng_no }}{% endif %}
+                </div>
+                {% endif %}
+                {% if _f.cust_rework and _f.cust_rework_rows %}
+                <div class="text-primary mt-1">
+                  <i class="bi bi-person-gear me-1"></i>客戶端 Rework：
+                  {% for r in _f.cust_rework_rows %}{% if r.date or r.location or r.workers %}{{ r.date or '—' }}/{{ r.location or '—' }}/{{ r.workers or '—' }}人{% if not loop.last %} ；{% endif %}{% endif %}{% endfor %}
+                </div>
+                {% endif %}
+              {% elif a.type == 'HE' %}
+                <div>盤點 {{ (_f.rows or []) | length }} 列；客戶端 {{ form.he_customer_qty or '—' }} ／ 廠內 {{ form.he_inhouse_qty or '—' }} ／ 供應商 {{ form.he_supplier_qty or '—' }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+          {% else %}
+          <div class="small text-muted">尚無立即處理項目</div>
+          {% endif %}
+        </div>
+
+        {# ── 3. 異常根因（編輯）+ 4. 長期改善（編輯）共用一個 form ── #}
         {% if _can_edit_improve %}
-        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement">
-          {# 根因分析 + 長期改善 兩欄並排 #}
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label small fw-semibold">根因分析（5Why / 魚骨圖摘要）</label>
-              <textarea name="root_cause" rows="6"
-                        class="form-control{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
-                        placeholder="例如 廠商換刀後未重新對 0…">{{ form.root_cause or '' }}</textarea>
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement"
+              enctype="multipart/form-data" id="improveForm">
+          <div class="border border-success rounded p-3 mb-3" style="background:rgba(25,135,84,.05)">
+            <div class="fw-semibold text-success mb-2 d-flex align-items-center flex-wrap gap-2">
+              <span class="badge bg-success me-1">3</span>
+              <i class="bi bi-search me-1"></i>異常根因（5Why / 魚骨圖）
+              <a href="/sample-requests/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}&purpose=異常重現實驗"
+                 target="_blank" class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-flask me-1"></i>開立樣品需求單（異常重現實驗）
+              </a>
             </div>
-            <div class="col-md-6">
-              <label class="form-label small fw-semibold">長期改善內容</label>
-              <textarea name="improvement_plan" rows="6"
-                        class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
-                        placeholder="長期改善方案、預防措施、SOP/SIP 修訂方向…">{{ form.improvement_plan or '' }}</textarea>
+            <textarea name="root_cause" rows="5"
+                      class="form-control{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
+                      placeholder="廠商換刀後未重新對 0；或 SOP 未明確規範換線後首件全檢…">{{ form.root_cause or '' }}</textarea>
+            <div class="mt-2">
+              <label class="form-label small">附件（魚骨圖 / 5Why 圖 / 截圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上</label>
+              <input type="file" name="rca_files" multiple accept="image/*,.pdf"
+                     capture="environment" class="form-control form-control-sm" data-paste="rca_files">
+              <div class="rca-paste-status small text-success mt-1 d-none"></div>
             </div>
+            {% if '根因附件' in docs_by_cat %}
+            <div class="small mt-2">
+              <strong><i class="bi bi-paperclip me-1"></i>已上傳根因附件：</strong>
+              {% for d in docs_by_cat['根因附件'] %}
+              <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                 class="badge bg-light text-dark border me-1">
+                <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <div class="form-text small mt-1">由<strong>品保／產線主管</strong>填寫；如需異常重現驗證，可開立樣品需求單測試</div>
           </div>
-          {# 改善方案勾選 #}
-          <div class="d-flex flex-wrap gap-3 mb-2">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="need_drawing_rev" value="1"
-                     id="needDraw" {% if form.need_drawing_rev %}checked{% endif %}>
-              <label for="needDraw" class="form-check-label">需修訂圖面</label>
+
+          <div class="border border-warning rounded p-3 mb-3" style="background:rgba(255,193,7,.06)">
+            <div class="fw-semibold text-warning mb-2">
+              <span class="badge bg-warning text-dark me-1">4</span>
+              <i class="bi bi-tools me-1"></i>長期改善（SOP / SIP / 製程修訂 → ECN）
             </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="need_sop_rev" value="1"
-                     id="needSop" {% if form.need_sop_rev %}checked{% endif %}>
-              <label for="needSop" class="form-check-label">需修訂 SOP</label>
+            <textarea name="improvement_plan" rows="5"
+                      class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
+                      placeholder="例：1) 修訂 SOP 增加換線首件全檢；2) 治具新增防呆設計；3) 修訂 SIP 增加抽樣頻率…">{{ form.improvement_plan or '' }}</textarea>
+            <div class="d-flex flex-wrap gap-3 mt-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_drawing_rev" value="1"
+                       id="needDraw" {% if form.need_drawing_rev %}checked{% endif %}>
+                <label for="needDraw" class="form-check-label">需修訂圖面</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_sop_rev" value="1"
+                       id="needSop" {% if form.need_sop_rev %}checked{% endif %}>
+                <label for="needSop" class="form-check-label">需修訂 SOP</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_sip_rev" value="1"
+                       id="needSip" {% if form.need_sip_rev %}checked{% endif %}>
+                <label for="needSip" class="form-check-label">需修訂 SIP / 製程</label>
+              </div>
             </div>
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="need_sip_rev" value="1"
-                     id="needSip" {% if form.need_sip_rev %}checked{% endif %}>
-              <label for="needSip" class="form-check-label">需修訂 SIP</label>
+            <div class="mt-2">
+              <label class="form-label small">附件（修訂草案 / SOP / 截圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上</label>
+              <input type="file" name="imp_files" multiple accept="image/*,.pdf"
+                     capture="environment" class="form-control form-control-sm" data-paste="imp_files">
+              <div class="imp-paste-status small text-success mt-1 d-none"></div>
             </div>
+            {% if '改善方案附件' in docs_by_cat %}
+            <div class="small mt-2">
+              <strong><i class="bi bi-paperclip me-1"></i>已上傳改善方案附件：</strong>
+              {% for d in docs_by_cat['改善方案附件'] %}
+              <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                 class="badge bg-light text-dark border me-1">
+                <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
           </div>
-          <div class="d-flex gap-2 mt-3">
+
+          <script>
+          (function(){
+            const f = document.getElementById('improveForm');
+            if (!f) return;
+            // 找到根因 / 改善方案的 textarea + 對應 file input
+            const rcaText = f.querySelector('textarea[name="root_cause"]');
+            const impText = f.querySelector('textarea[name="improvement_plan"]');
+            const rcaFile = f.querySelector('input[data-paste="rca_files"]');
+            const impFile = f.querySelector('input[data-paste="imp_files"]');
+            function bindPaste(textarea, fileInput, statusSel) {
+              if (!textarea || !fileInput) return;
+              textarea.addEventListener('paste', e => {
+                const items = (e.clipboardData || {}).items || [];
+                const dt = new DataTransfer();
+                Array.from(fileInput.files || []).forEach(x => dt.items.add(x));
+                let added = 0;
+                for (const it of items) {
+                  if (it.type && it.type.startsWith('image/')) {
+                    const fl = it.getAsFile();
+                    if (fl) {
+                      const ext = (fl.type.split('/')[1] || 'png').replace('+xml','');
+                      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+                      dt.items.add(new File([fl], `paste-${stamp}.${ext}`, {type: fl.type}));
+                      added++;
+                    }
+                  }
+                }
+                if (added > 0) {
+                  e.preventDefault();
+                  fileInput.files = dt.files;
+                  const stat = f.querySelector(statusSel);
+                  if (stat) {
+                    stat.classList.remove('d-none');
+                    stat.textContent = `已貼上 ${added} 張截圖（總 ${dt.files.length} 個檔案，送出後上傳）`;
+                  }
+                }
+              });
+            }
+            bindPaste(rcaText, rcaFile, '.rca-paste-status');
+            bindPaste(impText, impFile, '.imp-paste-status');
+          })();
+          </script>
+
+          <div class="d-flex gap-2 flex-wrap mt-3">
             <button name="advance" value="" class="btn btn-outline-secondary btn-sm">
               <i class="bi bi-save me-1"></i>儲存
             </button>
             {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}
-            <button name="advance" value="ecn" class="btn btn-warning btn-sm">
-              <i class="bi bi-link-45deg me-1"></i>需開 ECN（進等待 ECN 階段）
+            <a href="/pcn-forms/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}"
+               target="_blank" class="btn btn-warning btn-sm">
+              <i class="bi bi-box-arrow-up-right me-1"></i>開立 ECN（圖面/SOP/SIP 修訂）
+            </a>
+            <button name="advance" value="ecn" class="btn btn-outline-warning btn-sm">
+              <i class="bi bi-link-45deg me-1"></i>標記需 ECN（等待綁定）
             </button>
-            <button name="advance" value="close"
-                    class="btn btn-success btn-sm"
+            <button name="advance" value="close" class="btn btn-success btn-sm"
                     onclick="return confirm('確定無需 ECN，直接結案？');">
               <i class="bi bi-check2-circle me-1"></i>無需 ECN，直接結案
             </button>
@@ -1470,38 +1793,99 @@
           </div>
         </form>
 
+        {# 已綁定 ECN — 顯示為連結 + 進度狀態 #}
+        {% if form.linked_ecn %}
+        <hr>
+        {% set _ecn_status = form.linked_ecn.status.value if form.linked_ecn.status else 'DRAFT' %}
+        {% set _ecn_status_lbl = {
+          'DRAFT':'草稿',
+          'ECN_PENDING_WAREHOUSE':'待倉管盤點',
+          'ECN_PENDING_ENG':'待工程確認',
+          'ECN_PENDING_QC':'待品保確認',
+          'PENDING_QC':'待品保 SIP',
+          'PENDING_PRODUCTION':'待產線作業 SOP',
+          'PENDING_WAREHOUSE_SOP':'待倉管包裝 SOP',
+          'PENDING_BU_APPROVAL':'待 BU 審核',
+          'APPROVED':'已核准',
+          'RETURNED':'退回',
+          'CLOSED':'結案',
+        } %}
+        {% set _ecn_status_color = {
+          'DRAFT':'secondary','APPROVED':'success','CLOSED':'success','RETURNED':'danger',
+        }.get(_ecn_status, 'warning') %}
+        <div class="d-flex align-items-center gap-2 mb-2 p-2 border border-warning rounded"
+             style="background:rgba(255,193,7,.08)">
+          <i class="bi bi-link-45deg text-warning"></i>
+          <span class="fw-semibold">已綁定 ECN：</span>
+          <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+             class="text-decoration-none">
+            <strong>{{ form.linked_ecn.form_id }}</strong>
+            <i class="bi bi-box-arrow-up-right small ms-1"></i>
+          </a>
+          <span class="badge bg-{{ _ecn_status_color }} ms-1">
+            {{ _ecn_status_lbl.get(_ecn_status, _ecn_status) }}
+          </span>
+          <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+             class="btn btn-sm btn-outline-warning ms-auto">
+            <i class="bi bi-eye me-1"></i>查看 ECN 進度
+          </a>
+        </div>
+        {% endif %}
+
         {# ECN 綁定 #}
         {% if _s in ('PENDING_IMPROVEMENT','LINKED_ECN') %}
         <hr>
         <form method="post" action="/qc-exceptions/{{ form.form_id }}/link-ecn"
-              class="d-flex gap-2 align-items-end">
+              class="d-flex gap-2 align-items-end" id="linkEcnForm">
           <div class="flex-grow-1">
-            <label class="form-label small">綁定已建立的 ECN 單號</label>
-            <input name="ecn_form_id" class="form-control form-control-sm"
-                   placeholder="例：PCN-20260424-001"
-                   value="{{ form.linked_ecn.form_id if form.linked_ecn else '' }}">
+            <label class="form-label small">綁定已建立的 ECN 單號（從下方建議列表選擇）</label>
+            <input name="ecn_form_id" class="form-control form-control-sm" list="ecnList"
+                   placeholder="例：ECN-20260502-002"
+                   pattern="(PCN|ECN)-\d{8}-\d{3}"
+                   title="格式：ECN-YYYYMMDD-NNN 或 PCN-YYYYMMDD-NNN"
+                   value="{{ form.linked_ecn.form_id if form.linked_ecn else '' }}"
+                   required>
+            <datalist id="ecnList">
+              {% for c in qc_ecn_candidates %}
+              <option value="{{ c.form_id }}">{{ c.title }}</option>
+              {% endfor %}
+            </datalist>
           </div>
           <button class="btn btn-warning btn-sm">
             <i class="bi bi-link-45deg me-1"></i>綁定 ECN
           </button>
         </form>
+        <script>
+        (function(){
+          const f = document.getElementById('linkEcnForm');
+          if (!f) return;
+          f.addEventListener('submit', e => {
+            const inp = f.querySelector('input[name="ecn_form_id"]');
+            // 容錯：移除空白、取出第一個合法 ID
+            const raw = (inp.value || '').trim();
+            const m = raw.match(/(PCN|ECN)-\d{8}-\d{3}/);
+            if (m) inp.value = m[0];
+          });
+        })();
+        </script>
         {% endif %}
         {% else %}
-        <div class="small">
-          <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <strong>根因分析：</strong>
-              <div class="border rounded p-2 bg-light mt-1">{{ form.root_cause or '（尚未填寫）' }}</div>
-            </div>
-            <div class="col-md-6">
-              <strong>長期改善內容：</strong>
-              <div class="border rounded p-2 bg-light mt-1">{{ form.improvement_plan or '（尚未填寫）' }}</div>
-            </div>
+        {# 唯讀展示 #}
+        <div class="border border-success rounded p-3 mb-3" style="background:rgba(25,135,84,.05)">
+          <div class="fw-semibold text-success mb-2">
+            <span class="badge bg-success me-1">3</span>異常根因
           </div>
-          <div class="mb-2">
+          <div class="border rounded p-2 bg-white small">{{ form.root_cause or '（尚未填寫）' }}</div>
+        </div>
+        <div class="border border-warning rounded p-3 mb-3" style="background:rgba(255,193,7,.06)">
+          <div class="fw-semibold text-warning mb-2">
+            <span class="badge bg-warning text-dark me-1">4</span>長期改善
+          </div>
+          <div class="border rounded p-2 bg-white small mb-2">{{ form.improvement_plan or '（尚未填寫）' }}</div>
+          <div>
             {% if form.need_drawing_rev %}<span class="badge bg-info text-dark me-1">需修訂圖面</span>{% endif %}
             {% if form.need_sop_rev %}<span class="badge bg-info text-dark me-1">需修訂 SOP</span>{% endif %}
-            {% if form.need_sip_rev %}<span class="badge bg-info text-dark me-1">需修訂 SIP</span>{% endif %}
+            {% if form.need_sip_rev %}<span class="badge bg-info text-dark me-1">需修訂 SIP / 製程</span>{% endif %}
           </div>
           {% if form.linked_ecn %}
           <div class="mt-2">
@@ -1517,40 +1901,6 @@
     </div>
     {% endif %}
 
-    {# 簽核紀錄 #}
-    <div class="card shadow-sm mb-3">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-data me-2"></i>簽核紀錄</div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-sm mb-0 align-middle">
-            <thead class="table-light">
-              <tr>
-                <th>時間</th><th>動作</th><th>操作人</th><th>狀態變更</th><th>備註</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for a in form.approvals %}
-              <tr>
-                <td class="small">{{ a.created_at.strftime('%m-%d %H:%M') }}</td>
-                <td><span class="badge bg-secondary">{{ a.action }}</span></td>
-                <td class="small">{{ a.approver.display_name if a.approver else '—' }}</td>
-                <td class="small">
-                  {% set k = (a.from_status or '') ~ '→' ~ (a.to_status or '') %}
-                  {% if k in transition_combo %}
-                    {% set lbl, cls = transition_combo[k] %}
-                    <span class="badge bg-{{ cls }}">{{ lbl }}</span>
-                  {% else %}
-                    <span class="text-muted small">{{ a.from_status }} → {{ a.to_status }}</span>
-                  {% endif %}
-                </td>
-                <td class="small text-muted">{{ a.comment or '—' }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
   </div>
 
   <div class="col-lg-4">
@@ -1620,6 +1970,41 @@
       </div>
     </div>
 
+    {# 簽核紀錄 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-data me-2"></i>簽核紀錄</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>時間</th><th>動作</th><th>操作人</th><th>狀態變更</th><th>備註</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in form.approvals %}
+              <tr>
+                <td class="small">{{ a.created_at.strftime('%m-%d %H:%M') }}</td>
+                <td><span class="badge bg-secondary">{{ a.action }}</span></td>
+                <td class="small">{{ a.approver.display_name if a.approver else '—' }}</td>
+                <td class="small">
+                  {% set k = (a.from_status or '') ~ '→' ~ (a.to_status or '') %}
+                  {% if k in transition_combo %}
+                    {% set lbl, cls = transition_combo[k] %}
+                    <span class="badge bg-{{ cls }}">{{ lbl }}</span>
+                  {% else %}
+                    <span class="text-muted small">{{ a.from_status }} → {{ a.to_status }}</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">{{ a.comment or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     {# 附件 — 圖片可預覽 #}
     <div class="card shadow-sm">
       <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件</div>
@@ -1668,6 +2053,24 @@
     </div>
   </div>
 </div>
+
+{# Collapse 收合圖示切換 #}
+<script>
+(function(){
+  document.querySelectorAll('.collapse-toggle').forEach(btn => {
+    const target = document.querySelector(btn.dataset.bsTarget);
+    if (!target) return;
+    const swap = (open) => {
+      const i = btn.querySelector('i.bi');
+      if (!i) return;
+      i.classList.toggle('bi-chevron-up', open);
+      i.classList.toggle('bi-chevron-down', !open);
+    };
+    target.addEventListener('show.bs.collapse', () => swap(true));
+    target.addEventListener('hide.bs.collapse', () => swap(false));
+  });
+})();
+</script>
 
 {# 顯示模式 disp-form（B2/B3）— fail_items 多列同步 + 不良率計算 + 截圖貼上 #}
 <script>
