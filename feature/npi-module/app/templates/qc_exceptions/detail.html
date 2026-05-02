@@ -456,18 +456,37 @@
                 </select>
               </div>
               <div class="col-md-6"><label class="form-label small">完成時間</label>
-                <input class="form-control form-control-sm" data-bind="completed_at"
-                       placeholder="2026-05-10" value="${esc(fields.completed_at)}"></div>
+                <input type="date" class="form-control form-control-sm" data-bind="completed_at"
+                       value="${esc(fields.completed_at)}"></div>
             </div>
           `, '生管填寫區', 'info') + respSec(`
-            <div class="row g-2">
-              <div class="col-md-4"><label class="form-label small">良品數</label>
+            <div class="row g-2 mb-2">
+              <div class="col-md-3"><label class="form-label small">良品數</label>
                 <input type="number" min="0" class="form-control form-control-sm" data-bind="pass_qty" value="${esc(fields.pass_qty)}"></div>
-              <div class="col-md-4"><label class="form-label small">不良品數</label>
-                <input type="number" min="0" class="form-control form-control-sm" data-bind="fail_qty" value="${esc(fields.fail_qty)}"></div>
-              <div class="col-md-4"><label class="form-label small">不良率</label>
+              <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
+                <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
+              <div class="col-md-3"><label class="form-label small">不良率</label>
                 <div class="form-control form-control-sm bg-light fw-semibold" data-rate>—</div></div>
             </div>
+            <div class="small fw-semibold text-success mb-1">
+              <i class="bi bi-list-ul me-1"></i>不良原因 / 不良數 / 截圖（可向下新增）
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-1">
+                <thead class="table-light"><tr>
+                  <th style="width:40px">#</th>
+                  <th>不良原因</th>
+                  <th class="text-end" style="width:120px">不良數</th>
+                  <th style="width:200px">截圖（不良照片）— 可貼上</th>
+                  <th style="width:40px">—</th>
+                </tr></thead>
+                <tbody class="fail-tbody">${renderFailRows(fields, 'b2_defect_files')}</tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success fail-add">
+              <i class="bi bi-plus-circle me-1"></i>新增不良原因
+            </button>
+            ${renderUploadedDocs('不良照片')}
           `, `負責 Sorting 單位回填區（總數 ${esc(TOTAL_QTY) || '—'} pcs）`, 'success');
         }
         if (type === 'B3') {
@@ -533,14 +552,33 @@
             <div class="form-text small mb-1">可多選 / 拍照 / 貼上截圖；歸類為「Rework SOP」</div>
             ${renderUploadedDocs('Rework SOP')}
           `) + respSec(`
-            <div class="row g-2">
+            <div class="row g-2 mb-2">
               <div class="col-md-3"><label class="form-label small">Rework 良品數</label>
                 <input type="number" min="0" class="form-control form-control-sm" data-bind="pass_qty" value="${esc(fields.pass_qty)}"></div>
-              <div class="col-md-3"><label class="form-label small">Rework 不良數</label>
-                <input type="number" min="0" class="form-control form-control-sm" data-bind="fail_qty" value="${esc(fields.fail_qty)}"></div>
+              <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
+                <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
               <div class="col-md-6"><label class="form-label small">不良品處理方式</label>
                 <input class="form-control form-control-sm" data-bind="defect_handling" placeholder="報廢 / 退廠 / 隔離" value="${esc(fields.defect_handling)}"></div>
             </div>
+            <div class="small fw-semibold text-success mb-1">
+              <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 截圖（可向下新增）
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-1">
+                <thead class="table-light"><tr>
+                  <th style="width:40px">#</th>
+                  <th>不良原因</th>
+                  <th class="text-end" style="width:120px">不良數</th>
+                  <th style="width:200px">截圖（不良照片）— 可貼上</th>
+                  <th style="width:40px">—</th>
+                </tr></thead>
+                <tbody class="fail-tbody">${renderFailRows(fields, 'b3_defect_files')}</tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success fail-add">
+              <i class="bi bi-plus-circle me-1"></i>新增不良原因
+            </button>
+            ${renderUploadedDocs('不良照片')}
           `, '生管／產線主管 回填區', 'success');
         }
         if (type === 'HE') {

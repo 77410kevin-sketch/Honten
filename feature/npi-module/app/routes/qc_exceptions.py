@@ -43,7 +43,7 @@ def _fromjson_filter(s):
 templates.env.filters["fromjson"] = _fromjson_filter
 
 UPLOAD_BASE = "uploads"
-ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "其它"]
+ATTACH_CATEGORIES = ["異常照片", "實驗報告", "圖面", "Sorting 需求", "Rework SOP", "不良照片", "其它"]
 
 _QC_ROLES    = (Role.QC, Role.ADMIN)                                     # 處理判斷 / RCA / 改善方案 專屬
 _CREATE_ROLES = (Role.QC, Role.PROD_MGR, Role.PC, Role.ASSISTANT, Role.ADMIN)  # 建單權限：品保 + 產線主管 + 生管 + 業助
@@ -62,9 +62,9 @@ ACTION_TYPE_INFO = {
             "color": "danger",    "icon": "bi-arrow-return-left"},
     "B1":  {"label": "B1 直接進料/出貨",  "units": [Role.PC, Role.ASSISTANT, Role.WAREHOUSE],
             "color": "secondary", "icon": "bi-arrow-right-circle"},
-    "B2":  {"label": "B2 廠內 Sorting",   "units": [Role.PC],
+    "B2":  {"label": "B2 Sorting",        "units": [Role.PC],
             "color": "warning",   "icon": "bi-funnel"},
-    "B3":  {"label": "B3 廠內 Rework",    "units": [Role.PC, Role.ENGINEER],
+    "B3":  {"label": "B3 Rework",         "units": [Role.PC, Role.ENGINEER],
             "color": "info",      "icon": "bi-tools"},
     "HE":  {"label": "C 物料盤點",        "units": [Role.ASSISTANT, Role.WAREHOUSE, Role.PURCHASE],
             "color": "primary",   "icon": "bi-clipboard-check"},
@@ -729,7 +729,12 @@ async def set_disposition(
             if f.get("cust_note"): form.sa_cust_note = f.get("cust_note")
         elif a["type"] == "B2":
             form.sa_sorting_pass_qty = _int(f.get("pass_qty"))
-            form.sa_sorting_fail_qty = _int(f.get("fail_qty"))
+            # 不良總數 = sum(fail_items.qty) 若有，否則用單一 fail_qty
+            fitems = f.get("fail_items") or []
+            if fitems:
+                form.sa_sorting_fail_qty = sum(_int(it.get("qty")) or 0 for it in fitems) or None
+            else:
+                form.sa_sorting_fail_qty = _int(f.get("fail_qty"))
             if f.get("station"): form.sa_station = f.get("station")
             if f.get("sorting_method"): form.sa_defect_handling = f.get("sorting_method")
             # B2 內勾選「客戶端 Sorting」→ 多列排程，反推第一列 + 整理成 sa_cust_note
@@ -749,7 +754,11 @@ async def set_disposition(
         elif a["type"] == "B3":
             form.sa_rework_note          = (f.get("rework_method") or "").strip() or None
             form.sa_rework_pass_qty      = _int(f.get("pass_qty"))
-            form.sa_rework_fail_qty      = _int(f.get("fail_qty"))
+            fitems = f.get("fail_items") or []
+            if fitems:
+                form.sa_rework_fail_qty = sum(_int(it.get("qty")) or 0 for it in fitems) or None
+            else:
+                form.sa_rework_fail_qty = _int(f.get("fail_qty"))
             form.sa_rework_defect_handling = (f.get("defect_handling") or "").strip() or None
             # B3 內勾選「小批樣品測試」→ 反推 lab_test_*
             if f.get("need_lab_test"):
@@ -793,7 +802,7 @@ async def set_disposition(
     form.disposition_at   = datetime.utcnow()
     form.disposition_by   = current_user.id
 
-    # ── 附件：B2 Sorting 需求 / B3 Rework SOP（依卡片類型分類）──
+    # ── 附件：B2 Sorting 需求 / B3 Rework SOP / 不良照片 ──
     sort_files = [f for f in fd.getlist("b2_sorting_files")
                   if hasattr(f, "filename") and f.filename]
     if sort_files:
@@ -804,6 +813,13 @@ async def set_disposition(
     if sop_files:
         await _save_attachments(db, form.id, current_user.id,
                                 sop_files, ["Rework SOP"] * len(sop_files))
+    defect_files = []
+    for nm in ("b2_defect_files", "b3_defect_files"):
+        defect_files += [f for f in fd.getlist(nm)
+                         if hasattr(f, "filename") and f.filename]
+    if defect_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                defect_files, ["不良照片"] * len(defect_files))
 
     # ── 狀態流轉 ───────────────────────────────────
     notify_pc = (fd.get("notify_pc") == "1")
@@ -909,8 +925,8 @@ async def action_update_fields(
     UPDATABLE = {
         "A2": ["replenish_note", "pickup_location", "pickup_contact",
                "pickup_time", "pickup_note", "pickup_actual_at"],
-        "B2": ["station", "completed_at", "pass_qty", "fail_qty"],
-        "B3": ["pass_qty", "fail_qty", "defect_handling"],
+        "B2": ["station", "completed_at", "pass_qty"],
+        "B3": ["pass_qty", "defect_handling"],
     }
     keys = UPDATABLE.get(target["type"])
     if not keys:
@@ -926,10 +942,34 @@ async def action_update_fields(
         v = fd.get(k)
         if v is None:
             continue
-        if k in ("pass_qty", "fail_qty"):
+        if k in ("pass_qty",):
             f[k] = _int(v) if str(v).strip() else None
         else:
             f[k] = v.strip() if isinstance(v, str) else v
+    # fail_items_json：多列「不良原因 + 不良數」
+    raw = fd.get("fail_items_json")
+    if raw:
+        try:
+            items = json.loads(raw)
+            if isinstance(items, list):
+                clean = []
+                for it in items:
+                    reason = (it.get("reason") or "").strip()
+                    qty = _int(it.get("qty"))
+                    if reason or qty:
+                        clean.append({"reason": reason or None, "qty": qty})
+                f["fail_items"] = clean
+        except Exception:
+            pass
+    # 不良照片附件（B2/B3）
+    defect_files = []
+    for nm in ("b2_defect_files", "b3_defect_files"):
+        defect_files += [x for x in fd.getlist(nm)
+                         if hasattr(x, "filename") and x.filename]
+    if defect_files:
+        await _save_attachments(db, form.id, current_user.id,
+                                defect_files, ["不良照片"] * len(defect_files))
+
     target["updated_at"] = datetime.utcnow().isoformat()
     target["updated_by"] = current_user.id
     form.actions_json = json.dumps(actions, ensure_ascii=False)
@@ -941,10 +981,12 @@ async def action_update_fields(
     elif target["type"] == "B2":
         if f.get("station"): form.sa_station = f.get("station")
         form.sa_sorting_pass_qty = f.get("pass_qty")
-        form.sa_sorting_fail_qty = f.get("fail_qty")
+        fitems = f.get("fail_items") or []
+        form.sa_sorting_fail_qty = sum((it.get("qty") or 0) for it in fitems) or None
     elif target["type"] == "B3":
         form.sa_rework_pass_qty = f.get("pass_qty")
-        form.sa_rework_fail_qty = f.get("fail_qty")
+        fitems = f.get("fail_items") or []
+        form.sa_rework_fail_qty = sum((it.get("qty") or 0) for it in fitems) or None
         form.sa_rework_defect_handling = f.get("defect_handling") or None
     form.updated_at = datetime.utcnow()
     db.add(_log(form, current_user, "ACTION_UPDATE", form.status, form.status,
