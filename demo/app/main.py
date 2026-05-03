@@ -20,8 +20,18 @@ from app.models.pcn_form import PCNForm, PCNDocument, PCNApproval
 from app.models.supplier import Supplier, SupplierType
 from app.models.customer import Customer
 from app.models.npi_form import NPIForm, NPIDocument, NPIApproval, NPISupplierInvite
+from app.models.calendar import (
+    CalendarResource, CalendarEvent, ResourceType, EventType, EventStatus,
+    LeaveType, LeaveBalance, LineMessageLog,
+)
+from app.models.qc_exception import (
+    QCException, QCExceptionDocument, QCExceptionApproval,
+)
 from app.services.auth import hash_password
-from app.routes import auth, pcn_forms, drawing_checker, npi_forms, suppliers, customers, title_block
+from app.routes import (
+    auth, pcn_forms, drawing_checker, npi_forms, suppliers, customers, title_block,
+    qc_exceptions, calendar as calendar_route, calendar_line,
+)
 
 
 # ── Seed 初始資料 ────────────────────────────────
@@ -32,7 +42,9 @@ async def seed_users():
         {"username": "admin",      "display_name": "系統管理員",  "role": Role.ADMIN,     "bu": None},
         {"username": "eng01",      "display_name": "王工程師",    "role": Role.ENGINEER,  "bu": BU.ENERGY},
         {"username": "qa01",       "display_name": "李品保",      "role": Role.QC,        "bu": None},
+        {"username": "ipqc",       "display_name": "品保（IQC/IPQC/OQC 共用）", "role": Role.QC, "bu": None},
         {"username": "pd01",       "display_name": "張產線主管",  "role": Role.PROD_MGR,  "bu": None},
+        {"username": "pmc01",      "display_name": "李生管",      "role": Role.PC,        "bu": None},
         {"username": "bh01",       "display_name": "陳BU主管",    "role": Role.BU,        "bu": BU.ENERGY},
         {"username": "engmgr",     "display_name": "林工程主管",  "role": Role.ENG_MGR,   "bu": None},
         {"username": "pc01",       "display_name": "黃採購",      "role": Role.PURCHASE,  "bu": None},
@@ -83,6 +95,76 @@ async def seed_suppliers():
     print("✅ 範例供應商建立完成")
 
 
+async def seed_calendar_resources():
+    """會議室（大/小）／公務車（小藍/小綠）主檔 + 假別主檔"""
+    RESOURCES = [
+        {"type": ResourceType.ROOM, "code": "ROOM-1", "name": "大會議室", "capacity": 20, "location": "3F"},
+        {"type": ResourceType.ROOM, "code": "ROOM-2", "name": "小會議室", "capacity": 6,  "location": "3F"},
+        {"type": ResourceType.CAR,  "code": "CAR-1",  "name": "小藍", "location": "B1 停車場"},
+        {"type": ResourceType.CAR,  "code": "CAR-2",  "name": "小綠", "location": "B1 停車場"},
+    ]
+    LEAVE_TYPES = [
+        {"code": "ANNUAL",   "name": "特休",  "is_paid": True,  "max_days_per_year": 14, "color": "#0d6efd"},
+        {"code": "SICK",     "name": "病假",  "is_paid": False, "max_days_per_year": 30, "color": "#fd7e14"},
+        {"code": "PERSONAL", "name": "事假",  "is_paid": False, "max_days_per_year": 14, "color": "#6c757d"},
+    ]
+    async with AsyncSessionLocal() as db:
+        # 先 upsert：用 code 對齊，更新名稱與位置
+        for r in RESOURCES:
+            existing = await db.execute(select(CalendarResource).where(CalendarResource.code == r["code"]))
+            row = existing.scalars().first()
+            if row:
+                row.name = r["name"]
+                row.location = r.get("location")
+                row.capacity = r.get("capacity")
+                row.active = True
+            else:
+                db.add(CalendarResource(**r, active=True))
+        # 移除舊版多餘的資源（視訊會議室 / 舊車牌）— 軟刪 active=False 避免破壞外鍵
+        OLD_CODES = {"ROOM-3"}
+        OLD_NAMES = {"視訊會議室", "TOYOTA-3168", "NISSAN-5566"}
+        all_q = await db.execute(select(CalendarResource))
+        for row in all_q.scalars().all():
+            if row.code in OLD_CODES or row.name in OLD_NAMES:
+                row.active = False
+        for t in LEAVE_TYPES:
+            existing = await db.execute(select(LeaveType).where(LeaveType.code == t["code"]))
+            if not existing.scalars().first():
+                db.add(LeaveType(**t))
+        await db.commit()
+    print("✅ 行事曆資源／假別主檔建立完成")
+
+
+async def migrate_users_role_check():
+    """SQLite: 擴充 users.role CHECK constraint 允許新 enum 值（pc 生管）
+
+    SQLite 不支援 ALTER ... DROP CONSTRAINT；這裡用 PRAGMA writable_schema
+    直接改 sqlite_master 內的 CHECK 列表，安全且不破壞 FK。
+    """
+    async with engine.begin() as conn:
+        try:
+            r = await conn.execute(text(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+            ))
+            row = r.fetchone()
+            if not row or not row[0]:
+                return
+            sql = row[0]
+            if "'pc'" in sql:
+                return  # 已包含
+            # 將最後一個 'warehouse' 後面補上 'pc'
+            new_sql = sql.replace("'warehouse'", "'warehouse', 'pc'")
+            if new_sql == sql:
+                return  # replace 失敗就放棄（避免破壞 schema）
+            await conn.execute(text("PRAGMA writable_schema=ON"))
+            await conn.execute(text(
+                "UPDATE sqlite_master SET sql=:s WHERE type='table' AND name='users'"
+            ), {"s": new_sql})
+            await conn.execute(text("PRAGMA writable_schema=OFF"))
+        except Exception:
+            logging.exception("migrate_users_role_check failed (skipped)")
+
+
 async def run_migrations():
     """補齊新欄位（ALTER TABLE IF NOT EXISTS 等效）"""
     migrations = [
@@ -97,6 +179,8 @@ async def run_migrations():
         "ALTER TABLE npi_supplier_invites ADD COLUMN expected_lead_days INTEGER",
         "ALTER TABLE npi_supplier_invites ADD COLUMN drawing_doc_id INTEGER",
         "ALTER TABLE npi_supplier_invites ADD COLUMN tooling_cost FLOAT",
+        # 階梯式 MOQ 報價（JSON：[{"qty":100,"price":500}, {"qty":500,"price":450}]）
+        "ALTER TABLE npi_supplier_invites ADD COLUMN tier_data TEXT",
         # NPI 業務工作區 — 每張圖 T1 試模計畫 JSON
         "ALTER TABLE npi_forms ADD COLUMN t1_plan_data TEXT",
         # NPI 工程工作區 — 每站廠內料號/是否走途程 JSON
@@ -115,6 +199,63 @@ async def run_migrations():
         "UPDATE users SET username='qa01' WHERE username='qc01'",
         "UPDATE users SET username='pd01' WHERE username='prodmgr01'",
         "UPDATE users SET username='bh01' WHERE username='buhead'",
+        # QC 異常表新增欄位
+        "ALTER TABLE qc_exceptions ADD COLUMN doc_type VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN event_date_type VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN dispositions_json TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_to TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_cc TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_subject VARCHAR(200)",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_body TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN supplier_mail_sent_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_conditions TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN lab_test_due_date VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN linked_sample_request_no VARCHAR(50)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_need_sorting BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_need_rework BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_station VARCHAR(50)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_defect_handling TEXT",
+        # 立即處理 v2 欄位
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_target_type VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_replenish_note TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_subtype VARCHAR(20)",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_pass_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_fail_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_note TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_customer_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_inhouse_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_supplier_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_decision TEXT",
+        # 立即處理 v3 — SA 多選 + 生管/sorting 回填 + 橫向展開盤點單
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_subtypes_json TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sent_to_prod_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_sorting_filled_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_result TEXT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_filled_at DATETIME",
+        "ALTER TABLE qc_exceptions ADD COLUMN he_inventory_data TEXT",
+        # 立即處理 v4 — 客戶端 Sorting/Rework 工時與人力
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_sorting_hours FLOAT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_sorting_workers INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_rework_hours FLOAT",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_rework_workers INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_cust_note TEXT",
+        # 簡化流程：刪除「根因分析」階段，舊資料併入「改善方案」
+        "UPDATE qc_exceptions SET status='PENDING_IMPROVEMENT' WHERE status='PENDING_RCA'",
+        # 異常來源類型 — 廠商 / 客戶 / 廠內
+        "ALTER TABLE qc_exceptions ADD COLUMN source_type VARCHAR(20) DEFAULT 'SUPPLIER'",
+        "UPDATE qc_exceptions SET source_type='SUPPLIER' WHERE source_type IS NULL",
+        # 異常原因多列（含外觀/尺寸 + 各列抽樣/不良）
+        "ALTER TABLE qc_exceptions ADD COLUMN defect_items_json TEXT",
+        # A 退貨 — 司機安排載回
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_pickup_required BOOLEAN DEFAULT 0",
+        "ALTER TABLE qc_exceptions ADD COLUMN rts_pickup_note TEXT",
+        # B 處理方式 — Rework 良品/不良/不良品處理（彙整表用）
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_pass_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_fail_qty INTEGER",
+        "ALTER TABLE qc_exceptions ADD COLUMN sa_rework_defect_handling TEXT",
+        # 立即處理 v3 — 多卡片 actions JSON
+        "ALTER TABLE qc_exceptions ADD COLUMN actions_json TEXT",
     ]
     async with engine.begin() as conn:
         for sql in migrations:
@@ -129,11 +270,14 @@ async def lifespan(app: FastAPI):
     # 建立資料表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # 擴充 users.role CHECK 限制（接受新 enum 值 'pc'）
+    await migrate_users_role_check()
     # 補欄位 migration
     await run_migrations()
     # 植入測試資料
     await seed_users()
     await seed_suppliers()
+    await seed_calendar_resources()
     # 初始化圖面量測檢表 DB
     drawing_checker.init()
     yield
@@ -165,6 +309,9 @@ app.include_router(npi_forms.router)
 app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(title_block.router)
+app.include_router(qc_exceptions.router)
+app.include_router(calendar_route.router)
+app.include_router(calendar_line.router)
 
 
 @app.get("/")

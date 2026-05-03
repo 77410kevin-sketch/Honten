@@ -1,0 +1,2655 @@
+{% extends "base.html" %}
+{% block title %}{{ form.form_id }} — QC 異常單{% endblock %}
+{% block content %}
+
+{% set _is_qc = user.role.value in ('qc','admin') %}
+{% set _s = form.status.value %}
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-exclamation-octagon text-danger me-2"></i>{{ form.form_id }}
+    {% if _s == 'DRAFT' %}<span class="badge bg-secondary ms-2">草稿</span>
+    {% elif _s == 'PENDING_DISPOSITION' %}<span class="badge bg-warning text-dark ms-2">立即處理</span>
+    {% elif _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}<span class="badge bg-primary ms-2">待改善方案</span>
+    {% elif _s == 'LINKED_ECN' %}<span class="badge bg-warning text-dark ms-2">已綁 ECN</span>
+    {% elif _s == 'CLOSED' %}<span class="badge bg-success ms-2">結案</span>
+    {% endif %}
+  </h4>
+  <a href="/qc-exceptions/" class="btn btn-sm btn-outline-secondary ms-auto">
+    <i class="bi bi-list me-1"></i>回列表
+  </a>
+</div>
+
+{# 進度軸（PENDING_RCA 已併入 PENDING_IMPROVEMENT）#}
+{% set _steps = [
+  ('DRAFT', '品保草稿', 'bi-pencil'),
+  ('PENDING_DISPOSITION', '立即處理', 'bi-search'),
+  ('PENDING_IMPROVEMENT', '改善方案 (含根因)', 'bi-tools'),
+  ('LINKED_ECN', '綁 ECN', 'bi-link-45deg'),
+  ('CLOSED', '結案', 'bi-check2-circle'),
+] %}
+{% set _idx_map = {'DRAFT':0, 'PENDING_DISPOSITION':1, 'PENDING_RCA':2,
+                   'PENDING_IMPROVEMENT':2, 'LINKED_ECN':3, 'CLOSED':4} %}
+{% set _cur = _idx_map.get(_s, 1) %}
+<div class="card shadow-sm mb-3">
+  <div class="card-body py-3">
+    <div class="d-flex justify-content-between align-items-center text-center">
+      {% for code, label, icon in _steps %}
+      {% set i = loop.index0 %}
+      <div class="flex-fill">
+        <div class="rounded-circle d-inline-flex align-items-center justify-content-center
+                    {% if i < _cur %}bg-success text-white
+                    {% elif i == _cur %}bg-warning text-dark
+                    {% else %}bg-light text-muted{% endif %}"
+             style="width:38px;height:38px">
+          <i class="bi {{ icon }}"></i>
+        </div>
+        <div class="small mt-1 {% if i == _cur %}fw-semibold{% endif %}">{{ label }}</div>
+      </div>
+      {% if not loop.last %}
+      <div class="flex-grow-0 px-2"><i class="bi bi-chevron-right text-muted"></i></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    {# IPC 異常資訊 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-clipboard-data me-2"></i>IPC 異常資訊</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#ipcInfoBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
+      </div>
+      {% set _doc_lbl = {'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'} %}
+      {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
+      {% set _stage_lbl = {'IQC':'IQC','IPQC':'IPQC','OQC':'OQC','INSPECTION':'品檢',
+                           'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
+      {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
+      {% set _src_color = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'} %}
+      <div class="card-body collapse show" id="ipcInfoBody">
+        <div class="row g-3 small">
+          <div class="col-md-4"><strong>品號：</strong>{{ form.part_no }}</div>
+          <div class="col-md-4">
+            <strong>{{ _doc_lbl.get(form.doc_type.value, '單號') if form.doc_type else '單號' }}：</strong>
+            {{ form.receive_doc_no or '—' }}
+          </div>
+          <div class="col-md-4">
+            <strong>{{ _date_lbl.get(form.event_date_type.value, '日期') if form.event_date_type else '日期' }}：</strong>
+            {{ form.receive_date or '—' }}
+          </div>
+          {% set _src_v = form.source_type.value if form.source_type else 'SUPPLIER' %}
+          <div class="col-md-4"><strong>工段+來源：</strong>
+            <span class="badge bg-light text-dark border">{{ _stage_lbl.get(form.stage.value, form.stage.value) }}</span>
+            <span class="badge {{ _src_color.get(_src_v, 'bg-secondary') }}">{{ _src_lbl.get(_src_v, '廠商') }}</span>
+            {{ form.supplier_name or '—' }}
+          </div>
+          <div class="col-md-4"><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
+          {% set _items = (form.defect_items_json | fromjson) if form.defect_items_json else None %}
+          {% if _items %}
+          <div class="col-12">
+            <strong>異常原因（{{ _items|length }} 筆）：</strong>
+            <table class="table table-sm table-bordered mt-1 mb-1">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>異常原因</th>
+                  <th style="width:140px">類型</th>
+                  <th class="text-end" style="width:100px">抽樣</th>
+                  <th class="text-end" style="width:100px">不良</th>
+                  <th class="text-end" style="width:90px">不良率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in _items %}
+                {% set _r = (it.defect_qty / it.sample_qty) if (it.sample_qty and it.defect_qty is not none) else None %}
+                <tr>
+                  <td class="text-center">{{ loop.index }}</td>
+                  <td class="text-danger fw-semibold">{{ it.cause }}</td>
+                  <td>
+                    {% if 'EXTERIOR' in (it.types or []) %}<span class="badge bg-info text-dark">外觀</span>{% endif %}
+                    {% if 'DIMENSION' in (it.types or []) %}<span class="badge bg-warning text-dark">尺寸</span>{% endif %}
+                  </td>
+                  <td class="text-end">{{ it.sample_qty if it.sample_qty is not none else '—' }}</td>
+                  <td class="text-end">{{ it.defect_qty if it.defect_qty is not none else '—' }}</td>
+                  <td class="text-end fw-semibold {% if _r and _r >= 0.05 %}text-danger{% else %}text-muted{% endif %}">
+                    {% if _r is not none %}{{ '%.1f' % (_r * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light">
+                <tr>
+                  <td colspan="3" class="text-end fw-semibold">合計</td>
+                  <td class="text-end fw-semibold">{{ form.sample_qty or '—' }}</td>
+                  <td class="text-end fw-semibold">{{ form.defect_qty or '—' }}</td>
+                  <td class="text-end fw-semibold {% if form.defect_rate and form.defect_rate >= 0.05 %}text-danger{% endif %}">
+                    {% if form.defect_rate is not none %}{{ '%.2f' % (form.defect_rate * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {% else %}
+          <div class="col-12"><strong>異常原因：</strong>
+            <span class="text-danger fw-semibold">{{ form.defect_cause }}</span>
+          </div>
+          <div class="col-md-6"><strong>不良率：</strong>
+            {% if form.defect_rate is not none %}
+              {{ form.defect_qty }} / {{ form.sample_qty }}
+              <span class="fw-semibold {% if form.defect_rate >= 0.05 %}text-danger{% else %}text-success{% endif %}">
+                {{ '%.1f' % (form.defect_rate * 100) }}%
+              </span>
+            {% else %}—{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# v3 品保立即處理 — 多卡片管理（下拉新增 + 各卡片獨立送出/回覆）#}
+    {% set _route_hint = '採購（原物料）' if (form.doc_type and form.doc_type.value == 'RECEIVE')
+                       else ('生管（製成品）' if (form.doc_type and form.doc_type.value == 'PROCESS')
+                             else '採購 + 生管') %}
+    {% set _editable = _is_qc and _s in ('PENDING_DISPOSITION', 'DRAFT') %}
+    {% set _has_actions = qc_actions and qc_actions|length > 0 %}
+
+    {% if _editable %}
+    <div class="card shadow-sm mb-3 border-warning">
+      <div class="card-header bg-warning-subtle fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-lightning-charge me-2"></i>品保立即處理</span>
+        <span class="badge bg-secondary ms-2">編輯中</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#dispCardBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
+      </div>
+      <div class="card-body collapse show" id="dispCardBody">
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/disposition" id="dispForm"
+              enctype="multipart/form-data">
+
+          {# Step 1：通知信 #}
+          <div class="border rounded p-3 mb-3 bg-light">
+            <div class="fw-semibold mb-2">
+              <i class="bi bi-envelope me-1"></i><span class="badge bg-secondary me-1">Step 1</span>
+              通知信
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label small">收件人 (To)</label>
+                <select id="mailToSel" name="supplier_mail_to" class="form-select form-select-sm">
+                  <option value="" {% if not qc_preselect_email %}selected{% endif %}>— 請選擇收件人 —</option>
+                  <optgroup label="廠內單位">
+                    {% for stg, em in qc_internal_stations %}
+                    <option value="{{ em }}" {% if em == qc_preselect_email %}selected{% endif %}>
+                      {{ stg }}（{{ em }}）
+                    </option>
+                    {% endfor %}
+                  </optgroup>
+                  <optgroup label="供應商">
+                    {% for s in qc_active_suppliers %}
+                    <option value="{{ s.email }}" {% if s.email == qc_preselect_email %}selected{% endif %}>
+                      {{ s.name }}（{{ s.email }}）
+                    </option>
+                    {% endfor %}
+                  </optgroup>
+                  <option value="__custom__">— 自訂輸入 —</option>
+                </select>
+                <input type="text" id="mailToCustom" class="form-control form-control-sm mt-1 d-none"
+                       placeholder="自訂 email">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small">副本 (Cc)</label>
+                <input name="supplier_mail_cc" class="form-control form-control-sm"
+                       placeholder="多人用 , 隔開">
+              </div>
+              <div class="col-12">
+                <label class="form-label small">主旨</label>
+                <input name="supplier_mail_subject" class="form-control form-control-sm"
+                       value="【鴻騰電子 QC 異常通知】{{ form.form_id }} - {{ form.part_no }}">
+              </div>
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                  <label class="form-label small mb-1">信件內容（自動帶異常照片附件）</label>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="loadMailTpl">
+                    <i class="bi bi-file-earmark-text me-1"></i>套用範本
+                  </button>
+                </div>
+                <textarea name="supplier_mail_body" id="supplierMailBody" rows="14"
+                          class="form-control form-control-sm font-monospace" style="font-size:12px"
+                          placeholder="信件內容…">{{ qc_supplier_mail_tpl }}</textarea>
+              </div>
+              <div class="col-12 d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-info btn-sm text-white" id="sendMailBtn">
+                  <i class="bi bi-send me-1"></i>立即寄出通知信
+                </button>
+                {% if form.supplier_mail_sent_at %}
+                <span class="badge bg-success ms-1">
+                  已寄出 {{ form.supplier_mail_sent_at.strftime('%m-%d %H:%M') }}
+                </span>
+                {% endif %}
+                <span class="text-muted small ms-auto">寄信後仍可繼續編輯處理項目</span>
+              </div>
+            </div>
+          </div>
+
+          {# Step 2：處理項目（下拉新增卡片）#}
+          <div class="border rounded p-3 mb-3 bg-light">
+            <div class="fw-semibold mb-2">
+              <span class="badge bg-secondary me-1">Step 2</span>
+              處理項目（可複選新增，每項可獨立送出至對應單位）
+            </div>
+            <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+              <select id="actAddSel" class="form-select form-select-sm" style="max-width:340px">
+                <option value="">— 請選擇處理類型 —</option>
+                {% for k, info in qc_action_types_meta.items() %}
+                <option value="{{ k }}">
+                  {{ info.label }}{% if info.units %}（→ {{ info.units | map(attribute='label') | join('、') }}）{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="button" class="btn btn-warning btn-sm" id="actAddBtn">
+                <i class="bi bi-plus-circle me-1"></i>新增此處理項目
+              </button>
+              <span class="text-muted small">提示：A 退貨、B1~B3 處理（含客戶端勾選）、C 物料盤點都在同一個下拉選單</span>
+            </div>
+            <div id="actCards" class="d-flex flex-column gap-2"></div>
+            <div id="actEmpty" class="text-center text-muted small py-3 d-none">
+              尚未新增處理項目，請從上方下拉選擇後按「新增」。
+            </div>
+            <input name="note" class="form-control form-control-sm mt-3"
+                   placeholder="總體處理判斷說明（選填）" value="{{ form.disposition_note or '' }}">
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 flex-wrap">
+            <button type="submit" name="notify_pc" value="1" class="btn btn-warning fw-semibold">
+              <i class="bi bi-send-arrow-up me-1"></i>推給負責單位
+            </button>
+          </div>
+          <div class="form-text small text-muted text-end mt-1">
+            進入改善方案階段請從右側「操作」欄。
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+    (function(){
+      const ACTION_META = {{ qc_action_types_meta | tojson }};
+      const INITIAL_ACTIONS = {{ qc_actions | tojson }};
+      const PART_NO  = {{ form.part_no | tojson }};
+      const TOTAL_QTY = {{ (form.receive_qty or 0) | tojson }};
+      const MAIL_TPL  = {{ qc_supplier_mail_tpl | tojson }};
+      {% set _ipc_items_for_js = (form.defect_items_json | fromjson) if form.defect_items_json else [] %}
+      const IPC_ITEMS = {{ _ipc_items_for_js | tojson }};
+
+      function ipcDefectSummary() {
+        if (!Array.isArray(IPC_ITEMS) || !IPC_ITEMS.length) return '';
+        return IPC_ITEMS.map(it => {
+          const c = (it.cause || '').trim();
+          if (!c) return '';
+          if (it.defect_qty != null && it.sample_qty != null) return `${c}(${it.defect_qty}/${it.sample_qty})`;
+          if (it.defect_qty != null) return `${c}(不良 ${it.defect_qty})`;
+          return c;
+        }).filter(Boolean).join('；');
+      }
+      const DOCS_BY_CAT = {{ qc_docs_by_cat_json | tojson }};
+
+      // 多列「不良原因 / 不良數 / 截圖」渲染（B2/B3 共用）
+      function renderFailRows(fields, fileFieldName) {
+        const rows = (fields.fail_items && fields.fail_items.length)
+          ? fields.fail_items
+          : [{reason:'', qty:''}];
+        return rows.map((r, i) => `
+          <tr class="fail-row">
+            <td class="text-center fail-idx">${i + 1}</td>
+            <td><input class="form-control form-control-sm" data-fail="reason"
+                       value="${esc(r.reason)}" placeholder="尺寸不符 / 外觀刮傷"></td>
+            <td><input type="number" min="0" class="form-control form-control-sm text-end" data-fail="qty"
+                       value="${esc(r.qty)}" placeholder="100"></td>
+            <td><input type="file" name="${fileFieldName}" multiple accept="image/*"
+                       capture="environment" class="form-control form-control-sm"></td>
+            <td><button type="button" class="btn btn-sm btn-outline-danger fail-rm">×</button></td>
+          </tr>
+        `).join('');
+      }
+
+      // 已上傳附件清單渲染（給 B2/B3 卡片使用）
+      function renderUploadedDocs(category) {
+        const items = (DOCS_BY_CAT && DOCS_BY_CAT[category]) || [];
+        if (!items.length) return '';
+        return `
+          <div class="small mt-1 mb-1">
+            <span class="text-muted me-1"><i class="bi bi-paperclip me-1"></i>已上傳（${items.length}）：</span>
+            ${items.map(d => `
+              <a href="/qc-exceptions/doc/preview/${d.id}" target="_blank"
+                 class="badge bg-light text-dark border me-1" title="${esc(d.at)}">
+                <i class="bi bi-file-earmark me-1"></i>${esc(d.name)}
+              </a>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      const cardsEl = document.getElementById('actCards');
+      const emptyEl = document.getElementById('actEmpty');
+      const sel     = document.getElementById('actAddSel');
+      const addBtn  = document.getElementById('actAddBtn');
+
+      function uniqId() {
+        return 'act-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      }
+      function esc(s) {
+        return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+               .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+      function refreshEmpty() {
+        const has = cardsEl.children.length > 0;
+        emptyEl.classList.toggle('d-none', has);
+      }
+
+      function renderFields(type, fields) {
+        fields = fields || {};
+        // 視覺分區 helpers
+        function qcSec(content, title) {
+          title = title || '品保填寫區';
+          return `
+            <div class="border border-warning rounded p-2 mb-2" style="background:rgba(255,193,7,.06)">
+              <div class="small fw-semibold text-warning mb-2">
+                <i class="bi bi-pencil-square me-1"></i>${title}
+              </div>
+              ${content}
+            </div>
+          `;
+        }
+        function respSec(content, title, theme) {
+          theme = theme || 'info';
+          const bgRgba = theme === 'success' ? 'rgba(25,135,84,.06)' : 'rgba(13,110,253,.06)';
+          return `
+            <div class="border border-${theme} rounded p-2 mb-2" style="background:${bgRgba}">
+              <div class="small fw-semibold text-${theme} mb-2">
+                <i class="bi bi-people-fill me-1"></i>${title || '權責單位填寫區'}
+              </div>
+              ${content}
+            </div>
+          `;
+        }
+
+        if (type === 'A1') {
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              <i class="bi bi-info-circle me-1"></i>流程：品保送出退貨 Mail（Step 1）→ 採購／生管安排與廠商對接 → 廠商派車載回 + 回覆補貨數量／預計交期 → 採購/生管回填回貨明細
+            </div>
+          ` + qcSec(`
+            <div class="row g-2">
+              <div class="col-md-4"><label class="form-label small">退貨總數（pcs）</label>
+                <input type="number" min="0" class="form-control form-control-sm" data-bind="return_qty_total"
+                       value="${esc(fields.return_qty_total)}" placeholder="${esc(TOTAL_QTY) || ''}"></div>
+              <div class="col-md-8"><label class="form-label small">退貨原因 / 說明
+                <span class="text-muted small">（自動帶 IPC 異常原因，可修改）</span>
+              </label>
+                <input class="form-control form-control-sm" data-bind="replenish_note"
+                       placeholder="例：總長超規 5/315；本批不符允收標準"
+                       value="${esc((fields.replenish_note != null && fields.replenish_note !== '') ? fields.replenish_note : ipcDefectSummary())}"></div>
+            </div>
+            <div class="form-text small mt-1 text-muted">
+              預計回補時間／預計回補數量 由<strong>採購／生管</strong>於送出後在顯示頁回填
+            </div>
+            <div class="form-check mt-2">
+              <input type="checkbox" class="form-check-input" data-bind="pickup_required" data-toggle-target=".a1-pickup-fields" ${fields.pickup_required ? 'checked' : ''}>
+              <label class="form-check-label fw-semibold">
+                <i class="bi bi-truck-flatbed me-1"></i>例外：需我方協助派車（預設由廠商派車載回）
+              </label>
+            </div>
+            <div class="a1-pickup-fields ${fields.pickup_required ? '' : 'd-none'}">
+              <input class="form-control form-control-sm mt-1" data-bind="pickup_note"
+                     placeholder="派車備註（地點 / 聯絡人 / 預計時間）" value="${esc(fields.pickup_note)}">
+            </div>
+            <div class="form-text small mt-1"><i class="bi bi-info-circle me-1"></i>實際回貨明細（每筆日期 / 數量）由<strong>採購／生管</strong>於送出後在顯示頁回填，須與<strong>預計回補數量</strong>對上</div>
+            ${(() => {
+              const due = fields.replenish_due_date || '';
+              const planned = parseInt(fields.replenish_qty) || 0;
+              const logs = fields.return_logs || [];
+              const hasAny = due || planned || logs.length;
+              if (!hasAny) return '';
+              let totalDone = 0;
+              const trs = logs.map((r, i) => {
+                const q = parseInt(r.qty) || 0;
+                totalDone += q;
+                return `<tr>
+                  <td class="text-center">${i + 1}</td>
+                  <td>${esc(r.date) || '—'}</td>
+                  <td class="text-end">${esc(r.qty) || '—'}</td>
+                  <td>${esc(r.note) || '—'}</td>
+                </tr>`;
+              }).join('');
+              const diff = totalDone - planned;
+              let badge = '';
+              if (planned > 0) {
+                if (diff === 0) badge = '<span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>';
+                else if (diff > 0) badge = `<span class="badge bg-warning text-dark ms-1">超出 ${diff}</span>`;
+                else badge = `<span class="badge bg-danger ms-1">差 ${-diff}</span>`;
+              }
+              return `
+                <div class="border-top pt-2 mt-2">
+                  <div class="small fw-semibold text-info mb-1">
+                    <i class="bi bi-truck me-1"></i>採購／生管 已回填資訊（唯讀，自動同步）
+                  </div>
+                  <div class="row g-2 mb-2 small">
+                    <div class="col-md-4"><strong>預計回補時間：</strong>
+                      ${due ? esc(due) : '<span class="text-muted">未填</span>'}
+                    </div>
+                    <div class="col-md-4"><strong>預計回補數量：</strong>
+                      ${planned ? `<span class="text-primary fw-semibold">${planned}</span> pcs` : '<span class="text-muted">未填</span>'}
+                    </div>
+                    <div class="col-md-4"><strong>實際已回：</strong>
+                      <span class="text-success fw-semibold">${totalDone}</span> pcs ${badge}
+                    </div>
+                  </div>
+                  ${logs.length ? `
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                      <thead class="table-light"><tr>
+                        <th style="width:40px">#</th><th style="width:140px">回貨日期</th>
+                        <th class="text-end" style="width:110px">回貨數量</th><th>備註</th>
+                      </tr></thead>
+                      <tbody>${trs}</tbody>
+                    </table>
+                  </div>` : '<div class="small text-muted">尚無回貨紀錄</div>'}
+                </div>
+              `;
+            })()}
+          `);
+        }
+        if (type === 'A2') {
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              <i class="bi bi-info-circle me-1"></i>流程：客戶退回我方倉庫 → 由我方派司機去客戶端載回 → 業助協調採購／生管／業務退貨/補貨
+            </div>
+          ` + respSec(`
+            <label class="form-label small">退貨/補貨資訊（給採購/生管/業務）</label>
+            <textarea class="form-control form-control-sm mb-2" rows="2" data-bind="replenish_note"
+                      placeholder="例：退回 35000 pcs，需安排補貨；業務跟客戶確認補貨時程">${esc(fields.replenish_note)}</textarea>
+            <div class="alert alert-warning small mb-2 py-1 px-2">
+              <i class="bi bi-truck me-1"></i>由<strong>我方派司機</strong>到客戶端載回不良品
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label small">取貨地點（客戶倉/工廠）</label>
+                <input class="form-control form-control-sm" data-bind="pickup_location"
+                       placeholder="景利 板橋廠 收料區" value="${esc(fields.pickup_location)}"></div>
+              <div class="col-md-3"><label class="form-label small">客戶端聯絡人</label>
+                <input class="form-control form-control-sm" data-bind="pickup_contact"
+                       placeholder="王 PE / 02-1234-5678" value="${esc(fields.pickup_contact)}"></div>
+              <div class="col-md-3"><label class="form-label small">預計取貨時間</label>
+                <input class="form-control form-control-sm" data-bind="pickup_time"
+                       placeholder="2026-05-05 14:00" value="${esc(fields.pickup_time)}"></div>
+              <div class="col-md-6"><label class="form-label small">司機派車備註（選填）</label>
+                <input class="form-control form-control-sm" data-bind="pickup_note"
+                       placeholder="例：1.5 噸貨車；先電聯客戶；返廠後直接卸到品保檢驗區" value="${esc(fields.pickup_note)}"></div>
+              <div class="col-md-6"><label class="form-label small">實際回廠時間</label>
+                <input class="form-control form-control-sm" data-bind="pickup_actual_at"
+                       placeholder="2026-05-05 17:30（業助回填）" value="${esc(fields.pickup_actual_at)}"></div>
+            </div>
+          `, '業助填寫區（品保可留空，送出後由業助從顯示頁填寫並儲存）', 'info');
+        }
+        if (type === 'B1') {
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              <i class="bi bi-info-circle me-1"></i>通知反應單位：此批不需卡控，可直接進料／出貨過站
+            </div>
+          ` + qcSec(`
+            <label class="form-label small">說明（選填）</label>
+            <input class="form-control form-control-sm" data-bind="note"
+                   placeholder="尺寸略偏但符合允收標準，不卡控直接放行" value="${esc(fields.note)}">
+          `);
+        }
+        if (type === 'B2') {
+          const STATIONS = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'];
+          const cRows = (fields.cust_sorting_rows && fields.cust_sorting_rows.length)
+            ? fields.cust_sorting_rows
+            : [{date:'', location:'', workers:''}];
+          const tr_cust = cRows.map((r, i) => `
+            <tr class="cust-row">
+              <td class="text-center cust-idx">${i + 1}</td>
+              <td><input class="form-control form-control-sm" data-cust="date" value="${esc(r.date)}" placeholder="2026-04-30"></td>
+              <td><input class="form-control form-control-sm" data-cust="location" value="${esc(r.location)}" placeholder="景利 板橋廠"></td>
+              <td><input type="number" min="0" class="form-control form-control-sm text-end" data-cust="workers" value="${esc(r.workers)}" placeholder="2"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger cust-rm">×</button></td>
+            </tr>
+          `).join('');
+          const stationOpts = STATIONS.map(s =>
+            `<option value="${esc(s)}" ${fields.station === s ? 'selected' : ''}>${esc(s)}</option>`
+          ).join('');
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              <i class="bi bi-info-circle me-1"></i>流程：品保提出 Sorting 需求與手法 → 生管選執行單位 + 完成時間 → 負責 Sorting 單位回填數據
+            </div>
+          ` + qcSec(`
+            <label class="form-label small">Sorting 需求說明（手法 / 標準 / 參考圖）</label>
+            <textarea class="form-control form-control-sm mb-2" rows="2" data-bind="sorting_method"
+                      placeholder="例：用游標卡尺量總長 32.00±0.05，超出隔離；以治具 J-001 比對外觀刮傷 >0.2mm 為不良">${esc(fields.sorting_method)}</textarea>
+            <label class="form-label small">附件（截圖 / 圖面 / 治具圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上截圖</label>
+            <input type="file" name="b2_sorting_files" multiple accept="image/*,.pdf"
+                   capture="environment" class="form-control form-control-sm" data-paste-target="1">
+            <div class="paste-status small text-success mt-1 d-none"></div>
+            <div class="form-text small mb-1">可多選 / 拍照 / 貼上截圖；歸類為「Sorting 需求」</div>
+            ${renderUploadedDocs('Sorting 需求')}
+            <div class="form-check mb-2 mt-2">
+              <input type="checkbox" class="form-check-input" data-bind="cust_sorting" data-toggle-target=".cust-sort-fields" ${fields.cust_sorting ? 'checked' : ''}>
+              <label class="form-check-label fw-semibold text-primary">
+                <i class="bi bi-person-check me-1"></i>勾選 → 客戶端 Sorting（含日期 / 地點 / 需求人力，可多筆）
+              </label>
+            </div>
+            <div class="cust-sort-fields ${fields.cust_sorting ? '' : 'd-none'}">
+              <div class="ps-3 border-start border-primary border-2 mb-2 pt-2">
+                <div class="small text-primary mb-1">客戶端 Sorting 排程</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th><th>日期</th><th>地點</th>
+                      <th class="text-end" style="width:110px">需求人力</th><th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="cust-tbody">${tr_cust}</tbody>
+                  </table>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary cust-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增排程
+                </button>
+              </div>
+            </div>
+          `) + respSec(`
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label small">執行單位</label>
+                <select class="form-select form-select-sm" data-bind="station">
+                  <option value="">— 請選擇 —</option>${stationOpts}
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label small">完成時間</label>
+                <input type="date" class="form-control form-control-sm" data-bind="completed_at"
+                       value="${esc(fields.completed_at)}"></div>
+            </div>
+          `, '生管填寫區', 'info') + respSec(`
+            <div class="row g-2 mb-2">
+              <div class="col-md-3"><label class="form-label small">良品數</label>
+                <input type="number" min="0" class="form-control form-control-sm" data-bind="pass_qty" value="${esc(fields.pass_qty)}"></div>
+              <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
+                <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
+              <div class="col-md-3"><label class="form-label small">不良率</label>
+                <div class="form-control form-control-sm bg-light fw-semibold" data-rate>—</div></div>
+            </div>
+            <div class="small fw-semibold text-success mb-1">
+              <i class="bi bi-list-ul me-1"></i>不良原因 / 不良數 / 截圖（可向下新增）
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-1">
+                <thead class="table-light"><tr>
+                  <th style="width:40px">#</th>
+                  <th>不良原因</th>
+                  <th class="text-end" style="width:120px">不良數</th>
+                  <th style="width:200px">異常照片— 可貼上</th>
+                  <th style="width:40px">—</th>
+                </tr></thead>
+                <tbody class="fail-tbody">${renderFailRows(fields, 'b2_defect_files')}</tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success fail-add">
+              <i class="bi bi-plus-circle me-1"></i>新增不良原因
+            </button>
+            ${renderUploadedDocs('異常照片')}
+          `, `負責 Sorting 單位回填區（總數 ${esc(TOTAL_QTY) || '—'} pcs）`, 'success');
+        }
+        if (type === 'B3') {
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              <i class="bi bi-info-circle me-1"></i>流程：品保提出 Rework 需求 → 可勾「小批樣品測試」「工程檢治具設計」確認有效性 → 整批通知生管處理
+            </div>
+          ` + qcSec(`
+            <label class="form-label small">Rework 需求說明</label>
+            <textarea class="form-control form-control-sm mb-2" rows="2" data-bind="rework_method"
+                      placeholder="例：取批樣 50 pcs 重工後做總長量測，確認 32.00±0.05；通過再導入整批 Rework">${esc(fields.rework_method)}</textarea>
+            <div class="d-flex flex-wrap gap-3 mb-2">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" data-bind="need_lab_test" data-toggle-target=".lab-test-fields" ${fields.need_lab_test ? 'checked' : ''}>
+                <label class="form-check-label fw-semibold text-info">
+                  <i class="bi bi-flask me-1"></i>勾選 → 小批樣品測試
+                </label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" data-bind="need_fixture" data-toggle-target=".fixture-fields" ${fields.need_fixture ? 'checked' : ''}>
+                <label class="form-check-label fw-semibold text-warning">
+                  <i class="bi bi-wrench-adjustable me-1"></i>勾選 → 工程檢治具設計
+                </label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" data-bind="cust_rework" data-toggle-target=".cust-rw-fields" ${fields.cust_rework ? 'checked' : ''}>
+                <label class="form-check-label fw-semibold text-primary">
+                  <i class="bi bi-person-gear me-1"></i>勾選 → 客戶端 Rework（含工時／人力）
+                </label>
+              </div>
+            </div>
+            <div class="lab-test-fields ${fields.need_lab_test ? '' : 'd-none'}">
+              <div class="ps-3 border-start border-info border-2 mb-2">
+                <div class="row g-2 mb-1">
+                  <div class="col-md-3"><label class="form-label small">樣品測試數量</label>
+                    <input type="number" min="0" class="form-control form-control-sm" data-bind="lab_test_qty" value="${esc(fields.lab_test_qty)}"></div>
+                  <div class="col-md-3"><label class="form-label small">需求時間</label>
+                    <input type="date" class="form-control form-control-sm" data-bind="lab_test_due_date" value="${esc(fields.lab_test_due_date)}"></div>
+                  <div class="col-md-6"><label class="form-label small">測試條件</label>
+                    <input class="form-control form-control-sm" data-bind="lab_test_conditions" placeholder="高溫 85°C 24hr" value="${esc(fields.lab_test_conditions)}"></div>
+                </div>
+                <div class="d-flex align-items-center gap-2 mt-1">
+                  <a href="/sample-requests/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}"
+                     target="_blank" class="btn btn-sm btn-outline-info">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>開立樣品需求單
+                  </a>
+                  <input class="form-control form-control-sm" data-bind="lab_test_sample_no"
+                         placeholder="連結既有樣品單號（例：SR-20260430-001）"
+                         value="${esc(fields.lab_test_sample_no)}" style="max-width:280px">
+                </div>
+              </div>
+            </div>
+            <div class="fixture-fields ${fields.need_fixture ? '' : 'd-none'}">
+              <div class="ps-3 border-start border-warning border-2 mb-2">
+                <label class="form-label small">工程檢治具設計需求（品保填）</label>
+                <textarea class="form-control form-control-sm mb-2" rows="2" data-bind="fixture_note"
+                          placeholder="例：設計檢具 J-002 比對總長/外觀；驗證後納入產線 SOP">${esc(fields.fixture_note)}</textarea>
+                <div class="border border-success rounded p-2" style="background:rgba(25,135,84,.06)">
+                  <div class="small fw-semibold text-success mb-2">
+                    <i class="bi bi-people-fill me-1"></i>工程師回填區（檢治具完成後）
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-md-4"><label class="form-label small">完成時間</label>
+                      <input type="date" class="form-control form-control-sm" data-bind="fixture_done_at" value="${esc(fields.fixture_done_at)}"></div>
+                    <div class="col-md-4"><label class="form-label small">是否加入量產製程</label>
+                      <select class="form-select form-select-sm" data-bind="fixture_to_production">
+                        <option value="" ${!fields.fixture_to_production ? 'selected' : ''}>— 未評估 —</option>
+                        <option value="yes" ${fields.fixture_to_production === 'yes' ? 'selected' : ''}>是 — 加入量產</option>
+                        <option value="no"  ${fields.fixture_to_production === 'no'  ? 'selected' : ''}>否 — 暫不加入</option>
+                        <option value="conditional" ${fields.fixture_to_production === 'conditional' ? 'selected' : ''}>有條件加入</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">工程編號 / 連結</label>
+                      <input class="form-control form-control-sm" data-bind="fixture_eng_no"
+                             placeholder="檢具編號 J-XXX 或工程連結" value="${esc(fields.fixture_eng_no)}"></div>
+                    <div class="col-12"><label class="form-label small">評估說明</label>
+                      <textarea class="form-control form-control-sm" rows="2" data-bind="fixture_eval_note"
+                                placeholder="例：J-002 經 50 件實測誤差 ≤0.05，建議全產線換裝；模具 / SOP 同步修訂。">${esc(fields.fixture_eval_note)}</textarea></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="cust-rw-fields ${fields.cust_rework ? '' : 'd-none'}">
+              <div class="ps-3 border-start border-primary border-2 mb-2 pt-2">
+                <div class="small text-primary mb-1">客戶端 Rework 排程（可新增多筆 — 日期 / 地點 / 需求人力）</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th><th>日期</th><th>地點</th>
+                      <th class="text-end" style="width:110px">需求人力</th><th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="cust-rw-tbody">
+                      ${(fields.cust_rework_rows && fields.cust_rework_rows.length
+                          ? fields.cust_rework_rows
+                          : [{date:'', location:'', workers:''}]
+                        ).map((r, i) => `
+                        <tr class="cust-rw-row">
+                          <td class="text-center cust-rw-idx">${i + 1}</td>
+                          <td><input type="date" class="form-control form-control-sm" data-cust-rw="date" value="${esc(r.date)}"></td>
+                          <td><input class="form-control form-control-sm" data-cust-rw="location" value="${esc(r.location)}" placeholder="景利 板橋廠"></td>
+                          <td><input type="number" min="0" class="form-control form-control-sm text-end" data-cust-rw="workers" value="${esc(r.workers)}" placeholder="3"></td>
+                          <td><button type="button" class="btn btn-sm btn-outline-danger cust-rw-rm">×</button></td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary cust-rw-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增排程
+                </button>
+              </div>
+            </div>
+            <label class="form-label small">附件（SOP / 圖面 / 治具圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上截圖</label>
+            <input type="file" name="b3_rework_files" multiple accept="image/*,.pdf"
+                   capture="environment" class="form-control form-control-sm" data-paste-target="1">
+            <div class="paste-status small text-success mt-1 d-none"></div>
+            <div class="form-text small mb-1">可多選 / 拍照 / 貼上截圖；歸類為「Rework SOP」</div>
+            ${renderUploadedDocs('Rework SOP')}
+          `) + respSec(`
+            <div class="row g-2 mb-2">
+              <div class="col-md-6"><label class="form-label small">執行單位（生管派發）</label>
+                <select class="form-select form-select-sm" data-bind="station">
+                  <option value="">— 請選擇 —</option>
+                  ${['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'].map(s =>
+                    `<option value="${esc(s)}" ${fields.station === s ? 'selected' : ''}>${esc(s)}</option>`
+                  ).join('')}
+                </select>
+              </div>
+              <div class="col-md-6"><label class="form-label small">預計完成時間</label>
+                <input type="date" class="form-control form-control-sm" data-bind="completed_at"
+                       value="${esc(fields.completed_at)}"></div>
+              <div class="col-md-3"><label class="form-label small">Rework 良品數</label>
+                <input type="number" min="0" class="form-control form-control-sm" data-bind="pass_qty" value="${esc(fields.pass_qty)}"></div>
+              <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
+                <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
+              <div class="col-md-6"><label class="form-label small">不良品處理方式</label>
+                <input class="form-control form-control-sm" data-bind="defect_handling" placeholder="報廢 / 退廠 / 隔離" value="${esc(fields.defect_handling)}"></div>
+            </div>
+            <div class="small fw-semibold text-success mb-1">
+              <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 異常照片（可向下新增）
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-1">
+                <thead class="table-light"><tr>
+                  <th style="width:40px">#</th>
+                  <th>不良原因</th>
+                  <th class="text-end" style="width:120px">不良數</th>
+                  <th style="width:200px">異常照片— 可貼上</th>
+                  <th style="width:40px">—</th>
+                </tr></thead>
+                <tbody class="fail-tbody">${renderFailRows(fields, 'b3_defect_files')}</tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success fail-add">
+              <i class="bi bi-plus-circle me-1"></i>新增不良原因
+            </button>
+            ${renderUploadedDocs('異常照片')}
+          `, '生管／產線主管 回填區', 'success');
+        }
+        if (type === 'HE') {
+          const rows = (fields.rows && fields.rows.length)
+            ? fields.rows
+            : [{part_no: PART_NO, customer_qty:'', inhouse_qty:'', supplier_qty:'', decision:''}];
+          const tr = rows.map((r, i) => `
+            <tr class="he-row">
+              <td class="text-center he-idx">${i + 1}</td>
+              <td><input class="form-control form-control-sm" data-he="part_no" value="${esc(r.part_no)}"></td>
+              <td><input type="number" min="0" class="form-control form-control-sm text-end" data-he="customer_qty" value="${esc(r.customer_qty)}" placeholder="待業助"></td>
+              <td><input type="number" min="0" class="form-control form-control-sm text-end" data-he="inhouse_qty" value="${esc(r.inhouse_qty)}" placeholder="待倉管"></td>
+              <td><input type="number" min="0" class="form-control form-control-sm text-end" data-he="supplier_qty" value="${esc(r.supplier_qty)}" placeholder="待採購"></td>
+              <td><input class="form-control form-control-sm" data-he="decision" value="${esc(r.decision)}" placeholder="處理判定"></td>
+              <td><button type="button" class="btn btn-sm btn-outline-danger he-rm">×</button></td>
+            </tr>
+          `).join('');
+          return `
+            <div class="alert alert-light border small mb-2 py-1 px-2">
+              品保填料號 + 處理判定；後續由業助 / 倉管 / 採購回填各端庫存
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle mb-2">
+                <thead class="table-light"><tr>
+                  <th style="width:40px">#</th><th>盤點料號</th>
+                  <th class="text-end" style="width:100px">客戶端 (pcs)</th>
+                  <th class="text-end" style="width:100px">廠內 (pcs)</th>
+                  <th class="text-end" style="width:100px">供應商 (pcs)</th>
+                  <th>處理判定</th>
+                  <th style="width:40px">—</th>
+                </tr></thead>
+                <tbody class="he-tbody">${tr}</tbody>
+              </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary he-add">
+              <i class="bi bi-plus-circle me-1"></i>新增料號
+            </button>
+          `;
+        }
+        return '<div class="text-muted small">未知類型</div>';
+      }
+
+      function buildCard(action) {
+        const meta = ACTION_META[action.type];
+        if (!meta) return null;
+        const id = action.id || uniqId();
+        const cardEl = document.createElement('div');
+        cardEl.className = `card border-${meta.color}-subtle act-card`;
+        cardEl.dataset.actionId = id;
+        cardEl.dataset.type = action.type;
+        const unitsBadge = meta.units.length
+          ? `<span class="badge bg-${meta.color} ms-2">通知 ${meta.units.map(u => u.label).join('、')}</span>`
+          : `<span class="badge bg-secondary ms-2">不另通知</span>`;
+        const sentBadge = action.sent_at
+          ? `<span class="badge bg-success ms-auto" title="${esc(action.sent_at)}"><i class="bi bi-check2 me-1"></i>已送出 ${esc(String(action.sent_at).slice(0,16).replace('T',' '))}</span>`
+          : `<span class="badge bg-warning text-dark ms-auto"><i class="bi bi-hourglass-split me-1"></i>尚未送出</span>`;
+        cardEl.innerHTML = `
+          <div class="card-header bg-${meta.color}-subtle d-flex align-items-center py-2">
+            <span class="fw-semibold text-${meta.color}">
+              <i class="bi ${meta.icon} me-1"></i>${meta.label}
+            </span>
+            ${unitsBadge}
+            ${sentBadge}
+            <button type="button" class="btn btn-sm btn-outline-secondary ${action.sent_at ? 'ms-2' : 'ms-auto'} act-rm" title="移除此項目">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          <div class="card-body py-2">
+            <input type="hidden" name="card_payload" class="card-payload">
+            ${renderFields(action.type, action.fields)}
+          </div>
+        `;
+        bindCard(cardEl, id, action.type);
+        return cardEl;
+      }
+
+      function bindCard(cardEl, id, type) {
+        const payload = cardEl.querySelector('.card-payload');
+        function collect() {
+          const f = {};
+          cardEl.querySelectorAll('[data-bind]').forEach(el => {
+            const k = el.dataset.bind;
+            if (el.type === 'checkbox') f[k] = el.checked;
+            else f[k] = el.value;
+          });
+          if (type === 'HE') {
+            const rows = [];
+            cardEl.querySelectorAll('.he-row').forEach(tr => {
+              const r = {};
+              tr.querySelectorAll('[data-he]').forEach(el => { r[el.dataset.he] = el.value; });
+              rows.push(r);
+            });
+            f.rows = rows;
+          }
+          if (type === 'B2') {
+            const rows = [];
+            cardEl.querySelectorAll('.cust-row').forEach(tr => {
+              const r = {};
+              tr.querySelectorAll('[data-cust]').forEach(el => { r[el.dataset.cust] = el.value; });
+              rows.push(r);
+            });
+            f.cust_sorting_rows = rows;
+          }
+          // B2/B3 不良原因多列
+          if (type === 'B2' || type === 'B3') {
+            const items = [];
+            cardEl.querySelectorAll('.fail-row').forEach(tr => {
+              const r = {};
+              tr.querySelectorAll('[data-fail]').forEach(el => { r[el.dataset.fail] = el.value; });
+              items.push(r);
+            });
+            f.fail_items = items;
+          }
+          // B3 客戶端 Rework 排程多列
+          if (type === 'B3') {
+            const rwRows = [];
+            cardEl.querySelectorAll('.cust-rw-row').forEach(tr => {
+              const r = {};
+              tr.querySelectorAll('[data-cust-rw]').forEach(el => { r[el.dataset.custRw] = el.value; });
+              rwRows.push(r);
+            });
+            f.cust_rework_rows = rwRows;
+          }
+          return f;
+        }
+        function refresh() {
+          const fields = collect();
+          payload.value = JSON.stringify({id: id, type: type, fields: fields});
+          if (type === 'B2' || type === 'B3') {
+            const p = parseInt(fields.pass_qty) || 0;
+            const failTotal = (fields.fail_items || [])
+              .reduce((s, it) => s + (parseInt(it.qty) || 0), 0);
+            const totEl = cardEl.querySelector('[data-fail-total]');
+            if (totEl) totEl.textContent = failTotal > 0 ? failTotal : '—';
+            const t = p + failTotal;
+            const rate = cardEl.querySelector('[data-rate]');
+            if (rate) {
+              rate.textContent = t > 0 ? `${(failTotal / t * 100).toFixed(1)}%` : '—';
+              rate.classList.toggle('text-danger', t > 0 && (failTotal / t) >= 0.05);
+            }
+          }
+        }
+        // 截圖貼上（Ctrl/⌘+V 任一處貼進該卡片，自動加進 file input）
+        cardEl.addEventListener('paste', e => {
+          const fileInput = cardEl.querySelector('input[type="file"][data-paste-target]');
+          if (!fileInput) return;
+          const items = (e.clipboardData || {}).items || [];
+          const dt = new DataTransfer();
+          Array.from(fileInput.files || []).forEach(f => dt.items.add(f));
+          let added = 0;
+          for (const it of items) {
+            if (it.type && it.type.startsWith('image/')) {
+              const f = it.getAsFile();
+              if (f) {
+                const ext = (f.type.split('/')[1] || 'png').replace('+xml','');
+                const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+                const renamed = new File([f], `paste-${stamp}.${ext}`, {type: f.type});
+                dt.items.add(renamed); added++;
+              }
+            }
+          }
+          if (added > 0) {
+            e.preventDefault();
+            fileInput.files = dt.files;
+            const status = cardEl.querySelector('.paste-status');
+            if (status) {
+              status.classList.remove('d-none');
+              status.textContent = `已貼上 ${added} 張截圖（總 ${dt.files.length} 個檔案，送出後上傳）`;
+            }
+          }
+        });
+        // 自動同步：data-auto-from 指定來源 input；用戶手動編輯後不再自動覆寫
+        cardEl.querySelectorAll('[data-auto-from]').forEach(target => {
+          const srcKey = target.dataset.autoFrom;
+          const src = cardEl.querySelector(`[data-bind="${srcKey}"]`);
+          if (!src) return;
+          target.addEventListener('input', () => { target.dataset.userEdited = '1'; });
+          src.addEventListener('input', () => {
+            if (target.dataset.userEdited === '1' && target.value && target.value !== target.dataset.lastAuto) return;
+            target.value = src.value;
+            target.dataset.lastAuto = src.value;
+            target.dispatchEvent(new Event('input', {bubbles: true}));
+          });
+        });
+        cardEl.addEventListener('input', refresh);
+        cardEl.addEventListener('change', e => {
+          // checkbox toggle 顯示對應子區塊
+          const t = e.target;
+          if (t && t.dataset && t.dataset.toggleTarget) {
+            const sub = cardEl.querySelector(t.dataset.toggleTarget);
+            if (sub) sub.classList.toggle('d-none', !t.checked);
+          }
+          refresh();
+        });
+        cardEl.addEventListener('click', e => {
+          if (e.target.closest('.act-rm')) {
+            if (confirm('移除此處理項目？')) {
+              cardEl.remove(); refreshEmpty();
+            }
+          } else if (e.target.closest('.he-add')) {
+            const tbody = cardEl.querySelector('.he-tbody');
+            const tr = tbody.querySelector('.he-row');
+            const clone = tr.cloneNode(true);
+            clone.querySelectorAll('input').forEach(i => i.value = '');
+            tbody.appendChild(clone);
+            tbody.querySelectorAll('.he-row .he-idx').forEach((td, i) => td.textContent = i + 1);
+            refresh();
+          } else if (e.target.closest('.he-rm')) {
+            const rows = cardEl.querySelectorAll('.he-row');
+            if (rows.length > 1) {
+              e.target.closest('.he-row').remove();
+              cardEl.querySelectorAll('.he-row .he-idx').forEach((td, i) => td.textContent = i + 1);
+              refresh();
+            }
+          } else if (e.target.closest('.cust-add')) {
+            const tbody = cardEl.querySelector('.cust-tbody');
+            const tr = tbody.querySelector('.cust-row');
+            const clone = tr.cloneNode(true);
+            clone.querySelectorAll('input').forEach(i => i.value = '');
+            tbody.appendChild(clone);
+            tbody.querySelectorAll('.cust-row .cust-idx').forEach((td, i) => td.textContent = i + 1);
+            refresh();
+          } else if (e.target.closest('.cust-rm')) {
+            const rows = cardEl.querySelectorAll('.cust-row');
+            if (rows.length > 1) {
+              e.target.closest('.cust-row').remove();
+              cardEl.querySelectorAll('.cust-row .cust-idx').forEach((td, i) => td.textContent = i + 1);
+              refresh();
+            }
+          } else if (e.target.closest('.fail-add')) {
+            const tbody = cardEl.querySelector('.fail-tbody');
+            const tr = tbody.querySelector('.fail-row');
+            const clone = tr.cloneNode(true);
+            clone.querySelectorAll('input').forEach(i => {
+              if (i.type === 'file') i.value = '';
+              else i.value = '';
+            });
+            tbody.appendChild(clone);
+            tbody.querySelectorAll('.fail-row .fail-idx').forEach((td, i) => td.textContent = i + 1);
+            refresh();
+          } else if (e.target.closest('.fail-rm')) {
+            const rows = cardEl.querySelectorAll('.fail-row');
+            if (rows.length > 1) {
+              e.target.closest('.fail-row').remove();
+              cardEl.querySelectorAll('.fail-row .fail-idx').forEach((td, i) => td.textContent = i + 1);
+              refresh();
+            }
+          } else if (e.target.closest('.cust-rw-add')) {
+            const tbody = cardEl.querySelector('.cust-rw-tbody');
+            const tr = tbody.querySelector('.cust-rw-row');
+            const clone = tr.cloneNode(true);
+            clone.querySelectorAll('input').forEach(i => i.value = '');
+            tbody.appendChild(clone);
+            tbody.querySelectorAll('.cust-rw-row .cust-rw-idx').forEach((td, i) => td.textContent = i + 1);
+            refresh();
+          } else if (e.target.closest('.cust-rw-rm')) {
+            const rows = cardEl.querySelectorAll('.cust-rw-row');
+            if (rows.length > 1) {
+              e.target.closest('.cust-rw-row').remove();
+              cardEl.querySelectorAll('.cust-rw-row .cust-rw-idx').forEach((td, i) => td.textContent = i + 1);
+              refresh();
+            }
+          }
+        });
+        refresh();
+      }
+
+      // 啟動：渲染既有 actions
+      (INITIAL_ACTIONS || []).forEach(a => {
+        const c = buildCard(a);
+        if (c) cardsEl.appendChild(c);
+      });
+      refreshEmpty();
+
+      addBtn.addEventListener('click', () => {
+        const t = sel.value;
+        if (!t) { alert('請先選擇處理類型'); return; }
+        const c = buildCard({id: uniqId(), type: t, fields: {}});
+        if (c) cardsEl.appendChild(c);
+        sel.value = '';
+        refreshEmpty();
+      });
+
+      // 收件人下拉切換到自訂
+      const mailToSel = document.getElementById('mailToSel');
+      const mailToCustom = document.getElementById('mailToCustom');
+      if (mailToSel) mailToSel.addEventListener('change', () => {
+        if (mailToSel.value === '__custom__') {
+          mailToSel.removeAttribute('name');
+          mailToCustom.setAttribute('name', 'supplier_mail_to');
+          mailToCustom.classList.remove('d-none');
+          mailToCustom.value = '';
+          mailToCustom.focus();
+        } else {
+          mailToSel.setAttribute('name', 'supplier_mail_to');
+          mailToCustom.removeAttribute('name');
+          mailToCustom.classList.add('d-none');
+        }
+      });
+      // 套用 mail 範本
+      const tplBtn = document.getElementById('loadMailTpl');
+      if (tplBtn) tplBtn.addEventListener('click', () => {
+        const ta = document.getElementById('supplierMailBody');
+        if (ta) ta.value = MAIL_TPL;
+      });
+      // 立即寄出通知信（獨立 fetch，不影響處理項目編輯狀態）
+      const sendBtn = document.getElementById('sendMailBtn');
+      if (sendBtn) sendBtn.addEventListener('click', async () => {
+        const fd2 = new FormData();
+        const toEl = document.querySelector('input[name="supplier_mail_to"]') || document.getElementById('mailToSel');
+        fd2.append('supplier_mail_to', toEl ? toEl.value : '');
+        fd2.append('supplier_mail_cc', document.querySelector('input[name="supplier_mail_cc"]').value || '');
+        fd2.append('supplier_mail_subject', document.querySelector('input[name="supplier_mail_subject"]').value || '');
+        fd2.append('supplier_mail_body', document.getElementById('supplierMailBody').value || '');
+        if (!fd2.get('supplier_mail_to') || !fd2.get('supplier_mail_body')) {
+          alert('請選擇收件人並填寫信件內容'); return;
+        }
+        if (!confirm(`確定寄出通知信至 ${fd2.get('supplier_mail_to')}？`)) return;
+        sendBtn.disabled = true;
+        try {
+          const r = await fetch(`/qc-exceptions/{{ form.form_id }}/send-notify-mail`,
+                                 {method: 'POST', body: fd2});
+          if (r.redirected) location.href = r.url;
+          else if (r.ok) location.reload();
+          else alert(`寄信失敗：${await r.text()}`);
+        } catch (err) {
+          alert(`寄信失敗：${err}`);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+    })();
+    </script>
+    {% elif _has_actions %}
+    {# 顯示模式：已下處理判斷 — 卡片清單 + 各自送出/回覆 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-lightning-charge me-2"></i>處理判斷紀錄</span>
+        <span class="text-muted ms-2 small">由 {{ form.dispositioner.display_name if form.dispositioner else '—' }}
+          於 {{ form.disposition_at.strftime('%Y-%m-%d %H:%M') if form.disposition_at else '' }} 判定</span>
+        <button type="button" class="btn btn-sm btn-link ms-auto p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#dispLogBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
+      </div>
+      <div class="card-body collapse show" id="dispLogBody">
+        {% if form.disposition_note %}
+        <div class="small mb-3"><strong>備註：</strong>{{ form.disposition_note }}</div>
+        {% endif %}
+
+        {% if form.supplier_mail_to or form.supplier_mail_sent_at %}
+        <div class="border rounded p-2 bg-light small mb-3">
+          <strong><i class="bi bi-envelope me-1"></i>通知信：</strong>
+          To {{ form.supplier_mail_to or '—' }}
+          {% if form.supplier_mail_sent_at %}
+            <span class="badge bg-success ms-1">已寄出 {{ form.supplier_mail_sent_at.strftime('%m-%d %H:%M') }}</span>
+          {% else %}<span class="badge bg-warning text-dark ms-1">尚未寄出</span>{% endif %}
+        </div>
+        {% endif %}
+
+        {% for a in qc_actions %}
+        {% set _meta = qc_action_types_meta.get(a.type, {}) %}
+        {% set _f = a.fields or {} %}
+        <div class="card border-{{ _meta.color }}-subtle mb-3">
+          <div class="card-header bg-{{ _meta.color }}-subtle d-flex align-items-center py-2">
+            <span class="fw-semibold text-{{ _meta.color }}">
+              <i class="bi {{ _meta.icon }} me-1"></i>{{ _meta.label }}
+            </span>
+            {% if _meta.units %}
+            <span class="badge bg-{{ _meta.color }} ms-2">
+              通知 {{ _meta.units | map(attribute='label') | join('、') }}
+            </span>
+            {% else %}
+            <span class="badge bg-secondary ms-2">不另通知</span>
+            {% endif %}
+            {% if a.sent_at %}
+            <span class="badge bg-success ms-auto">
+              <i class="bi bi-check2 me-1"></i>已送出 {{ a.sent_at[:16] | replace('T',' ') }}
+            </span>
+            {% else %}
+            <span class="badge bg-warning text-dark ms-auto">尚未送出</span>
+            {% endif %}
+          </div>
+          <div class="card-body py-2 small">
+            {% if a.type == 'A1' %}
+              <div><strong>補貨需求：</strong>{{ _f.replenish_note or '—' }}</div>
+              <div class="mt-1">
+                <span class="badge bg-secondary"><i class="bi bi-truck me-1"></i>由廠商派車載回</span>
+                {% if _f.pickup_required %}
+                <span class="badge bg-warning text-dark ms-1"><i class="bi bi-truck-flatbed me-1"></i>例外：需我方協助派車</span>
+                <span class="ms-1">{{ _f.pickup_note or '' }}</span>
+                {% endif %}
+              </div>
+              {# 採購／生管 回貨回填表單 #}
+              {% set _can_a1_edit = user.role.value in ('purchase','pc','qc','admin') %}
+              {% set _ro_a1 = '' if _can_a1_edit else 'readonly disabled' %}
+              {% set _bg_a1 = '' if _can_a1_edit else 'bg-light text-muted' %}
+              {% set _qty_total = _f.return_qty_total or form.receive_qty or 0 %}
+              {% set _logs = _f.return_logs or [{'date':'', 'qty':'', 'note':''}] %}
+              {% set _ns_ret = namespace(t=0) %}
+              {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_ret.t = _ns_ret.t + (_l.qty|int) %}{% endif %}{% endfor %}
+              {% set _remain = (_qty_total|int) - _ns_ret.t %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                    class="mt-2 border border-info rounded p-2" data-disp-form="a1"
+                    style="background:rgba(13,110,253,.06)">
+                {% set _planned = (_f.replenish_qty or 0) | int %}
+                {% set _diff = _ns_ret.t - _planned %}
+                <div class="small fw-semibold text-info mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-truck me-1"></i>採購／生管 回貨回填區</span>
+                  {% if not _can_a1_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">退貨
+                    <strong class="text-dark">{{ _qty_total }}</strong> ／ 預計回補
+                    <strong class="text-primary">{{ _planned if _planned else '—' }}</strong> ／ 實際已回
+                    <strong class="text-success">{{ _ns_ret.t }}</strong>
+                    {% if _planned > 0 %}
+                      {% if _diff == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _diff > 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ _diff }}</span>
+                      {% else %}
+                      <span class="badge bg-danger ms-1">差 {{ -_diff }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="alert alert-light border small mb-2 py-1 px-2">
+                  <i class="bi bi-info-circle me-1"></i>立即處理階段品保已填：
+                  退貨原因「<strong>{{ _f.replenish_note or '—' }}</strong>」／ 退貨總數
+                  <strong>{{ _f.return_qty_total or form.receive_qty or '—' }}</strong> pcs
+                  {% if _f.pickup_required %}／<span class="badge bg-warning text-dark"><i class="bi bi-truck-flatbed me-1"></i>需我方協助派車</span>{% endif %}
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-md-3"><label class="form-label small">退貨總數（pcs）</label>
+                    <input type="number" min="0" name="return_qty_total" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.return_qty_total or form.receive_qty or '' }}" placeholder="{{ form.receive_qty or '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">預計回補時間</label>
+                    <input type="date" name="replenish_due_date" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_due_date or '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">預計回補數量（pcs）</label>
+                    <input type="number" min="0" name="replenish_qty" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_qty if _f.replenish_qty not in (None, '') else (_f.return_qty_total or form.receive_qty or '') }}"
+                           placeholder="預設＝退貨總數，可調整"></div>
+                  <div class="col-md-3"><label class="form-label small">補貨備註</label>
+                    <input name="replenish_note" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                           value="{{ _f.replenish_note or '' }}" placeholder="退貨原因 / 批次 / PO 編號"></div>
+                </div>
+                <div class="small fw-semibold text-info mb-1">回貨紀錄（日期 / 數量 / 備註）— 多次到貨可新增</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th>
+                      <th style="width:160px">回貨日期</th>
+                      <th style="width:120px" class="text-end">回貨數量</th>
+                      <th>備註</th>
+                      <th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="rl-tbody">
+                      {% for it in _logs %}
+                      <tr class="rl-row">
+                        <td class="text-center rl-idx">{{ loop.index }}</td>
+                        <td><input type="date" data-rl="date" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.date or '' }}"></td>
+                        <td><input type="number" min="0" data-rl="qty" class="form-control form-control-sm text-end {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.qty if it.qty not in (None, '') else '' }}" placeholder="0"></td>
+                        <td><input data-rl="note" class="form-control form-control-sm {{ _bg_a1 }}" {{ _ro_a1 }}
+                                   value="{{ it.note or '' }}" placeholder="批號 / PO 編號"></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger rl-rm" {% if not _can_a1_edit %}disabled{% endif %}>×</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% if _can_a1_edit %}
+                <button type="button" class="btn btn-sm btn-outline-info rl-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增回貨紀錄
+                </button>
+                {% endif %}
+                <input type="hidden" name="return_logs_json" data-rl-json>
+                {% if _can_a1_edit %}
+                <button class="btn btn-sm btn-info text-white mt-2">
+                  <i class="bi bi-save me-1"></i>儲存（採購／生管）
+                </button>
+                {% endif %}
+                {% if a.updated_at %}
+                <div class="small text-muted mt-1">最後更新：{{ a.updated_at[:16] | replace('T',' ') }}</div>
+                {% endif %}
+              </form>
+            {% elif a.type == 'A2' %}
+              {% set _can_a2_edit = user.role.value in ('assistant','sales','qc','admin') %}
+              <div><strong>退貨/補貨資訊：</strong>{{ _f.replenish_note or '—' }}</div>
+              <div class="mt-1 ps-2 border-start border-danger border-2">
+                <span class="badge bg-danger"><i class="bi bi-truck me-1"></i>我方派司機載回</span>
+                <div class="row g-2 small mt-1">
+                  <div class="col-md-6"><strong>取貨地點：</strong>{{ _f.pickup_location or '—' }}</div>
+                  <div class="col-md-3"><strong>聯絡人：</strong>{{ _f.pickup_contact or '—' }}</div>
+                  <div class="col-md-3"><strong>預計時間：</strong>{{ _f.pickup_time or '—' }}</div>
+                  <div class="col-md-6"><strong>實際回廠時間：</strong>
+                    {% if _f.pickup_actual_at %}
+                    <span class="badge bg-success">{{ _f.pickup_actual_at }}</span>
+                    {% else %}<span class="text-muted">待業助回填</span>{% endif %}
+                  </div>
+                  {% if _f.pickup_note %}
+                  <div class="col-md-6"><strong>派車備註：</strong>{{ _f.pickup_note }}</div>
+                  {% endif %}
+                </div>
+                {% if a.updated_at %}
+                <div class="small text-muted mt-1">
+                  最後更新：{{ a.updated_at[:16] | replace('T',' ') }}
+                </div>
+                {% endif %}
+              </div>
+              {# 業助填寫表單；非業助/業務/品保/admin 看到反灰唯讀展示 #}
+              {% set _ro = '' if _can_a2_edit else 'readonly disabled' %}
+              {% set _bg = '' if _can_a2_edit else 'bg-light text-muted' %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                    class="mt-2 border border-info rounded p-2"
+                    style="background:rgba(13,110,253,.06)">
+                <div class="small fw-semibold text-info mb-2">
+                  <i class="bi bi-person-fill-gear me-1"></i>業助填寫區（A2 退貨資訊）
+                  {% if not _can_a2_edit %}<span class="badge bg-secondary ms-1">非業助：唯讀</span>{% endif %}
+                </div>
+                <div class="row g-2">
+                  <div class="col-12">
+                    <label class="form-label small">退貨/補貨說明</label>
+                    <textarea name="replenish_note" rows="2" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                              placeholder="例：退回 35000 pcs，需安排補貨；業務跟客戶確認補貨時程">{{ _f.replenish_note or '' }}</textarea>
+                  </div>
+                  <div class="col-md-6"><label class="form-label small">取貨地點（客戶倉/工廠）</label>
+                    <input name="pickup_location" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pickup_location or '' }}" placeholder="景利 板橋廠 收料區"></div>
+                  <div class="col-md-3"><label class="form-label small">客戶端聯絡人</label>
+                    <input name="pickup_contact" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pickup_contact or '' }}" placeholder="王 PE / 02-1234-5678"></div>
+                  <div class="col-md-3"><label class="form-label small">預計取貨時間</label>
+                    <input name="pickup_time" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pickup_time or '' }}" placeholder="2026-05-05 14:00"></div>
+                  <div class="col-md-6"><label class="form-label small">司機派車備註（選填）</label>
+                    <input name="pickup_note" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pickup_note or '' }}" placeholder="1.5 噸貨車；先電聯客戶；返廠後直接卸到品保檢驗區"></div>
+                  <div class="col-md-6"><label class="form-label small">實際回廠時間</label>
+                    <input name="pickup_actual_at" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pickup_actual_at or '' }}" placeholder="2026-05-05 17:30"></div>
+                </div>
+                {% if _can_a2_edit %}
+                <button class="btn btn-sm btn-danger mt-2">
+                  <i class="bi bi-save me-1"></i>儲存 A2 退貨資訊（業助）
+                </button>
+                {% endif %}
+              </form>
+            {% elif a.type == 'B1' %}
+              <div><span class="badge bg-secondary me-1">直接過站</span>{{ _f.note or '此批不需卡控，可直接進料／出貨' }}</div>
+            {% elif a.type == 'B2' %}
+              <div><strong>Sorting 手法：</strong>{{ _f.sorting_method or '—' }}</div>
+              {% if 'Sorting 需求' in docs_by_cat %}
+              <div class="mt-1">
+                <strong>需求附件：</strong>
+                {% for d in docs_by_cat['Sorting 需求'] %}
+                <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank" class="badge bg-warning-subtle text-warning border me-1">
+                  <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+                </a>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% if _f.cust_sorting %}
+              <div class="mt-1 ps-2 border-start border-primary border-2">
+                <span class="badge bg-primary me-1"><i class="bi bi-person-check me-1"></i>客戶端 Sorting 排程</span>
+                {% for r in (_f.cust_sorting_rows or []) %}
+                <div class="small">
+                  <strong>{{ r.date or '—' }}</strong> ／ {{ r.location or '—' }} ／ {{ r.workers or '—' }} 人
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% set _can_b2_edit = user.role.value in ('pc','prod_mgr','qc','admin') %}
+              {% set _ro = '' if _can_b2_edit else 'readonly disabled' %}
+              {% set _bg = '' if _can_b2_edit else 'bg-light text-muted' %}
+              {% set _stations = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'] %}
+              {% set _fitems = _f.fail_items or [{'reason':'', 'qty':''}] %}
+              {% set _b2_total = form.receive_qty or 0 %}
+              {% set _b2_pass = (_f.pass_qty or 0) | int %}
+              {% set _b2_ns = namespace(t=0) %}
+              {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _b2_ns.t = _b2_ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+              {% set _b2_processed = _b2_pass + _b2_ns.t %}
+              {% set _b2_remain = _b2_total - _b2_processed %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                    enctype="multipart/form-data" data-disp-form="b2"
+                    class="mt-2 border border-info rounded p-2"
+                    style="background:rgba(13,110,253,.06)">
+                <div class="small fw-semibold text-info mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-gear me-1"></i>生管／產線主管 填寫區</span>
+                  {% if not _can_b2_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">總數
+                    <strong class="text-dark">{{ _b2_total }}</strong> ／ 良
+                    <strong class="text-success">{{ _b2_pass }}</strong> ／ 不良
+                    <strong class="text-danger">{{ _b2_ns.t }}</strong> ／ 待處理
+                    <strong class="{% if _b2_remain > 0 %}text-warning{% else %}text-muted{% endif %}">{{ _b2_remain if _b2_remain > 0 else 0 }}</strong>
+                    {% if _b2_total > 0 %}
+                      {% if _b2_remain == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _b2_remain < 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ -_b2_remain }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-md-6"><label class="form-label small">執行單位（生管選）</label>
+                    {% if _can_b2_edit %}
+                    <select name="station" class="form-select form-select-sm">
+                      <option value="">— 請選擇 —</option>
+                      {% for opt in _stations %}
+                      <option value="{{ opt }}" {% if _f.station == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                      {% if _f.station and _f.station not in _stations %}
+                      <option value="{{ _f.station }}" selected>{{ _f.station }}（自訂）</option>
+                      {% endif %}
+                    </select>
+                    {% else %}
+                    <input class="form-control form-control-sm bg-light text-muted" readonly disabled
+                           value="{{ _f.station or '—' }}">
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6"><label class="form-label small">完成時間</label>
+                    <input type="date" name="completed_at" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.completed_at or '' }}"></div>
+                  <div class="col-md-4"><label class="form-label small">良品數</label>
+                    <input name="pass_qty" type="number" min="0" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                           value="{{ _f.pass_qty if _f.pass_qty not in (None, '') else '' }}"></div>
+                  <div class="col-md-4"><label class="form-label small">不良總數（自動加總）</label>
+                    <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
+                  <div class="col-md-4"><label class="form-label small">不良率</label>
+                    <div class="form-control form-control-sm bg-light fw-semibold" data-rate>—</div></div>
+                </div>
+                <div class="small fw-semibold text-info mb-1">
+                  <i class="bi bi-list-ul me-1"></i>不良原因 / 不良數 / 截圖（可向下新增）
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th><th>不良原因</th>
+                      <th class="text-end" style="width:120px">不良數</th>
+                      <th style="width:200px">截圖</th>
+                      <th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="fail-tbody">
+                      {% for it in _fitems %}
+                      <tr class="fail-row">
+                        <td class="text-center fail-idx">{{ loop.index }}</td>
+                        <td><input data-fail="reason" class="form-control form-control-sm {{ _bg }}" {{ _ro }}
+                                   value="{{ it.reason or '' }}" placeholder="尺寸不符 / 外觀刮傷"></td>
+                        <td><input data-fail="qty" type="number" min="0" class="form-control form-control-sm text-end {{ _bg }}" {{ _ro }}
+                                   value="{{ it.qty if it.qty not in (None, '') else '' }}" placeholder="100"></td>
+                        <td><input type="file" name="b2_defect_files" multiple accept="image/*"
+                                   capture="environment" class="form-control form-control-sm" {{ _ro }}></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger fail-rm" {% if not _can_b2_edit %}disabled{% endif %}>×</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% if _can_b2_edit %}
+                <button type="button" class="btn btn-sm btn-outline-info fail-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增不良原因
+                </button>
+                {% endif %}
+                <input type="hidden" name="fail_items_json" data-fail-json>
+                {% if '不良照片' in docs_by_cat %}
+                <div class="small mt-2">
+                  <strong><i class="bi bi-images me-1"></i>已上傳不良照片：</strong>
+                  {% for d in docs_by_cat['不良照片'] %}
+                  <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                     class="badge bg-light text-dark border me-1">
+                    <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
+                  </a>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if _can_b2_edit %}
+                <button class="btn btn-sm btn-info text-white mt-2">
+                  <i class="bi bi-save me-1"></i>儲存（生管／產線主管）
+                </button>
+                {% endif %}
+                {% if a.updated_at %}
+                <div class="small text-muted mt-1">最後更新：{{ a.updated_at[:16] | replace('T',' ') }}</div>
+                {% endif %}
+              </form>
+            {% elif a.type == 'B3' %}
+              <div><strong>Rework 需求：</strong>{{ _f.rework_method or '—' }}</div>
+              {% if _f.need_lab_test %}
+              <div class="mt-1 ps-2 border-start border-info border-2">
+                <span class="badge bg-info text-dark me-1"><i class="bi bi-flask me-1"></i>小批樣品測試</span>
+                數量 <strong>{{ _f.lab_test_qty or '—' }}</strong> pcs ／ 期限 <strong>{{ _f.lab_test_due_date or '—' }}</strong>
+                {% if _f.lab_test_conditions %}／ 條件 {{ _f.lab_test_conditions }}{% endif %}
+                <div class="mt-1">
+                  {% if _f.lab_test_sample_no %}
+                  <a href="/sample-requests/{{ _f.lab_test_sample_no }}" target="_blank"
+                     class="badge bg-info-subtle text-info border">
+                    <i class="bi bi-link-45deg me-1"></i>樣品單 {{ _f.lab_test_sample_no }}
+                  </a>
+                  {% else %}
+                  <a href="/sample-requests/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}"
+                     target="_blank" class="btn btn-sm btn-outline-info py-0">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>開立樣品需求單
+                  </a>
+                  {% endif %}
+                </div>
+              </div>
+              {% endif %}
+              {% if _f.need_fixture %}
+              <div class="mt-1 ps-2 border-start border-warning border-2">
+                <span class="badge bg-warning text-dark me-1"><i class="bi bi-wrench-adjustable me-1"></i>工程檢治具設計</span>
+                {{ _f.fixture_note or '—' }}
+                {# 工程師回填表單（顯示模式） #}
+                {% set _can_eng_edit = user.role.value in ('engineer','eng_mgr','qc','admin') %}
+                {% set _ro_eng = '' if _can_eng_edit else 'readonly disabled' %}
+                {% set _bg_eng = '' if _can_eng_edit else 'bg-light text-muted' %}
+                <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                      class="mt-2 border border-success rounded p-2"
+                      style="background:rgba(25,135,84,.06)">
+                  <div class="small fw-semibold text-success mb-2">
+                    <i class="bi bi-people-fill me-1"></i>工程師回填區（檢治具完成後）
+                    {% if not _can_eng_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-md-4"><label class="form-label small">完成時間</label>
+                      <input type="date" name="fixture_done_at" class="form-control form-control-sm {{ _bg_eng }}" {{ _ro_eng }}
+                             value="{{ _f.fixture_done_at or '' }}"></div>
+                    <div class="col-md-4"><label class="form-label small">是否加入量產製程</label>
+                      <select name="fixture_to_production" class="form-select form-select-sm {{ _bg_eng }}" {{ _ro_eng }}>
+                        <option value="" {% if not _f.fixture_to_production %}selected{% endif %}>— 未評估 —</option>
+                        <option value="yes" {% if _f.fixture_to_production == 'yes' %}selected{% endif %}>是 — 加入量產</option>
+                        <option value="no"  {% if _f.fixture_to_production == 'no'  %}selected{% endif %}>否 — 暫不加入</option>
+                        <option value="conditional" {% if _f.fixture_to_production == 'conditional' %}selected{% endif %}>有條件加入</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">工程編號 / 連結</label>
+                      <input name="fixture_eng_no" class="form-control form-control-sm {{ _bg_eng }}" {{ _ro_eng }}
+                             value="{{ _f.fixture_eng_no or '' }}" placeholder="檢具編號 J-XXX"></div>
+                    <div class="col-12"><label class="form-label small">評估說明</label>
+                      <textarea name="fixture_eval_note" rows="2" class="form-control form-control-sm {{ _bg_eng }}" {{ _ro_eng }}
+                                placeholder="J-002 經 50 件實測誤差 ≤0.05，建議全產線換裝...">{{ _f.fixture_eval_note or '' }}</textarea></div>
+                  </div>
+                  {% if _can_eng_edit %}
+                  <button class="btn btn-sm btn-success mt-2">
+                    <i class="bi bi-save me-1"></i>儲存（工程師）
+                  </button>
+                  {% endif %}
+                </form>
+              </div>
+              {% endif %}
+              {% if _f.cust_rework %}
+              <div class="mt-1 ps-2 border-start border-primary border-2">
+                <span class="badge bg-primary me-1"><i class="bi bi-person-gear me-1"></i>客戶端 Rework 排程</span>
+                {% for r in (_f.cust_rework_rows or []) %}
+                <div class="small">
+                  <strong>{{ r.date or '—' }}</strong> ／ {{ r.location or '—' }} ／ {{ r.workers or '—' }} 人
+                </div>
+                {% else %}
+                {% if _f.cust_hours or _f.cust_workers or _f.cust_note %}
+                <div class="small">工時 {{ _f.cust_hours or '—' }} hr ／ 人力 {{ _f.cust_workers or '—' }} 人
+                  {% if _f.cust_note %}／ {{ _f.cust_note }}{% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% set _can_b3_edit = user.role.value in ('pc','prod_mgr','engineer','qc','admin') %}
+              {% set _ro3 = '' if _can_b3_edit else 'readonly disabled' %}
+              {% set _bg3 = '' if _can_b3_edit else 'bg-light text-muted' %}
+              {% set _fitems3 = _f.fail_items or [{'reason':'', 'qty':''}] %}
+              {% set _b3_total = form.receive_qty or 0 %}
+              {% set _b3_pass = (_f.pass_qty or 0) | int %}
+              {% set _b3_ns = namespace(t=0) %}
+              {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _b3_ns.t = _b3_ns.t + (_it.qty|int) %}{% endif %}{% endfor %}
+              {% set _b3_processed = _b3_pass + _b3_ns.t %}
+              {% set _b3_remain = _b3_total - _b3_processed %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/update-fields"
+                    enctype="multipart/form-data" data-disp-form="b3"
+                    class="mt-2 border border-success rounded p-2"
+                    style="background:rgba(25,135,84,.06)">
+                <div class="small fw-semibold text-success mb-2 d-flex align-items-center flex-wrap gap-1">
+                  <span><i class="bi bi-people-fill me-1"></i>生管／產線主管 回填區</span>
+                  {% if not _can_b3_edit %}<span class="badge bg-secondary ms-1">非權責：唯讀</span>{% endif %}
+                  <span class="ms-auto small text-muted">總數
+                    <strong class="text-dark">{{ _b3_total }}</strong> ／ 良
+                    <strong class="text-success">{{ _b3_pass }}</strong> ／ 不良
+                    <strong class="text-danger">{{ _b3_ns.t }}</strong> ／ 待處理
+                    <strong class="{% if _b3_remain > 0 %}text-warning{% else %}text-muted{% endif %}">{{ _b3_remain if _b3_remain > 0 else 0 }}</strong>
+                    {% if _b3_total > 0 %}
+                      {% if _b3_remain == 0 %}
+                      <span class="badge bg-success ms-1"><i class="bi bi-check2 me-1"></i>對上</span>
+                      {% elif _b3_remain < 0 %}
+                      <span class="badge bg-warning text-dark ms-1">超出 {{ -_b3_remain }}</span>
+                      {% endif %}
+                    {% endif %}
+                  </span>
+                </div>
+                {% set _stations3 = ['CNC 課','雷雕課','組裝課','品檢課','機加工課','模具課','IQC','IPQC','OQC','客戶端','其他'] %}
+                <div class="row g-2 mb-2">
+                  <div class="col-md-6"><label class="form-label small">執行單位（生管派發）</label>
+                    {% if _can_b3_edit %}
+                    <select name="station" class="form-select form-select-sm">
+                      <option value="">— 請選擇 —</option>
+                      {% for opt in _stations3 %}
+                      <option value="{{ opt }}" {% if _f.station == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                      {% if _f.station and _f.station not in _stations3 %}
+                      <option value="{{ _f.station }}" selected>{{ _f.station }}（自訂）</option>
+                      {% endif %}
+                    </select>
+                    {% else %}
+                    <input class="form-control form-control-sm bg-light text-muted" readonly disabled
+                           value="{{ _f.station or '—' }}">
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6"><label class="form-label small">預計完成時間</label>
+                    <input type="date" name="completed_at" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
+                           value="{{ _f.completed_at or '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">Rework 良品數</label>
+                    <input name="pass_qty" type="number" min="0" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
+                           value="{{ _f.pass_qty if _f.pass_qty not in (None, '') else '' }}"></div>
+                  <div class="col-md-3"><label class="form-label small">不良總數（自動加總）</label>
+                    <div class="form-control form-control-sm bg-light fw-semibold" data-fail-total>—</div></div>
+                  <div class="col-md-6"><label class="form-label small">不良品處理方式</label>
+                    <input name="defect_handling" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
+                           value="{{ _f.defect_handling or '' }}" placeholder="報廢 / 退廠 / 隔離"></div>
+                </div>
+                <div class="small fw-semibold text-success mb-1">
+                  <i class="bi bi-list-ul me-1"></i>Rework 不良原因 / 不良數 / 異常照片（可向下新增）
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-1">
+                    <thead class="table-light"><tr>
+                      <th style="width:40px">#</th><th>不良原因</th>
+                      <th class="text-end" style="width:120px">不良數</th>
+                      <th style="width:200px">截圖</th>
+                      <th style="width:40px">—</th>
+                    </tr></thead>
+                    <tbody class="fail-tbody">
+                      {% for it in _fitems3 %}
+                      <tr class="fail-row">
+                        <td class="text-center fail-idx">{{ loop.index }}</td>
+                        <td><input data-fail="reason" class="form-control form-control-sm {{ _bg3 }}" {{ _ro3 }}
+                                   value="{{ it.reason or '' }}" placeholder="尺寸不符 / 外觀刮傷"></td>
+                        <td><input data-fail="qty" type="number" min="0" class="form-control form-control-sm text-end {{ _bg3 }}" {{ _ro3 }}
+                                   value="{{ it.qty if it.qty not in (None, '') else '' }}" placeholder="100"></td>
+                        <td><input type="file" name="b3_defect_files" multiple accept="image/*"
+                                   capture="environment" class="form-control form-control-sm" {{ _ro3 }}></td>
+                        <td><button type="button" class="btn btn-sm btn-outline-danger fail-rm" {% if not _can_b3_edit %}disabled{% endif %}>×</button></td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+                {% if _can_b3_edit %}
+                <button type="button" class="btn btn-sm btn-outline-success fail-add">
+                  <i class="bi bi-plus-circle me-1"></i>新增不良原因
+                </button>
+                {% endif %}
+                <input type="hidden" name="fail_items_json" data-fail-json>
+                {% if '不良照片' in docs_by_cat %}
+                <div class="small mt-2">
+                  <strong><i class="bi bi-images me-1"></i>已上傳不良照片：</strong>
+                  {% for d in docs_by_cat['不良照片'] %}
+                  <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                     class="badge bg-light text-dark border me-1">
+                    <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
+                  </a>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if _can_b3_edit %}
+                <button class="btn btn-sm btn-success mt-2">
+                  <i class="bi bi-save me-1"></i>儲存（生管／產線主管）
+                </button>
+                {% endif %}
+                {% if a.updated_at %}
+                <div class="small text-muted mt-1">最後更新：{{ a.updated_at[:16] | replace('T',' ') }}</div>
+                {% endif %}
+              </form>
+            {% elif a.type == 'HE' %}
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-1">
+                  <thead class="table-light">
+                    <tr>
+                      <th>料號</th>
+                      <th class="text-end">客戶端</th>
+                      <th class="text-end">廠內</th>
+                      <th class="text-end">供應商</th>
+                      <th>處理判定</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in (_f.rows or []) %}
+                    <tr>
+                      <td>{{ r.part_no }}</td>
+                      <td class="text-end">{{ r.customer_qty if r.customer_qty not in (None, '') else '—' }}</td>
+                      <td class="text-end">{{ r.inhouse_qty if r.inhouse_qty not in (None, '') else '—' }}</td>
+                      <td class="text-end">{{ r.supplier_qty if r.supplier_qty not in (None, '') else '—' }}</td>
+                      <td>{{ r.decision or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+
+            {% if a.replies %}
+            <div class="border-top pt-2 mt-2">
+              <strong>回覆紀錄：</strong>
+              <ul class="mb-1 ps-3">
+              {% for r in a.replies %}
+                <li>
+                  <span class="badge bg-secondary me-1">{{ r.unit }}</span>
+                  <span class="text-muted">{{ r.at[:16] | replace('T',' ') }}</span>
+                  <span class="ms-1">{{ r.by_name or '—' }}</span>
+                  {% if r.note %}— {{ r.note }}{% endif %}
+                </li>
+              {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-end gap-2 mt-2 flex-wrap">
+              {% if not a.sent_at and _meta.units and user.role.value in ('qc','admin') %}
+              <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/send" class="d-inline"
+                    onsubmit="return confirm('送出至 {{ _meta.units | map(attribute='label') | join('、') }}？');">
+                <button class="btn btn-sm btn-{{ _meta.color }}">
+                  <i class="bi bi-send me-1"></i>送出至 {{ _meta.units | map(attribute='label') | join('、') }}
+                </button>
+              </form>
+              {% endif %}
+              {% if a.sent_at and _meta.units and a.type not in ('B2','B3') %}
+                {% set _unit_roles = _meta.units | map(attribute='role') | list %}
+                {% if user.role.value in _unit_roles or user.role.value in ('qc','admin') %}
+                <form method="post" action="/qc-exceptions/{{ form.form_id }}/action/{{ a.id }}/reply"
+                      class="d-flex gap-1 align-items-center">
+                  <input name="reply_note" class="form-control form-control-sm" style="width:240px"
+                         placeholder="回覆內容（選填）">
+                  <button class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-reply me-1"></i>送出回覆
+                  </button>
+                </form>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# 改善方案 — 四個 section：異常反饋 / 短期處理 / 異常根因 / 長期改善 #}
+    {% if _s in ('PENDING_RCA', 'PENDING_IMPROVEMENT', 'LINKED_ECN', 'CLOSED') %}
+    {% set _can_edit_improve = (user.role.value in ('qc','prod_mgr','admin')) and _s in ('PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+    <div class="card shadow-sm mb-3 {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}border-primary{% endif %}">
+      <div class="card-header {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}bg-primary-subtle{% else %}bg-white{% endif %} fw-semibold d-flex align-items-center">
+        <span><i class="bi bi-tools me-2"></i>改善方案</span>
+        {% if form.linked_ecn %}
+        <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+           class="badge bg-warning text-dark ms-2 text-decoration-none"
+           title="點擊查看 ECN 進度">
+          <i class="bi bi-link-45deg me-1"></i>{{ form.linked_ecn.form_id }}
+          <i class="bi bi-box-arrow-up-right ms-1"></i>
+        </a>
+        {% endif %}
+        <a href="/qc-exceptions/{{ form.form_id }}/report" target="_blank"
+           class="btn btn-sm btn-outline-primary ms-auto me-2" title="預覽異常報告，可編輯後列印 / 另存 PDF">
+          <i class="bi bi-file-earmark-pdf me-1"></i>輸出異常報告
+        </a>
+        <button type="button" class="btn btn-sm btn-link p-0 collapse-toggle" data-bs-toggle="collapse"
+                data-bs-target="#improveBody" aria-expanded="true" title="收合 / 展開">
+          <i class="bi bi-chevron-up"></i>
+        </button>
+      </div>
+      <div class="card-body collapse show" id="improveBody">
+
+        {# ── 1. 異常反饋（撈取 IPC 異常資訊與附件，唯讀）────────── #}
+        {% set _doc_lbl  = {'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'} %}
+        {% set _date_lbl = {'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'} %}
+        {% set _stage_lbl = {'IQC':'IQC','IPQC':'IPQC','OQC':'OQC','INSPECTION':'品檢',
+                             'LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'} %}
+        {% set _src_lbl = {'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'} %}
+        {% set _src_color = {'SUPPLIER':'bg-warning text-dark','CUSTOMER':'bg-info text-dark','INTERNAL':'bg-secondary text-white'} %}
+        {% set _src_v = form.source_type.value if form.source_type else 'SUPPLIER' %}
+        {% set _items_imp = (form.defect_items_json | fromjson) if form.defect_items_json else None %}
+
+        <div class="border rounded p-3 mb-3" style="background:rgba(13,202,240,.05)">
+          <div class="fw-semibold text-info mb-2">
+            <span class="badge bg-info me-1">1</span>
+            <i class="bi bi-clipboard-data me-1"></i>異常反饋（IPC 資訊）
+          </div>
+          <div class="row g-2 small">
+            <div class="col-md-3"><strong>品號：</strong>{{ form.part_no }}</div>
+            <div class="col-md-3"><strong>{{ _doc_lbl.get(form.doc_type.value, '單號') if form.doc_type else '單號' }}：</strong>{{ form.receive_doc_no or '—' }}</div>
+            <div class="col-md-3"><strong>{{ _date_lbl.get(form.event_date_type.value, '日期') if form.event_date_type else '日期' }}：</strong>{{ form.receive_date or '—' }}</div>
+            <div class="col-md-3"><strong>數量：</strong>{{ form.receive_qty or '—' }} pcs</div>
+            <div class="col-12"><strong>工段+來源：</strong>
+              <span class="badge bg-light text-dark border">{{ _stage_lbl.get(form.stage.value, form.stage.value) }}</span>
+              <span class="badge {{ _src_color.get(_src_v, 'bg-secondary') }}">{{ _src_lbl.get(_src_v, '廠商') }}</span>
+              {{ form.supplier_name or '—' }}
+            </div>
+          </div>
+          {% if _items_imp %}
+          <table class="table table-sm table-bordered mt-2 mb-1 small">
+            <thead class="table-light"><tr>
+              <th style="width:40px">#</th><th>異常原因</th>
+              <th style="width:120px">類型</th>
+              <th class="text-end" style="width:80px">抽樣</th>
+              <th class="text-end" style="width:80px">不良</th>
+              <th class="text-end" style="width:80px">不良率</th>
+            </tr></thead>
+            <tbody>
+              {% for it in _items_imp %}
+              {% set _r = (it.defect_qty / it.sample_qty) if (it.sample_qty and it.defect_qty is not none) else None %}
+              <tr>
+                <td class="text-center">{{ loop.index }}</td>
+                <td class="text-danger fw-semibold">{{ it.cause }}</td>
+                <td>
+                  {% if 'EXTERIOR' in (it.types or []) %}<span class="badge bg-info text-dark">外觀</span>{% endif %}
+                  {% if 'DIMENSION' in (it.types or []) %}<span class="badge bg-warning text-dark">尺寸</span>{% endif %}
+                </td>
+                <td class="text-end">{{ it.sample_qty if it.sample_qty is not none else '—' }}</td>
+                <td class="text-end">{{ it.defect_qty if it.defect_qty is not none else '—' }}</td>
+                <td class="text-end fw-semibold {% if _r and _r >= 0.05 %}text-danger{% endif %}">
+                  {% if _r is not none %}{{ '%.1f' % (_r * 100) }}%{% else %}—{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+          {% if '異常照片' in docs_by_cat %}
+          <div class="small mt-1">
+            <strong><i class="bi bi-images me-1"></i>異常照片：</strong>
+            {% for d in docs_by_cat['異常照片'] %}
+            <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+               class="badge bg-light text-dark border me-1">
+              <i class="bi bi-file-earmark-image me-1"></i>{{ d.original_name }}
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        {# ── 2. 短期處理（撈 actions 摘要 — 立即處理區改動會自動同步）─ #}
+        <div class="border rounded p-3 mb-3" style="background:rgba(255,193,7,.05)">
+          <div class="fw-semibold text-warning mb-2 d-flex align-items-center">
+            <span class="badge bg-warning text-dark me-1">2</span>
+            <i class="bi bi-lightning-charge me-1"></i>短期處理（立即處理彙總）
+            <span class="ms-auto text-muted small fw-normal">
+              <i class="bi bi-arrow-repeat me-1"></i>立即處理區改動會自動同步
+            </span>
+          </div>
+          {% if qc_actions %}
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-2 bg-white" style="font-size:.85rem">
+              <thead class="table-light">
+                <tr class="text-center">
+                  <th style="width:170px">處理項目</th>
+                  <th style="width:90px">數量</th>
+                  <th style="width:90px">不良數</th>
+                  <th>處理方式</th>
+                  <th style="width:90px">不良率</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for a in qc_actions %}
+                {% set _meta = qc_action_types_meta.get(a.type, {}) %}
+                {% set _f = a.fields or {} %}
+                {% set _qty = 0 %}
+                {% set _bad = 0 %}
+                {% set _method = '' %}
+                {% set _detail = '' %}
+                {% if a.type == 'A1' %}
+                  {% set _qty = (_f.return_qty_total or form.receive_qty or 0) | int %}
+                  {% set _bad = _qty %}
+                  {% set _method = 'A1 退貨廠商：' ~ (_f.replenish_note or '—') %}
+                {% elif a.type == 'A2' %}
+                  {% set _qty = (_f.replenish_qty or form.receive_qty or 0) | int %}
+                  {% set _bad = _qty %}
+                  {% set _method = 'A2 客戶退貨：' ~ (_f.replenish_note or '—') %}
+                {% elif a.type == 'B1' %}
+                  {% set _qty = (form.receive_qty or 0) | int %}
+                  {% set _bad = 0 %}
+                  {% set _method = 'B1 直接進料/出貨：' ~ (_f.note or '不需卡控') %}
+                {% elif a.type == 'B2' %}
+                  {% set _ns2 = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns2.t = _ns2.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {% set _pass2 = (_f.pass_qty or 0) | int %}
+                  {% set _qty = _pass2 + _ns2.t %}
+                  {% set _bad = _ns2.t %}
+                  {% set _method = 'B2 Sorting（' ~ (_f.station or '—') ~ '）：' ~ (_f.sorting_method or '—') %}
+                {% elif a.type == 'B3' %}
+                  {% set _ns3 = namespace(t=0) %}
+                  {% for _it in (_f.fail_items or []) %}{% if _it.qty %}{% set _ns3.t = _ns3.t + (_it.qty|int) %}{% endif %}{% endfor %}
+                  {% set _pass3 = (_f.pass_qty or 0) | int %}
+                  {% set _qty = _pass3 + _ns3.t %}
+                  {% set _bad = _ns3.t %}
+                  {% set _method = 'B3 Rework（' ~ (_f.station or '—') ~ '）：' ~ (_f.rework_method or '—') %}
+                {% elif a.type == 'HE' %}
+                  {% set _qty = ((form.he_customer_qty or 0)|int) + ((form.he_inhouse_qty or 0)|int) + ((form.he_supplier_qty or 0)|int) %}
+                  {% set _bad = 0 %}
+                  {% set _method = 'C 物料盤點：客 ' ~ (form.he_customer_qty or 0) ~ ' / 廠 ' ~ (form.he_inhouse_qty or 0) ~ ' / 供 ' ~ (form.he_supplier_qty or 0) %}
+                {% endif %}
+                <tr>
+                  <td class="text-{{ _meta.color }} fw-semibold">
+                    <i class="bi {{ _meta.icon }} me-1"></i>{{ _meta.label }}
+                    <div class="small fw-normal mt-1">
+                      {% if a.sent_at %}<span class="badge bg-success">已送 {{ a.sent_at[:10] }}</span>{% endif %}
+                      {% if a.updated_at %}<span class="badge bg-info text-dark">{{ a.updated_at[:10] }}</span>{% endif %}
+                      {% if a.replies %}<span class="badge bg-secondary">回覆 {{ a.replies | length }}</span>{% endif %}
+                    </div>
+                  </td>
+                  <td class="text-end fw-semibold">{{ _qty if _qty else '—' }}</td>
+                  <td class="text-end fw-semibold {% if _bad > 0 %}text-danger{% endif %}">{{ _bad if _bad else '—' }}</td>
+                  <td class="small">
+                    {{ _method }}
+                    {% if a.type == 'A1' %}
+                      {% set _planned_s = (_f.replenish_qty or 0) | int %}
+                      {% set _ns_s = namespace(t=0) %}
+                      {% for _l in (_f.return_logs or []) %}{% if _l.qty %}{% set _ns_s.t = _ns_s.t + (_l.qty|int) %}{% endif %}{% endfor %}
+                      <div class="text-muted mt-1">預計回補 <strong class="text-primary">{{ _planned_s or '—' }}</strong>
+                        {% if _f.replenish_due_date %}（{{ _f.replenish_due_date }}）{% endif %}
+                        ／ 實際已回 <strong class="text-success">{{ _ns_s.t }}</strong>
+                        {% if _planned_s > 0 %}
+                          {% set _diff_s = _ns_s.t - _planned_s %}
+                          {% if _diff_s == 0 %}<span class="badge bg-success ms-1">對上</span>
+                          {% elif _diff_s > 0 %}<span class="badge bg-warning text-dark ms-1">超 {{ _diff_s }}</span>
+                          {% else %}<span class="badge bg-danger ms-1">差 {{ -_diff_s }}</span>{% endif %}
+                        {% endif %}
+                      </div>
+                    {% elif a.type == 'A2' %}
+                      <div class="text-muted mt-1">
+                        地點 {{ _f.pickup_location or '—' }} ／ 預計 {{ _f.pickup_time or '—' }} ／ 實際
+                        {% if _f.pickup_actual_at %}<span class="text-success fw-semibold">{{ _f.pickup_actual_at }}</span>
+                        {% else %}<span class="text-warning">待業助</span>{% endif %}
+                      </div>
+                    {% elif a.type in ('B2','B3') %}
+                      {% if _f.completed_at %}<div class="text-muted mt-1">完成日 {{ _f.completed_at }}</div>{% endif %}
+                      {% if _f.fail_items %}
+                      <div class="text-muted">不良明細：
+                        {% for it in _f.fail_items %}{% if it.reason or it.qty %}{{ it.reason or '—' }}({{ it.qty or 0 }}){% if not loop.last %} ／ {% endif %}{% endif %}{% endfor %}
+                      </div>
+                      {% endif %}
+                      {% if a.type == 'B3' and _f.need_fixture %}
+                      <div class="text-warning small">
+                        <i class="bi bi-wrench-adjustable me-1"></i>檢治具完成 {{ _f.fixture_done_at or '—' }}
+                        {% if _f.fixture_eng_no %}／ {{ _f.fixture_eng_no }}{% endif %}
+                      </div>
+                      {% endif %}
+                    {% endif %}
+                  </td>
+                  <td class="text-end fw-semibold {% if _qty > 0 and _bad > 0 %}text-danger{% endif %}">
+                    {% if _qty > 0 %}{{ '%.1f' % (_bad / _qty * 100) }}%{% else %}—{% endif %}
+                  </td>
+                </tr>
+                {% if a.type == 'A1' and _f.return_logs %}
+                <tr>
+                  <td colspan="5" class="bg-light">
+                    <div class="small fw-semibold text-info mb-1">
+                      <i class="bi bi-truck me-1"></i>採購／生管 回貨紀錄
+                    </div>
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                      <thead class="table-light"><tr>
+                        <th style="width:40px">#</th>
+                        <th style="width:140px">回貨日期</th>
+                        <th class="text-end" style="width:110px">回貨數量</th>
+                        <th>備註</th>
+                      </tr></thead>
+                      <tbody>
+                        {% set _ns_t = namespace(t=0) %}
+                        {% for r in _f.return_logs %}
+                        {% if r.qty %}{% set _ns_t.t = _ns_t.t + (r.qty|int) %}{% endif %}
+                        {% if r.date or r.qty or r.note %}
+                        <tr>
+                          <td class="text-center">{{ loop.index }}</td>
+                          <td>{{ r.date or '—' }}</td>
+                          <td class="text-end fw-semibold">{{ r.qty if r.qty not in (None, '') else '—' }}</td>
+                          <td>{{ r.note or '—' }}</td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                        <tr class="table-light">
+                          <td colspan="2" class="text-end fw-semibold">累計</td>
+                          <td class="text-end fw-semibold text-success">{{ _ns_t.t }}</td>
+                          <td></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+                {% endif %}
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="small text-muted">尚無立即處理項目</div>
+          {% endif %}
+        </div>
+
+        {# ── 3. 異常根因（編輯）+ 4. 長期改善（編輯）共用一個 form ── #}
+        {% if _can_edit_improve %}
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/save-improvement"
+              enctype="multipart/form-data" id="improveForm">
+          <div class="border border-success rounded p-3 mb-3" style="background:rgba(25,135,84,.05)">
+            <div class="fw-semibold text-success mb-2 d-flex align-items-center flex-wrap gap-2">
+              <span class="badge bg-success me-1">3</span>
+              <i class="bi bi-search me-1"></i>異常根因（5Why / 魚骨圖）
+              <a href="/sample-requests/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}&purpose=異常重現實驗"
+                 target="_blank" class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-flask me-1"></i>開立樣品需求單（異常重現實驗）
+              </a>
+            </div>
+            <textarea name="root_cause" rows="5"
+                      class="form-control{% if form.root_cause %} bg-success-subtle border-success{% endif %}"
+                      placeholder="廠商換刀後未重新對 0；或 SOP 未明確規範換線後首件全檢…">{{ form.root_cause or '' }}</textarea>
+            <div class="mt-2">
+              <label class="form-label small">附件（魚骨圖 / 5Why 圖 / 截圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上</label>
+              <input type="file" name="rca_files" multiple accept="image/*,.pdf"
+                     capture="environment" class="form-control form-control-sm" data-paste="rca_files">
+              <div class="rca-paste-status small text-success mt-1 d-none"></div>
+            </div>
+            {% if '根因附件' in docs_by_cat %}
+            <div class="small mt-2">
+              <strong><i class="bi bi-paperclip me-1"></i>已上傳根因附件：</strong>
+              {% for d in docs_by_cat['根因附件'] %}
+              <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                 class="badge bg-light text-dark border me-1">
+                <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <div class="form-text small mt-1">由<strong>品保／產線主管</strong>填寫；如需異常重現驗證，可開立樣品需求單測試</div>
+          </div>
+
+          <div class="border border-warning rounded p-3 mb-3" style="background:rgba(255,193,7,.06)">
+            <div class="fw-semibold text-warning mb-2">
+              <span class="badge bg-warning text-dark me-1">4</span>
+              <i class="bi bi-tools me-1"></i>長期改善（SOP / SIP / 製程修訂 → ECN）
+            </div>
+            <textarea name="improvement_plan" rows="5"
+                      class="form-control{% if form.improvement_plan %} bg-success-subtle border-success{% endif %}"
+                      placeholder="例：1) 修訂 SOP 增加換線首件全檢；2) 治具新增防呆設計；3) 修訂 SIP 增加抽樣頻率…">{{ form.improvement_plan or '' }}</textarea>
+            <div class="d-flex flex-wrap gap-3 mt-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_drawing_rev" value="1"
+                       id="needDraw" {% if form.need_drawing_rev %}checked{% endif %}>
+                <label for="needDraw" class="form-check-label">需修訂圖面</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_sop_rev" value="1"
+                       id="needSop" {% if form.need_sop_rev %}checked{% endif %}>
+                <label for="needSop" class="form-check-label">需修訂 SOP</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="need_sip_rev" value="1"
+                       id="needSip" {% if form.need_sip_rev %}checked{% endif %}>
+                <label for="needSip" class="form-check-label">需修訂 SIP / 製程</label>
+              </div>
+            </div>
+            <div class="mt-2">
+              <label class="form-label small">附件（修訂草案 / SOP / 截圖）— 可直接 <kbd>Ctrl/⌘+V</kbd> 貼上</label>
+              <input type="file" name="imp_files" multiple accept="image/*,.pdf"
+                     capture="environment" class="form-control form-control-sm" data-paste="imp_files">
+              <div class="imp-paste-status small text-success mt-1 d-none"></div>
+            </div>
+            {% if '改善方案附件' in docs_by_cat %}
+            <div class="small mt-2">
+              <strong><i class="bi bi-paperclip me-1"></i>已上傳改善方案附件：</strong>
+              {% for d in docs_by_cat['改善方案附件'] %}
+              <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank"
+                 class="badge bg-light text-dark border me-1">
+                <i class="bi bi-file-earmark me-1"></i>{{ d.original_name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+
+          <script>
+          (function(){
+            const f = document.getElementById('improveForm');
+            if (!f) return;
+            // 找到根因 / 改善方案的 textarea + 對應 file input
+            const rcaText = f.querySelector('textarea[name="root_cause"]');
+            const impText = f.querySelector('textarea[name="improvement_plan"]');
+            const rcaFile = f.querySelector('input[data-paste="rca_files"]');
+            const impFile = f.querySelector('input[data-paste="imp_files"]');
+            function bindPaste(textarea, fileInput, statusSel) {
+              if (!textarea || !fileInput) return;
+              textarea.addEventListener('paste', e => {
+                const items = (e.clipboardData || {}).items || [];
+                const dt = new DataTransfer();
+                Array.from(fileInput.files || []).forEach(x => dt.items.add(x));
+                let added = 0;
+                for (const it of items) {
+                  if (it.type && it.type.startsWith('image/')) {
+                    const fl = it.getAsFile();
+                    if (fl) {
+                      const ext = (fl.type.split('/')[1] || 'png').replace('+xml','');
+                      const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+                      dt.items.add(new File([fl], `paste-${stamp}.${ext}`, {type: fl.type}));
+                      added++;
+                    }
+                  }
+                }
+                if (added > 0) {
+                  e.preventDefault();
+                  fileInput.files = dt.files;
+                  const stat = f.querySelector(statusSel);
+                  if (stat) {
+                    stat.classList.remove('d-none');
+                    stat.textContent = `已貼上 ${added} 張截圖（總 ${dt.files.length} 個檔案，送出後上傳）`;
+                  }
+                }
+              });
+            }
+            bindPaste(rcaText, rcaFile, '.rca-paste-status');
+            bindPaste(impText, impFile, '.imp-paste-status');
+
+            // 自動儲存（debounce 1.5 秒）— 不打擾正在輸入
+            const autoStatus = document.createElement('div');
+            autoStatus.className = 'small text-muted mt-2';
+            autoStatus.id = 'improveAutoStatus';
+            autoStatus.textContent = '';
+            f.appendChild(autoStatus);
+            let timer = null, lastSent = '';
+            async function autosave() {
+              const fd = new FormData();
+              fd.append('root_cause', rcaText ? rcaText.value : '');
+              fd.append('improvement_plan', impText ? impText.value : '');
+              ['need_drawing_rev','need_sop_rev','need_sip_rev'].forEach(n => {
+                const c = f.querySelector(`input[name="${n}"]`);
+                if (c && c.checked) fd.append(n, '1');
+              });
+              const sig = JSON.stringify([fd.get('root_cause'), fd.get('improvement_plan'),
+                                          fd.get('need_drawing_rev'), fd.get('need_sop_rev'), fd.get('need_sip_rev')]);
+              if (sig === lastSent) return;
+              autoStatus.textContent = '⏳ 自動儲存中…';
+              try {
+                const r = await fetch(`/qc-exceptions/{{ form.form_id }}/save-improvement?silent=1`,
+                                       {method: 'POST', body: fd});
+                if (r.ok) {
+                  lastSent = sig;
+                  const t = new Date().toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+                  autoStatus.textContent = `✅ 自動儲存於 ${t}`;
+                  autoStatus.classList.remove('text-danger');
+                  autoStatus.classList.add('text-success');
+                } else {
+                  autoStatus.textContent = `❌ 自動儲存失敗（HTTP ${r.status}）`;
+                  autoStatus.classList.add('text-danger');
+                }
+              } catch (e) {
+                autoStatus.textContent = `❌ 自動儲存失敗：${e}`;
+                autoStatus.classList.add('text-danger');
+              }
+            }
+            function scheduleSave() {
+              clearTimeout(timer);
+              autoStatus.textContent = '✏️ 編輯中…（1.5 秒後自動儲存）';
+              autoStatus.classList.remove('text-success', 'text-danger');
+              timer = setTimeout(autosave, 1500);
+            }
+            ['root_cause','improvement_plan'].forEach(n => {
+              const el = f.querySelector(`textarea[name="${n}"]`);
+              if (el) el.addEventListener('input', scheduleSave);
+            });
+            ['need_drawing_rev','need_sop_rev','need_sip_rev'].forEach(n => {
+              const el = f.querySelector(`input[name="${n}"]`);
+              if (el) el.addEventListener('change', scheduleSave);
+            });
+            // 離開頁面前若還有未儲存變更，強制送一次
+            window.addEventListener('beforeunload', () => { if (timer) { clearTimeout(timer); autosave(); } });
+          })();
+          </script>
+
+          <div class="d-flex gap-2 flex-wrap mt-3">
+            <button name="advance" value="" class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-save me-1"></i>儲存
+            </button>
+            {% if _s in ('PENDING_RCA','PENDING_IMPROVEMENT') %}
+            <a href="/pcn-forms/new?source=qc&qc_form_id={{ form.form_id }}&part_no={{ form.part_no }}"
+               target="_blank" class="btn btn-warning btn-sm">
+              <i class="bi bi-box-arrow-up-right me-1"></i>開立 ECN（圖面/SOP/SIP 修訂）
+            </a>
+            <button name="advance" value="ecn" class="btn btn-outline-warning btn-sm">
+              <i class="bi bi-link-45deg me-1"></i>標記需 ECN（等待綁定）
+            </button>
+            <button name="advance" value="close" class="btn btn-success btn-sm"
+                    onclick="return confirm('確定無需 ECN，直接結案？');">
+              <i class="bi bi-check2-circle me-1"></i>無需 ECN，直接結案
+            </button>
+            {% endif %}
+          </div>
+        </form>
+
+        {# 已綁定 ECN — 顯示為連結 + 進度狀態 #}
+        {% if form.linked_ecn %}
+        <hr>
+        {% set _ecn_status = form.linked_ecn.status.value if form.linked_ecn.status else 'DRAFT' %}
+        {% set _ecn_status_lbl = {
+          'DRAFT':'草稿',
+          'ECN_PENDING_WAREHOUSE':'待倉管盤點',
+          'ECN_PENDING_ENG':'待工程確認',
+          'ECN_PENDING_QC':'待品保確認',
+          'PENDING_QC':'待品保 SIP',
+          'PENDING_PRODUCTION':'待產線作業 SOP',
+          'PENDING_WAREHOUSE_SOP':'待倉管包裝 SOP',
+          'PENDING_BU_APPROVAL':'待 BU 審核',
+          'APPROVED':'已核准',
+          'RETURNED':'退回',
+          'CLOSED':'結案',
+        } %}
+        {% set _ecn_status_color = {
+          'DRAFT':'secondary','APPROVED':'success','CLOSED':'success','RETURNED':'danger',
+        }.get(_ecn_status, 'warning') %}
+        <div class="d-flex align-items-center gap-2 mb-2 p-2 border border-warning rounded"
+             style="background:rgba(255,193,7,.08)">
+          <i class="bi bi-link-45deg text-warning"></i>
+          <span class="fw-semibold">已綁定 ECN：</span>
+          <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+             class="text-decoration-none">
+            <strong>{{ form.linked_ecn.form_id }}</strong>
+            <i class="bi bi-box-arrow-up-right small ms-1"></i>
+          </a>
+          <span class="badge bg-{{ _ecn_status_color }} ms-1">
+            {{ _ecn_status_lbl.get(_ecn_status, _ecn_status) }}
+          </span>
+          <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank"
+             class="btn btn-sm btn-outline-warning ms-auto">
+            <i class="bi bi-eye me-1"></i>查看 ECN 進度
+          </a>
+        </div>
+        {% endif %}
+
+        {# ECN 綁定 #}
+        {% if _s in ('PENDING_IMPROVEMENT','LINKED_ECN') %}
+        <hr>
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/link-ecn"
+              class="d-flex gap-2 align-items-end" id="linkEcnForm">
+          <div class="flex-grow-1">
+            <label class="form-label small">綁定已建立的 ECN 單號（從下方建議列表選擇）</label>
+            <input name="ecn_form_id" class="form-control form-control-sm" list="ecnList"
+                   placeholder="例：ECN-20260502-002"
+                   pattern="(PCN|ECN)-\d{8}-\d{3}"
+                   title="格式：ECN-YYYYMMDD-NNN 或 PCN-YYYYMMDD-NNN"
+                   value="{{ form.linked_ecn.form_id if form.linked_ecn else '' }}"
+                   required>
+            <datalist id="ecnList">
+              {% for c in qc_ecn_candidates %}
+              <option value="{{ c.form_id }}">{{ c.title }}</option>
+              {% endfor %}
+            </datalist>
+          </div>
+          <button class="btn btn-warning btn-sm">
+            <i class="bi bi-link-45deg me-1"></i>綁定 ECN
+          </button>
+        </form>
+        <script>
+        (function(){
+          const f = document.getElementById('linkEcnForm');
+          if (!f) return;
+          f.addEventListener('submit', e => {
+            const inp = f.querySelector('input[name="ecn_form_id"]');
+            // 容錯：移除空白、取出第一個合法 ID
+            const raw = (inp.value || '').trim();
+            const m = raw.match(/(PCN|ECN)-\d{8}-\d{3}/);
+            if (m) inp.value = m[0];
+          });
+        })();
+        </script>
+        {% endif %}
+        {% else %}
+        {# 唯讀展示 #}
+        <div class="border border-success rounded p-3 mb-3" style="background:rgba(25,135,84,.05)">
+          <div class="fw-semibold text-success mb-2">
+            <span class="badge bg-success me-1">3</span>異常根因
+          </div>
+          <div class="border rounded p-2 bg-white small">{{ form.root_cause or '（尚未填寫）' }}</div>
+        </div>
+        <div class="border border-warning rounded p-3 mb-3" style="background:rgba(255,193,7,.06)">
+          <div class="fw-semibold text-warning mb-2">
+            <span class="badge bg-warning text-dark me-1">4</span>長期改善
+          </div>
+          <div class="border rounded p-2 bg-white small mb-2">{{ form.improvement_plan or '（尚未填寫）' }}</div>
+          <div>
+            {% if form.need_drawing_rev %}<span class="badge bg-info text-dark me-1">需修訂圖面</span>{% endif %}
+            {% if form.need_sop_rev %}<span class="badge bg-info text-dark me-1">需修訂 SOP</span>{% endif %}
+            {% if form.need_sip_rev %}<span class="badge bg-info text-dark me-1">需修訂 SIP / 製程</span>{% endif %}
+          </div>
+          {% if form.linked_ecn %}
+          <div class="mt-2">
+            <strong>已綁 ECN：</strong>
+            <a href="/pcn-forms/{{ form.linked_ecn.form_id }}" target="_blank">
+              <i class="bi bi-link-45deg"></i>{{ form.linked_ecn.form_id }}
+            </a>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <div class="col-lg-4">
+    {# 操作 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>操作</div>
+      <div class="card-body">
+        {# DRAFT — 建單者（業助/產線主管/品保）可修改補件 + 重送 #}
+        {% set _is_creator = (user.id == form.created_by or user.role.value == 'admin') %}
+        {% if _s == 'DRAFT' and _is_creator %}
+        <a href="/qc-exceptions/{{ form.form_id }}/edit" class="btn btn-warning w-100 mb-2 fw-semibold">
+          <i class="bi bi-pencil-square me-1"></i>補件修改（編輯內容 / 附件）
+        </a>
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/edit" class="mb-2">
+          <input type="hidden" name="submit_action" value="resubmit">
+          <input type="hidden" name="part_no" value="{{ form.part_no }}">
+          <input type="hidden" name="defect_cause" value="{{ form.defect_cause }}">
+          <input type="hidden" name="doc_type" value="{{ form.doc_type.value if form.doc_type else 'RECEIVE' }}">
+          <input type="hidden" name="receive_doc_no" value="{{ form.receive_doc_no or '' }}">
+          <input type="hidden" name="event_date_type" value="{{ form.event_date_type.value if form.event_date_type else 'RECEIVE' }}">
+          <input type="hidden" name="receive_date" value="{{ form.receive_date or '' }}">
+          <input type="hidden" name="stage" value="{{ form.stage.value }}">
+          <input type="hidden" name="supplier_name" value="{{ form.supplier_name or '' }}">
+          <input type="hidden" name="receive_qty" value="{{ form.receive_qty or '' }}">
+          <input type="hidden" name="measurement_data" value="{{ form.measurement_data or '' }}">
+          <input type="hidden" name="defect_qty" value="{{ form.defect_qty or '' }}">
+          <input type="hidden" name="sample_qty" value="{{ form.sample_qty or '' }}">
+          <button class="btn btn-danger w-100" onclick="return confirm('直接送出？將進入「立即處理」階段。');">
+            <i class="bi bi-send me-1"></i>直接送出 → 立即處理
+          </button>
+        </form>
+        {% endif %}
+
+        {% if _is_qc and _s in ('LINKED_ECN',) %}
+        <form method="post" action="/qc-exceptions/{{ form.form_id }}/close" class="mb-2"
+              onsubmit="return confirm('確認 ECN 已完成，QC 異常單結案？');">
+          <input type="hidden" name="comment" value="ECN 完成 → QC 結案">
+          <button class="btn btn-success w-100">
+            <i class="bi bi-check2-circle me-1"></i>ECN 完成 → 結案
+          </button>
+        </form>
+        {% endif %}
+
+        {# 進入改善方案 — 跨表單按鈕（form="dispForm" 把左側處理項目提交）#}
+        {% if _editable %}
+        <button type="submit" form="dispForm" class="btn btn-warning w-100 mb-2 fw-semibold"
+                onclick="return confirm('確認儲存所有處理項目並進入改善方案階段？');">
+          <i class="bi bi-check2-square me-1"></i>進入改善方案階段
+        </button>
+        {% endif %}
+
+        {# 退回前一站要求補資訊（品保/admin，且不是草稿/結案）#}
+        {% if _is_qc and _s in ('PENDING_DISPOSITION','PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+        <button class="btn btn-outline-secondary w-100 mb-2" data-bs-toggle="modal"
+                data-bs-target="#qcReturnPrevModal">
+          <i class="bi bi-arrow-return-left me-1"></i>退回前一站（要求補資訊）
+        </button>
+        {% endif %}
+
+        {% if _s == 'CLOSED' %}
+        <div class="text-success small text-center">
+          <i class="bi bi-check2-circle me-1"></i>本單已結案
+        </div>
+        {% else %}
+        <div class="text-muted small text-center">目前狀態 — <strong>{{ _s }}</strong></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# 簽核紀錄 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-data me-2"></i>簽核紀錄</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>時間</th><th>動作</th><th>操作人</th><th>狀態變更</th><th>備註</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in form.approvals %}
+              <tr>
+                <td class="small">{{ a.created_at.strftime('%m-%d %H:%M') }}</td>
+                <td><span class="badge bg-secondary">{{ a.action }}</span></td>
+                <td class="small">{{ a.approver.display_name if a.approver else '—' }}</td>
+                <td class="small">
+                  {% set k = (a.from_status or '') ~ '→' ~ (a.to_status or '') %}
+                  {% if k in transition_combo %}
+                    {% set lbl, cls = transition_combo[k] %}
+                    <span class="badge bg-{{ cls }}">{{ lbl }}</span>
+                  {% else %}
+                    <span class="text-muted small">{{ a.from_status }} → {{ a.to_status }}</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">{{ a.comment or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    {# 附件 — 圖片可預覽 #}
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件</div>
+      <div class="card-body">
+        {% for cat in ATTACH_CATEGORIES %}
+        {% if cat in docs_by_cat %}
+        <div class="mb-3">
+          <div class="small fw-semibold text-primary mb-1">{{ cat }}</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for d in docs_by_cat[cat] %}
+            {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
+            {% set preview_url = '/qc-exceptions/doc/preview/' ~ d.id %}
+            <div class="border rounded p-1 text-center" style="width:120px">
+              {% if ext in ('png','jpg','jpeg','gif','webp','bmp') %}
+              <a href="#" class="qc-doc-preview" data-url="{{ preview_url }}"
+                 data-name="{{ d.original_name }}" data-type="image">
+                <img src="{{ preview_url }}" class="rounded w-100"
+                     style="height:80px;object-fit:cover" alt="">
+              </a>
+              <div class="text-truncate small mt-1" title="{{ d.original_name }}">
+                <i class="bi bi-image me-1"></i>{{ d.original_name }}
+              </div>
+              {% elif ext == 'pdf' %}
+              <a href="#" class="qc-doc-preview text-decoration-none" data-url="{{ preview_url }}"
+                 data-name="{{ d.original_name }}" data-type="pdf">
+                <i class="bi bi-file-earmark-pdf text-danger" style="font-size:2rem"></i>
+                <div class="text-truncate small mt-1" title="{{ d.original_name }}">{{ d.original_name }}</div>
+              </a>
+              {% else %}
+              <a href="{{ preview_url }}" target="_blank" class="text-decoration-none">
+                <i class="bi bi-file-earmark text-secondary" style="font-size:2rem"></i>
+                <div class="text-truncate small mt-1" title="{{ d.original_name }}">{{ d.original_name }}</div>
+              </a>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.7rem">{{ d.uploaded_at.strftime('%m-%d %H:%M') }}</div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% if not docs_by_cat %}
+        <div class="text-muted small">尚未上傳附件</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# 所有 input/textarea/select 有值 → 綠色背景（已填寫提示） #}
+<style>
+  .qc-filled, input.qc-filled, textarea.qc-filled, select.qc-filled,
+  .form-control.qc-filled, .form-select.qc-filled {
+    background-color: rgba(25,135,84,.08) !important;
+    border-color: rgba(25,135,84,.45) !important;
+  }
+</style>
+<script>
+(function(){
+  const SKIP = new Set(['checkbox','radio','file','hidden','submit','button','reset']);
+  function markEl(el) {
+    if (!el || !el.tagName) return;
+    const tag = el.tagName.toLowerCase();
+    if (!['input','textarea','select'].includes(tag)) return;
+    if (tag === 'input' && SKIP.has((el.type || '').toLowerCase())) return;
+    const v = (el.value == null ? '' : String(el.value)).trim();
+    el.classList.toggle('qc-filled', v !== '' && v !== '—');
+  }
+  function markAll(root) {
+    (root || document).querySelectorAll('input, textarea, select').forEach(markEl);
+  }
+  // page load 掃一次
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => markAll());
+  } else { markAll(); }
+  // input/change event delegation：用戶輸入時即時 mark
+  document.addEventListener('input',  e => markEl(e.target));
+  document.addEventListener('change', e => markEl(e.target));
+  // 動態卡片區（actCards）新增節點時 mark
+  const obs = new MutationObserver(muts => muts.forEach(m =>
+    m.addedNodes.forEach(n => { if (n.nodeType === 1) markAll(n); })
+  ));
+  ['actCards', 'invRows', 'defectRows'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el, {childList: true, subtree: true});
+  });
+})();
+</script>
+
+{# Collapse 收合圖示切換 #}
+<script>
+(function(){
+  document.querySelectorAll('.collapse-toggle').forEach(btn => {
+    const target = document.querySelector(btn.dataset.bsTarget);
+    if (!target) return;
+    const swap = (open) => {
+      const i = btn.querySelector('i.bi');
+      if (!i) return;
+      i.classList.toggle('bi-chevron-up', open);
+      i.classList.toggle('bi-chevron-down', !open);
+    };
+    target.addEventListener('show.bs.collapse', () => swap(true));
+    target.addEventListener('hide.bs.collapse', () => swap(false));
+  });
+})();
+</script>
+
+{# 顯示模式 disp-form（B2/B3）— fail_items 多列同步 + 不良率計算 + 截圖貼上 #}
+<script>
+(function(){
+  document.querySelectorAll('[data-disp-form]').forEach(form => {
+    function refresh() {
+      const items = [];
+      let total = 0;
+      form.querySelectorAll('.fail-row').forEach(tr => {
+        const reason = (tr.querySelector('[data-fail="reason"]') || {}).value || '';
+        const qtyStr = (tr.querySelector('[data-fail="qty"]') || {}).value || '';
+        const qty = parseInt(qtyStr) || 0;
+        items.push({reason: reason, qty: qty || null});
+        total += qty;
+      });
+      const json = form.querySelector('[data-fail-json]');
+      if (json) json.value = JSON.stringify(items);
+      const totEl = form.querySelector('[data-fail-total]');
+      if (totEl) totEl.textContent = total > 0 ? total : '—';
+      const passEl = form.querySelector('input[name="pass_qty"]');
+      const p = passEl ? (parseInt(passEl.value) || 0) : 0;
+      const t = p + total;
+      const rate = form.querySelector('[data-rate]');
+      if (rate) {
+        rate.textContent = t > 0 ? `${(total / t * 100).toFixed(1)}%` : '—';
+        rate.classList.toggle('text-danger', t > 0 && (total / t) >= 0.05);
+      }
+      // A1 回貨紀錄多列同步
+      const rlRows = form.querySelectorAll('.rl-row');
+      if (rlRows.length) {
+        const logs = [];
+        rlRows.forEach(tr => {
+          const r = {};
+          tr.querySelectorAll('[data-rl]').forEach(el => { r[el.dataset.rl] = el.value; });
+          logs.push(r);
+        });
+        const rlJson = form.querySelector('[data-rl-json]');
+        if (rlJson) rlJson.value = JSON.stringify(logs);
+      }
+    }
+    form.addEventListener('input', refresh);
+    form.addEventListener('change', refresh);
+    form.addEventListener('click', e => {
+      if (e.target.closest('.fail-add')) {
+        const tbody = form.querySelector('.fail-tbody');
+        const tr = tbody.querySelector('.fail-row');
+        const clone = tr.cloneNode(true);
+        clone.querySelectorAll('input').forEach(i => i.value = '');
+        tbody.appendChild(clone);
+        tbody.querySelectorAll('.fail-row .fail-idx').forEach((td, i) => td.textContent = i + 1);
+        refresh();
+      } else if (e.target.closest('.fail-rm')) {
+        const rows = form.querySelectorAll('.fail-row');
+        if (rows.length > 1) {
+          e.target.closest('.fail-row').remove();
+          form.querySelectorAll('.fail-row .fail-idx').forEach((td, i) => td.textContent = i + 1);
+          refresh();
+        }
+      } else if (e.target.closest('.rl-add')) {
+        const tbody = form.querySelector('.rl-tbody');
+        const tr = tbody.querySelector('.rl-row');
+        const clone = tr.cloneNode(true);
+        clone.querySelectorAll('input').forEach(i => i.value = '');
+        tbody.appendChild(clone);
+        tbody.querySelectorAll('.rl-row .rl-idx').forEach((td, i) => td.textContent = i + 1);
+        refresh();
+      } else if (e.target.closest('.rl-rm')) {
+        const rows = form.querySelectorAll('.rl-row');
+        if (rows.length > 1) {
+          e.target.closest('.rl-row').remove();
+          form.querySelectorAll('.rl-row .rl-idx').forEach((td, i) => td.textContent = i + 1);
+          refresh();
+        }
+      }
+    });
+    // 截圖貼上：把貼到表單裡的圖片 push 到第一個 file input
+    form.addEventListener('paste', e => {
+      const fileInput = form.querySelector('input[type="file"]');
+      if (!fileInput) return;
+      const items = (e.clipboardData || {}).items || [];
+      const dt = new DataTransfer();
+      Array.from(fileInput.files || []).forEach(f => dt.items.add(f));
+      let added = 0;
+      for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+          const f = it.getAsFile();
+          if (f) {
+            const ext = (f.type.split('/')[1] || 'png').replace('+xml','');
+            const stamp = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+            dt.items.add(new File([f], `paste-${stamp}.${ext}`, {type: f.type}));
+            added++;
+          }
+        }
+      }
+      if (added > 0) {
+        e.preventDefault();
+        fileInput.files = dt.files;
+      }
+    });
+    refresh();
+  });
+})();
+</script>
+
+{# 附件預覽 modal #}
+<div class="modal fade" id="qcDocModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="qcDocName"><i class="bi bi-eye me-2"></i>附件預覽</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 text-center bg-light" style="height:80vh;overflow:auto">
+        <iframe id="qcDocFrame" src="" class="w-100 h-100 border-0 bg-white"></iframe>
+        <img id="qcDocImg" src="" class="d-none mw-100" style="max-height:78vh" alt="">
+      </div>
+      <div class="modal-footer">
+        <a id="qcDocOpen" href="#" target="_blank" class="btn btn-outline-secondary">
+          <i class="bi bi-box-arrow-up-right me-1"></i>開新分頁
+        </a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const modalEl = document.getElementById('qcDocModal');
+  const frame = document.getElementById('qcDocFrame');
+  const img = document.getElementById('qcDocImg');
+  document.addEventListener('click', e => {
+    const a = e.target.closest('.qc-doc-preview');
+    if (!a) return;
+    e.preventDefault();
+    const url = a.dataset.url, name = a.dataset.name || '附件預覽', type = a.dataset.type || 'pdf';
+    document.getElementById('qcDocName').textContent = name;
+    document.getElementById('qcDocOpen').href = url;
+    if (type === 'image') {
+      frame.classList.add('d-none'); frame.src = '';
+      img.classList.remove('d-none'); img.src = url;
+    } else {
+      img.classList.add('d-none'); img.src = '';
+      frame.classList.remove('d-none'); frame.src = url;
+    }
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => { frame.src = ''; img.src = ''; });
+})();
+</script>
+
+{# 退回前一站 modal #}
+{% if _is_qc and _s in ('PENDING_DISPOSITION','PENDING_RCA','PENDING_IMPROVEMENT','LINKED_ECN') %}
+<div class="modal fade" id="qcReturnPrevModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="/qc-exceptions/{{ form.form_id }}/return-to-previous">
+      <div class="modal-header bg-secondary text-white">
+        <h5 class="modal-title"><i class="bi bi-arrow-return-left me-2"></i>退回前一站</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          目前狀態 <strong>{{ _s }}</strong>，按下確認後會退回上一站，請填寫退回原因 / 需要補的資訊：
+        </div>
+        <textarea name="comment" rows="4" class="form-control" required
+                  placeholder="例：異常照片不清楚請補拍；量測數據缺取樣位置；建立者請補進貨單號正確編碼"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-secondary">
+          <i class="bi bi-arrow-return-left me-1"></i>確認退回前一站
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

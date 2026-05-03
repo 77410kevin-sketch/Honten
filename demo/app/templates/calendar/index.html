@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% block title %}行事曆{% endblock %}
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-calendar3 text-primary me-2"></i>行事曆
+    <small class="text-muted ms-2" style="font-size:.6em">右鍵點任一天可快速新增</small>
+  </h4>
+  <div class="ms-auto d-flex gap-2 flex-wrap">
+    {% for t, lbl in type_label.items() %}
+    <span class="badge" style="background:{{ type_color[t] }}; cursor:pointer; user-select:none"
+          data-type-toggle="{{ t }}" data-active="1">
+      <i class="bi bi-eye-fill me-1"></i>{{ lbl }}
+    </span>
+    {% endfor %}
+    <a href="/calendar/events/new" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i>完整新增
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div id="calendar"></div>
+  </div>
+</div>
+
+{# ── 右鍵浮動選單 ── #}
+<div id="ctxMenu" class="shadow-sm rounded border bg-white py-1"
+     style="position:fixed; display:none; z-index:2000; min-width:180px">
+  <div class="px-3 py-1 small text-muted border-bottom" id="ctxMenuTitle">2026-01-01</div>
+  <a href="#" class="dropdown-item d-flex align-items-center gap-2 py-2" data-quick="ROOM">
+    <i class="bi bi-door-open text-success"></i><span>借會議室</span>
+  </a>
+  <a href="#" class="dropdown-item d-flex align-items-center gap-2 py-2" data-quick="CAR">
+    <i class="bi bi-truck text-primary"></i><span>借公務車</span>
+  </a>
+  <a href="#" class="dropdown-item d-flex align-items-center gap-2 py-2" data-quick="LEAVE">
+    <i class="bi bi-airplane text-secondary"></i><span>請假</span>
+  </a>
+  <a href="#" class="dropdown-item d-flex align-items-center gap-2 py-2" data-quick="OUTING">
+    <i class="bi bi-geo-alt text-warning"></i><span>業務外出</span>
+  </a>
+</div>
+
+{# ── Modal: 快速新增 ── #}
+<div class="modal fade" id="quickModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="quickForm">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="bi" id="qmIcon"></i>
+            <span id="qmLabel">新增事件</span>
+            <small class="text-muted ms-2" id="qmDate"></small>
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="qmAlert" class="alert alert-danger d-none mb-2 py-2"></div>
+          <input type="hidden" name="event_type" id="qmType">
+
+          <div class="mb-2">
+            <label class="form-label small mb-1">標題 <span class="text-danger">*</span></label>
+            <input name="title" id="qmTitle" class="form-control form-control-sm" required
+                   placeholder="例：週會 / 拜訪金士頓 / 特休一日">
+          </div>
+
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small mb-1">開始時間 <span class="text-danger">*</span></label>
+              <div class="d-flex gap-1">
+                <input type="date" class="form-control form-control-sm" id="qmStartDate" required>
+                <select class="form-select form-select-sm" id="qmStartTime" required style="max-width:90px"></select>
+              </div>
+              <input type="hidden" name="start_at" id="qmStart">
+            </div>
+            <div class="col-6">
+              <label class="form-label small mb-1">結束時間 <span class="text-danger">*</span></label>
+              <div class="d-flex gap-1">
+                <input type="date" class="form-control form-control-sm" id="qmEndDate" required>
+                <select class="form-select form-select-sm" id="qmEndTime" required style="max-width:90px"></select>
+              </div>
+              <input type="hidden" name="end_at" id="qmEnd">
+            </div>
+          </div>
+
+          <div class="mb-2 mt-2" id="qmResGroup">
+            <label class="form-label small mb-1">資源 <span class="text-danger">*</span></label>
+            <select name="resource_id" id="qmRes" class="form-select form-select-sm">
+              <option value="">— 請選擇 —</option>
+              {% for r in resources %}
+              <option value="{{ r.id }}" data-type="{{ r.type.value }}">{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-2 mt-2 d-none" id="qmLeaveGroup">
+            <label class="form-label small mb-1">假別 <span class="text-danger">*</span></label>
+            <select name="leave_type" id="qmLeave" class="form-select form-select-sm">
+              <option value="">— 請選擇 —</option>
+              <option value="ANNUAL">特休</option>
+              <option value="SICK">病假</option>
+              <option value="PERSONAL">事假</option>
+            </select>
+            <div class="form-text small" id="qmLeaveHint">≤ 3 天由單位主管簽核；> 3 天送總經理簽核</div>
+          </div>
+
+          <div class="mb-2 mt-2 d-none" id="qmCustGroup">
+            <label class="form-label small mb-1">客戶／拜訪對象</label>
+            <input name="customer_name" id="qmCust" class="form-control form-control-sm" placeholder="例：金士頓、景利">
+          </div>
+
+          <div class="mb-2 mt-2">
+            <label class="form-label small mb-1">備註</label>
+            <textarea name="notes" id="qmNotes" class="form-control form-control-sm" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+          <button type="submit" class="btn btn-success btn-sm" id="qmSubmit">
+            <i class="bi bi-check-circle me-1"></i>送出
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+.fc-event { cursor: pointer; }
+.fc-event-title { white-space: normal !important; }
+.fc-daygrid-day { cursor: context-menu; }
+.fc-daygrid-day:hover { background: rgba(13,110,253,.04); }
+[data-type-toggle][data-active="0"] { opacity: 0.35; text-decoration: line-through; }
+#ctxMenu .dropdown-item:hover { background: #f1f3f5; }
+</style>
+
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+  const TYPE_META = {
+    ROOM:   {label:'借會議室', icon:'bi-door-open', color:'#198754'},
+    CAR:    {label:'借公務車', icon:'bi-truck', color:'#0d6efd'},
+    LEAVE:  {label:'請假',     icon:'bi-airplane', color:'#6c757d'},
+    OUTING: {label:'業務外出', icon:'bi-geo-alt', color:'#fd7e14'},
+  };
+  const el = document.getElementById('calendar');
+  const activeTypes = new Set({{ type_label.keys() | list | tojson }});
+
+  const calendar = new FullCalendar.Calendar(el, {
+    initialView: 'dayGridMonth',
+    locale: 'zh-tw',
+    firstDay: 1,
+    height: 'auto',
+    navLinks: false,
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+    },
+    buttonText: {
+      today: '今天', month: '月', week: '週', day: '日', list: '清單',
+    },
+    nowIndicator: true,
+    slotMinTime: '07:00:00',
+    slotMaxTime: '22:00:00',
+    eventClick: (info) => {
+      info.jsEvent.preventDefault();
+      window.location.href = info.event.extendedProps.url;
+    },
+    dateClick: (info) => {
+      // 左鍵也直接開選單在點擊位置
+      showCtxMenu(info.dateStr, info.jsEvent.clientX, info.jsEvent.clientY);
+    },
+    events: (info, success, fail) => {
+      const url = `/calendar/api/events?start=${encodeURIComponent(info.startStr)}&end=${encodeURIComponent(info.endStr)}`;
+      fetch(url).then(r => r.json()).then(data => {
+        if (data.error) { fail(data.error); return; }
+        const filtered = data.filter(e => activeTypes.has(e.extendedProps.event_type));
+        success(filtered);
+      }).catch(fail);
+    },
+  });
+  calendar.render();
+
+  // 類型 badge 切換
+  document.querySelectorAll('[data-type-toggle]').forEach(b => {
+    b.addEventListener('click', () => {
+      const t = b.dataset.typeToggle;
+      const on = b.dataset.active === '1';
+      b.dataset.active = on ? '0' : '1';
+      if (on) activeTypes.delete(t); else activeTypes.add(t);
+      calendar.refetchEvents();
+    });
+  });
+
+  // ── 右鍵選單 ──
+  const ctxMenu = document.getElementById('ctxMenu');
+  const ctxTitle = document.getElementById('ctxMenuTitle');
+  let activeDate = null;
+
+  function showCtxMenu(dateStr, x, y) {
+    activeDate = dateStr;
+    ctxTitle.textContent = dateStr;
+    ctxMenu.style.display = 'block';
+    // 邊界保護
+    const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+    const px = Math.min(x, window.innerWidth - w - 10);
+    const py = Math.min(y, window.innerHeight - h - 10);
+    ctxMenu.style.left = px + 'px';
+    ctxMenu.style.top  = py + 'px';
+  }
+  function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+
+  el.addEventListener('contextmenu', (e) => {
+    const cell = e.target.closest('.fc-daygrid-day, .fc-timegrid-slot');
+    if (!cell) return;
+    e.preventDefault();
+    const dateStr = cell.getAttribute('data-date') ||
+                    cell.querySelector('[data-date]')?.getAttribute('data-date');
+    if (!dateStr) return;
+    showCtxMenu(dateStr, e.clientX, e.clientY);
+  });
+  document.addEventListener('click', (e) => {
+    if (!ctxMenu.contains(e.target)) hideCtxMenu();
+  });
+  document.addEventListener('scroll', hideCtxMenu, true);
+
+  // ── 點選 → 開啟 modal ──
+  const modalEl = document.getElementById('quickModal');
+  const modal   = new bootstrap.Modal(modalEl);
+  const $ = (id) => document.getElementById(id);
+
+  // 30 分鐘時間下拉
+  function fillTimeOptions(sel) {
+    const opts = [];
+    for (let h = 6; h <= 22; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const v = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+        opts.push(`<option value="${v}">${v}</option>`);
+      }
+    }
+    sel.innerHTML = opts.join('');
+  }
+  fillTimeOptions($('qmStartTime'));
+  fillTimeOptions($('qmEndTime'));
+
+  function syncDT() {
+    $('qmStart').value = ($('qmStartDate').value && $('qmStartTime').value)
+      ? `${$('qmStartDate').value}T${$('qmStartTime').value}` : '';
+    $('qmEnd').value = ($('qmEndDate').value && $('qmEndTime').value)
+      ? `${$('qmEndDate').value}T${$('qmEndTime').value}` : '';
+  }
+  ['qmStartDate','qmStartTime','qmEndDate','qmEndTime'].forEach(id => {
+    $(id).addEventListener('change', syncDT);
+  });
+
+  ctxMenu.querySelectorAll('[data-quick]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const t = a.dataset.quick;
+      hideCtxMenu();
+      openModal(t, activeDate);
+    });
+  });
+
+  function openModal(type, dateStr) {
+    const m = TYPE_META[type] || {};
+    $('qmType').value = type;
+    $('qmLabel').textContent = m.label || type;
+    $('qmIcon').className = 'bi ' + (m.icon || '');
+    $('qmIcon').style.color = m.color || '#000';
+    $('qmDate').textContent = dateStr || '';
+    $('qmAlert').classList.add('d-none');
+    $('qmAlert').textContent = '';
+
+    // 預設時間：請假 09:00–18:00；其它 09:00–10:00
+    const defStart = '09:00';
+    const defEnd   = (type === 'LEAVE') ? '18:00' : '10:00';
+    $('qmStartDate').value = dateStr;
+    $('qmEndDate').value   = dateStr;
+    $('qmStartTime').value = defStart;
+    $('qmEndTime').value   = defEnd;
+    syncDT();
+
+    // 切換可見區塊
+    $('qmResGroup').classList.toggle('d-none', !(type === 'ROOM' || type === 'CAR'));
+    $('qmLeaveGroup').classList.toggle('d-none', type !== 'LEAVE');
+    $('qmCustGroup').classList.toggle('d-none', type !== 'OUTING');
+    $('qmRes').required = (type === 'ROOM' || type === 'CAR');
+    $('qmLeave').required = (type === 'LEAVE');
+    $('qmRes').value = ''; $('qmLeave').value = ''; $('qmCust').value = '';
+    $('qmNotes').value = '';
+
+    // 過濾資源類型
+    Array.from($('qmRes').options).forEach(o => {
+      if (!o.value) { o.hidden = false; return; }
+      o.hidden = (o.dataset.type !== type);
+    });
+
+    // 標題預設
+    $('qmTitle').value = '';
+    if (type === 'LEAVE') $('qmTitle').placeholder = '例：特休一日';
+    else if (type === 'OUTING') $('qmTitle').placeholder = '例：拜訪金士頓';
+    else if (type === 'ROOM') $('qmTitle').placeholder = '例：週會 / 訓練';
+    else if (type === 'CAR')  $('qmTitle').placeholder = '例：拜訪客戶';
+
+    modal.show();
+    setTimeout(() => $('qmTitle').focus(), 250);
+  }
+
+  // 提交
+  $('quickForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    syncDT();
+    const fd = new FormData(e.target);
+    // 移除空欄位（避免 FastAPI 422：resource_id="" 無法轉 int）
+    for (const k of ['resource_id','leave_type','customer_name']) {
+      if (fd.get(k) === '' || fd.get(k) === null) fd.delete(k);
+    }
+    const btn = $('qmSubmit');
+    btn.disabled = true;
+    $('qmAlert').classList.add('d-none');
+    try {
+      const res = await fetch('/calendar/events/new', {
+        method: 'POST',
+        body: fd,
+        headers: { 'Accept': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        $('qmAlert').textContent = data.error || `錯誤 ${res.status}`;
+        $('qmAlert').classList.remove('d-none');
+      } else {
+        modal.hide();
+        calendar.refetchEvents();
+        // 顯示 toast 風格訊息
+        let toast = '✅ 已建立';
+        if (data.status === 'PENDING') toast += `（待 ${data.approver || '主管'} 簽核）`;
+        showFlash(toast);
+      }
+    } catch (err) {
+      $('qmAlert').textContent = '網路錯誤：' + err;
+      $('qmAlert').classList.remove('d-none');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function showFlash(msg) {
+    const f = document.createElement('div');
+    f.className = 'alert alert-success position-fixed shadow';
+    f.style.cssText = 'top:80px;right:20px;z-index:3000;min-width:240px';
+    f.textContent = msg;
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 2500);
+  }
+});
+</script>
+{% endblock %}

@@ -142,7 +142,28 @@ def _log_approval(form: NPIForm, user: User, action: str,
     )
 
 
+# 已超過工程派發階段、附件變更後需要重新評估的狀態
+_REEVAL_STAGES = (
+    NPIFormStatus.QUOTING,
+    NPIFormStatus.QUOTES_COLLECTED,
+    NPIFormStatus.PENDING_QUOTE_BU,
+    NPIFormStatus.QUOTE_APPROVED,
+    NPIFormStatus.RFQ_DONE,
+    NPIFormStatus.NPI_STARTED,
+    NPIFormStatus.NPI_PENDING_BU,
+    NPIFormStatus.NPI_PENDING_PURCHASE,
+    NPIFormStatus.CLOSED,
+)
+
+
+def _needs_reeval(form: NPIForm) -> bool:
+    return form.status in _REEVAL_STAGES
+
+
 # ── 列表 ────────────────────────────────────────
+
+_NPI_VIEW_ROLES = (Role.SALES, Role.ENGINEER, Role.PURCHASE, Role.BU, Role.ENG_MGR, Role.ADMIN)
+
 
 @router.get("/", response_class=HTMLResponse)
 async def list_npi(
@@ -152,6 +173,8 @@ async def list_npi(
     current_user: User = Depends(get_current_user),
 ):
     """列表 — 可用 ?stage=RFQ / ?stage=NPI 將 RFQ 詢價與 NPI 開發流程切開顯示。"""
+    if current_user.role not in _NPI_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="您的角色無權限存取 RFQ / NPI 流程")
     q = (
         select(NPIForm)
         .options(selectinload(NPIForm.creator))
@@ -358,23 +381,193 @@ async def update_npi(
 @router.post("/{form_id}/delete-doc/{doc_id}")
 async def delete_doc(
     form_id: str, doc_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     form = await _get_form_or_404(form_id, db)
-    if form.status in (NPIFormStatus.CLOSED,):
-        raise HTTPException(status_code=403)
+    # 結案後業務仍可變更附件以觸發重新評估（後續會跳出「重新評估」流程）
     doc = await db.get(NPIDocument, doc_id)
     if not doc or doc.form_id_fk != form.id:
         raise HTTPException(status_code=404)
-    # 只有上傳者 / admin 可刪
-    if current_user.role != Role.ADMIN and doc.uploaded_by != current_user.id:
-        raise HTTPException(status_code=403, detail="只有上傳者可刪除")
+    # 業務（含建單者）/ 工程 / admin 都可刪本單附件
+    is_creator = (form.created_by == current_user.id)
+    is_uploader = (doc.uploaded_by == current_user.id)
+    if current_user.role not in (Role.ADMIN, Role.ENGINEER, Role.SALES) and not (is_creator or is_uploader):
+        raise HTTPException(status_code=403, detail="無權限刪除附件")
     fp = os.path.join(UPLOAD_BASE, f"npi_{form.id}", doc.filename)
     if os.path.exists(fp):
         os.remove(fp)
     await db.delete(doc)
     await db.commit()
+    # AJAX 呼叫者回傳 JSON（含 need_reeval 給前端決定要不要跳重新評估 modal）
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept:
+        return {
+            "ok": True, "doc_id": doc_id,
+            "need_reeval": _needs_reeval(form),
+            "current_status": form.status.value,
+        }
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+# ── 業務於任何活動階段補上傳附件 ─────────────────
+@router.post("/{form_id}/add-doc")
+async def add_doc(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+    category: str = Form("圖面"),
+):
+    form = await _get_form_or_404(form_id, db)
+    # 結案後業務仍可新增附件以觸發重新評估（後續會跳出「重新評估」流程）
+    if current_user.role not in (Role.SALES, Role.ENGINEER, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    if category not in ATTACH_CATEGORIES:
+        category = "其它"
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="檔案為空")
+    upload_dir = _upload_dir(form.id)
+    ext = os.path.splitext(file.filename)[1] or ".bin"
+    saved = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(upload_dir, saved), "wb") as f:
+        f.write(content)
+    doc = NPIDocument(
+        form_id_fk=form.id,
+        filename=saved,
+        original_name=file.filename,
+        category=category,
+        uploaded_by=current_user.id,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {
+        "ok": True, "doc_id": doc.id,
+        "original_name": doc.original_name, "category": doc.category,
+        "need_reeval": _needs_reeval(form),
+        "current_status": form.status.value,
+    }
+
+
+# ── 工程更換業務上傳的圖檔（保留 doc_id，內容換新版） ───────
+@router.post("/{form_id}/replace-doc/{doc_id}")
+async def replace_doc(
+    form_id: str, doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+):
+    form = await _get_form_or_404(form_id, db)
+    # 結案後業務仍可變更附件以觸發重新評估（後續會跳出「重新評估」流程）
+    if current_user.role not in (Role.ENGINEER, Role.SALES, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    doc = await db.get(NPIDocument, doc_id)
+    if not doc or doc.form_id_fk != form.id:
+        raise HTTPException(status_code=404)
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="檔案為空")
+    upload_dir = _upload_dir(form.id)
+    ext = os.path.splitext(file.filename)[1] or ".bin"
+    saved = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(upload_dir, saved), "wb") as f:
+        f.write(content)
+    # 砍掉舊檔
+    old_fp = os.path.join(upload_dir, doc.filename)
+    if os.path.exists(old_fp):
+        try: os.remove(old_fp)
+        except Exception: pass
+    doc.filename = saved
+    doc.original_name = file.filename
+    doc.uploaded_by = current_user.id
+    doc.uploaded_at = datetime.utcnow()
+    await db.commit()
+    return {
+        "ok": True, "doc_id": doc.id, "original_name": doc.original_name,
+        "need_reeval": _needs_reeval(form),
+        "current_status": form.status.value,
+    }
+
+
+# ── 業務新增/變更附件後重新進入工程評估（任何階段，含已結案）──
+@router.post("/{form_id}/reopen-for-eval")
+async def reopen_for_eval(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if current_user.role not in (Role.SALES, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="僅業務可重新觸發評估")
+    if form.status not in _REEVAL_STAGES:
+        raise HTTPException(status_code=400, detail="目前狀態無需重新評估")
+    old = form.status
+    form.status = NPIFormStatus.ENG_DISPATCH
+    form.updated_at = datetime.utcnow()
+    reason = comment.strip() or "業務新增/變更附件 → 重新進入工程評估"
+    db.add(_log_approval(form, current_user, "REOPEN_FOR_EVAL",
+                         old, form.status, reason))
+    await db.commit()
+    msg = (f"【業務變更附件，案件重新評估】{form.form_id} - "
+           f"{old.value} → ENG_DISPATCH。原因：{reason[:80]}")
+    try:
+        await notif._notify_roles(db, [Role.ENGINEER], msg)
+    except Exception:
+        pass
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+# ── 工程重新開啟詢價（QUOTING → ENG_DISPATCH，可為新圖紙加派 invites） ──
+@router.post("/{form_id}/reopen-dispatch")
+async def reopen_dispatch(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.QUOTING:
+        raise HTTPException(status_code=400, detail="目前狀態非供應商報價中")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    old = form.status
+    form.status = NPIFormStatus.ENG_DISPATCH
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "REOPEN_DISPATCH", old, form.status,
+                         comment.strip() or "業務新增圖紙 → 重開詢價派發"))
+    await db.commit()
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+# ── 工程退回業務補件 ─────────────────────────
+@router.post("/{form_id}/eng-return-to-sales")
+async def eng_return_to_sales(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(...),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.ENG_DISPATCH:
+        raise HTTPException(status_code=400, detail="目前狀態非待工程派發")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    if not comment.strip():
+        raise HTTPException(status_code=400, detail="退回原因不得為空")
+    old = form.status
+    form.status = NPIFormStatus.RETURNED
+    form.reject_to = "業務"
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "ENG_RETURN_TO_SALES",
+                         old, form.status, comment.strip(), reject_target="業務"))
+    await db.commit()
+    msg = (f"【工程退回業務補件】{form.form_id} - 請補件後重送。"
+           f"原因：{comment.strip()[:80]}")
+    await notif._notify_roles(db, [Role.SALES], msg)
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
@@ -537,6 +730,115 @@ async def dispatch_quotes(
 
 # ── 工程回填供應商報價（代填）──────────────────
 
+# ── 儲存階梯式 MOQ 報價 ─────────────────────────
+@router.post("/{form_id}/invite/{invite_id}/save-tiers")
+async def save_invite_tiers(
+    form_id: str, invite_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    tier_data: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status not in (
+        NPIFormStatus.QUOTING, NPIFormStatus.QUOTES_COLLECTED,
+        NPIFormStatus.RETURNED,
+    ):
+        raise HTTPException(status_code=400, detail="目前狀態無法編輯報價")
+    if current_user.role not in (Role.PURCHASE, Role.ENGINEER, Role.ADMIN):
+        raise HTTPException(status_code=403)
+    inv = await db.get(NPISupplierInvite, invite_id)
+    if not inv or inv.form_id_fk != form.id:
+        raise HTTPException(status_code=404)
+    # 驗證 JSON 格式
+    if tier_data.strip():
+        try:
+            parsed = json.loads(tier_data)
+            if not isinstance(parsed, list):
+                raise ValueError("tier_data 應為 list")
+            for t in parsed:
+                if not isinstance(t, dict) or "qty" not in t or "price" not in t:
+                    raise ValueError("每筆需包含 qty 與 price")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"階梯資料格式錯誤：{e}")
+        inv.tier_data = tier_data.strip()
+        # 同步主單價：以最低 MOQ 那筆為單價（讓試算表沿用）
+        try:
+            sorted_tiers = sorted(parsed, key=lambda x: float(x.get("qty") or 0))
+            if sorted_tiers:
+                inv.quote_amount = float(sorted_tiers[0].get("price"))
+        except Exception:
+            pass
+    else:
+        inv.tier_data = None
+    inv.replied_at = datetime.utcnow()
+    await db.commit()
+    return {"ok": True}
+
+
+# ── 工程刪除單一派發列 ─────────────────────────
+@router.post("/{form_id}/invite/{invite_id}/delete")
+async def delete_invite(
+    form_id: str, invite_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status not in (
+        NPIFormStatus.ENG_DISPATCH, NPIFormStatus.QUOTING,
+        NPIFormStatus.QUOTES_COLLECTED,
+    ):
+        raise HTTPException(status_code=400, detail="目前狀態無法刪除派發列")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    inv = await db.get(NPISupplierInvite, invite_id)
+    if not inv or inv.form_id_fk != form.id:
+        raise HTTPException(status_code=404)
+    # 連同該 invite 對應的供應商報價附件一併移除
+    docs = await db.execute(
+        select(NPIDocument).where(NPIDocument.invite_id_fk == invite_id)
+    )
+    for d in docs.scalars().all():
+        fp = os.path.join(_upload_dir(form.id), d.filename)
+        if os.path.exists(fp):
+            try: os.remove(fp)
+            except Exception: pass
+        await db.delete(d)
+    await db.delete(inv)
+    await db.commit()
+    return {"ok": True}
+
+
+# ── 工程重發單筆詢價信 ─────────────────────────
+@router.post("/{form_id}/invite/{invite_id}/resend")
+async def resend_invite(
+    form_id: str, invite_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status not in (NPIFormStatus.QUOTING, NPIFormStatus.QUOTES_COLLECTED):
+        raise HTTPException(status_code=400, detail="目前狀態無法重發詢價")
+    if current_user.role not in _ENG_ROLES:
+        raise HTTPException(status_code=403)
+    inv = await db.get(NPISupplierInvite, invite_id)
+    if not inv or inv.form_id_fk != form.id:
+        raise HTTPException(status_code=404)
+    inv.invited_at = datetime.utcnow()
+    inv.last_reminder_at = datetime.utcnow()
+    inv.reminder_count = (inv.reminder_count or 0) + 1
+    await db.commit()
+    # 用 selectinload 拉齊 supplier / drawing 後寄信
+    db.expire_all()
+    form2 = await _get_form_or_404(form_id, db)
+    inv2 = next((i for i in form2.invites if i.id == invite_id), None)
+    if inv2:
+        try:
+            await notif.notify_quotes_dispatched(db, form2, [inv2], merge=False)
+        except Exception as e:
+            logging.exception("resend notify failed: %s", e)
+    return {"ok": True}
+
+
 @router.post("/{form_id}/invite/{invite_id}/reply")
 async def fill_invite_reply(
     form_id: str, invite_id: int,
@@ -581,6 +883,33 @@ async def fill_invite_reply(
 
 # ── 工程宣告「報價收齊，交業務成本分析」─────
 
+@router.post("/{form_id}/sales-return-to-eng")
+async def sales_return_to_eng(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(...),
+):
+    """業務退回工程/採購補件：QUOTES_COLLECTED → QUOTING（請工程或採購跟供應商再要報價/階梯/附件）"""
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.QUOTES_COLLECTED:
+        raise HTTPException(status_code=400, detail="目前狀態非報價已收齊")
+    if current_user.role not in _SALES_ROLES:
+        raise HTTPException(status_code=403)
+    if not comment.strip():
+        raise HTTPException(status_code=400, detail="退回原因不得為空")
+    old = form.status
+    form.status = NPIFormStatus.QUOTING
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "SALES_RETURN_TO_ENG",
+                         old, form.status, comment.strip(), reject_target="工程"))
+    await db.commit()
+    msg = (f"【業務退回補件】{form.form_id} - 請與供應商再次確認報價/階梯/附件。"
+           f"原因：{comment.strip()[:80]}")
+    await notif._notify_roles(db, [Role.ENGINEER, Role.PURCHASE], msg)
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
 @router.post("/{form_id}/finish-quotes")
 async def finish_quotes(
     form_id: str,
@@ -593,10 +922,18 @@ async def finish_quotes(
         raise HTTPException(status_code=400)
     if current_user.role not in _RFQ_COLLECT_ROLES:
         raise HTTPException(status_code=403, detail="只有採購 / 工程可宣告報價收齊")
+    # 至少要有 1 家供應商已回報價，否則業務拿不到任何單價可試算
+    replied = sum(1 for inv in (form.invites or []) if inv.replied_at and inv.quote_amount)
+    if replied < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="尚無任何供應商回報價，無法宣告收齊；請先請工程/採購跟催"
+        )
     old = form.status
     form.status = NPIFormStatus.QUOTES_COLLECTED
     form.updated_at = datetime.utcnow()
-    db.add(_log_approval(form, current_user, "FINISH_QUOTES", old, form.status, comment))
+    db.add(_log_approval(form, current_user, "FINISH_QUOTES", old, form.status,
+                         comment or f"已收齊 {replied} 家供應商報價"))
     await db.commit()
     await notif._notify_roles(db, [Role.SALES],
                              f"【RFQ 報價已收齊】{form.form_id} - 請上線試算成本並送 BU 審核")
@@ -949,6 +1286,13 @@ async def save_t1_plan(
     is_purch = current_user.role in (Role.PURCHASE, Role.ADMIN)
     if not (is_sales or is_purch):
         raise HTTPException(status_code=403, detail="僅業務 / 採購可維護 T1 計畫")
+    # T1 屬 NPI 階段資料；DRAFT/RFQ 階段禁寫，避免污染後續流程
+    if form.stage != NPIStage.NPI or form.status not in (
+        NPIFormStatus.NPI_STARTED,
+        NPIFormStatus.NPI_PENDING_BU,
+        NPIFormStatus.NPI_PENDING_PURCHASE,
+    ):
+        raise HTTPException(status_code=400, detail="目前狀態無法編輯 T1 計畫")
     form_data = await request.form()
     ids = form_data.getlist("drawing_id")
     t1_dates = form_data.getlist("t1_date")
@@ -987,31 +1331,12 @@ async def save_t1_plan(
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
-@router.post("/{form_id}/save-cost-data")
-async def save_cost_data(
-    form_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """工程師直接編輯成本表（新增/修改製程、供應商）並儲存 quote_cost_data。"""
-    form = await _get_form_or_404(form_id, db)
-    if current_user.role not in (*_ENG_ROLES, Role.ADMIN):
-        raise HTTPException(status_code=403)
-    body = await request.json()
-    form.quote_cost_data = json.dumps(body, ensure_ascii=False)
-    form.updated_at = datetime.utcnow()
-    await db.commit()
-    return {"ok": True}
-
-
 @router.post("/{form_id}/submit-mould-requisition")
 async def submit_mould_requisition(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     erp_req_no: str = Form(""),
-    erp_req_data: str = Form(""),   # ERP 查詢結果 JSON snapshot
     attach_files: List[UploadFile] = File(default=[]),
     attach_categories: List[str] = Form(default=[]),
 ):
@@ -1045,9 +1370,8 @@ async def submit_mould_requisition(
             status_code=400,
             detail=f"以下站別尚未填寫模具料號：{', '.join(missing)}",
         )
-    # 儲存 ERP 單號 + 查詢 snapshot + 附件
-    form.erp_req_no   = erp_req_no
-    form.erp_req_data = erp_req_data.strip() or None
+    # 儲存 ERP 單號 + 附件
+    form.erp_req_no = erp_req_no
     if attach_files and any(f.filename for f in attach_files):
         await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
     form.updated_at = datetime.utcnow()
@@ -1316,22 +1640,175 @@ async def download_rfq_archive(
 @router.post("/{form_id}/start-npi")
 async def start_npi(
     form_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     comment: str = Form(""),
+    selected_cols: List[int] = Form(default=[]),  # 業務勾選要進 NPI 的機種欄位（index）
+    quote_overrides: str = Form(""),              # JSON：{"0": {"quote": 6000, "tooling_quote": 500}, ...}
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.RFQ_DONE:
         raise HTTPException(status_code=400, detail="客戶尚未到 RFQ 結束")
     if current_user.role not in _SALES_ROLES:
         raise HTTPException(status_code=403)
-    old = form.status
+    if not selected_cols:
+        raise HTTPException(status_code=400, detail="請至少勾選一個要進入 NPI 的機種報價")
+
+    try:
+        qc = json.loads(form.quote_cost_data) if form.quote_cost_data else {}
+    except Exception:
+        qc = {}
+    cols = qc.get("columns") or []
+    valid = sorted({i for i in selected_cols if isinstance(i, int) and 0 <= i < len(cols)})
+    if not valid:
+        raise HTTPException(status_code=400, detail="勾選的機種欄位無效（超出試算範圍）")
+
+    # 套用業務在 modal 內修改的售價／模治具報價，並重算利潤
+    overrides_log = []  # 給簽核 comment 用：[(label, old_quote, new_quote), ...]
+    if quote_overrides:
+        try:
+            ov = json.loads(quote_overrides)
+        except Exception:
+            ov = {}
+        for k, payload in (ov or {}).items():
+            try:
+                idx = int(k)
+            except (TypeError, ValueError):
+                continue
+            if idx < 0 or idx >= len(cols):
+                continue
+            col = cols[idx]
+            label = str(col.get("label") or f"方案 {idx+1}")
+            cost_total = float(col.get("cost_total") or 0)
+            tooling_cost = float(col.get("tooling_cost") or 0)
+            # 最終單價（含利潤）
+            new_q = payload.get("quote") if isinstance(payload, dict) else None
+            if new_q is not None:
+                try:
+                    new_q = float(new_q)
+                except (TypeError, ValueError):
+                    new_q = None
+            if new_q is not None and new_q >= 0:
+                old_q = col.get("quote")
+                if old_q is None or abs(float(old_q) - new_q) > 1e-6:
+                    overrides_log.append((label, old_q, new_q))
+                col["quote"] = round(new_q, 2)
+                # 重算利潤額 + 利潤率（以原本 cost_total 為基準）
+                if cost_total > 0:
+                    profit_amt = round(new_q - cost_total, 2)
+                    col["profit_amount"] = profit_amt
+                    col["profit_rate"] = round(profit_amt / cost_total, 6)
+                else:
+                    col["profit_amount"] = round(new_q, 2)
+                    col["profit_rate"] = 0
+            # 模治具報價（含利潤）
+            new_tq = payload.get("tooling_quote") if isinstance(payload, dict) else None
+            if new_tq is not None:
+                try:
+                    new_tq = float(new_tq)
+                except (TypeError, ValueError):
+                    new_tq = None
+            if new_tq is not None and new_tq >= 0:
+                col["tooling_quote"] = round(new_tq, 2)
+                if tooling_cost > 0:
+                    tp_amt = round(new_tq - tooling_cost, 2)
+                    col["tooling_profit_amount"] = tp_amt
+                    col["tooling_profit_rate"] = round(tp_amt / tooling_cost, 6)
+                else:
+                    col["tooling_profit_amount"] = round(new_tq, 2)
+                    col["tooling_profit_rate"] = 0
+
+    # 推算「進 NPI 的圖紙 id」— 第 N 欄 ↔ 第 N 張圖（drawingCols 跟前端對齊）
+    drawings = [d for d in (form.documents or []) if (d.category or "") == "圖面"]
+    npi_drawing_ids = []
+    for i in valid:
+        if i < len(drawings):
+            npi_drawing_ids.append(drawings[i].id)
+
+    qc["columns"] = cols
+    qc["npi_selected_cols"] = valid
+    qc["npi_selected_drawing_ids"] = npi_drawing_ids  # 後續 NPI 各視圖（T1/工程/採購）依此 list 過濾
+    qc["npi_started_at"] = datetime.utcnow().isoformat()
+    qc["npi_started_by"] = current_user.username
+    form.quote_cost_data = json.dumps(qc, ensure_ascii=False)
+
+    # T1 計畫：modal 內每張圖一格 t1_date / t1_drawing_id（未勾選的圖不寫入）
+    form_data = await request.form()
+    t1_ids = form_data.getlist("t1_drawing_id")
+    t1_dates = form_data.getlist("t1_date")
+    if t1_ids:
+        try:
+            t1_existing = json.loads(form.t1_plan_data) if form.t1_plan_data else {}
+        except Exception:
+            t1_existing = {}
+        npi_did_set = set(npi_drawing_ids)
+        for idx, did in enumerate(t1_ids):
+            try:
+                did_int = int(did)
+            except (TypeError, ValueError):
+                continue
+            # 只儲存「有被勾選進 NPI」的圖紙 T1
+            if did_int not in npi_did_set:
+                continue
+            date_str = (t1_dates[idx] if idx < len(t1_dates) else "").strip()
+            row = dict(t1_existing.get(str(did_int)) or {})
+            row["t1_date"] = date_str
+            t1_existing[str(did_int)] = row
+        form.t1_plan_data = json.dumps(t1_existing, ensure_ascii=False) if t1_existing else None
+
+    old_status = form.status
     form.stage  = NPIStage.NPI
     form.status = NPIFormStatus.NPI_STARTED
     form.updated_at = datetime.utcnow()
-    db.add(_log_approval(form, current_user, "START_NPI", old, form.status, comment))
+
+    # 簽核 comment 自動帶上：選擇的機種 + 改價摘要
+    picked_labels = [str(cols[i].get("label") or f"方案 {i+1}") for i in valid]
+    comment_full = (comment.strip() or "客戶確定開發")
+    comment_full += f"｜選擇進 NPI 機種（{len(valid)}）：{', '.join(picked_labels)[:200]}"
+    if overrides_log:
+        chg = "; ".join(
+            f"{lb}: {('—' if oq is None else f'{float(oq):.2f}')} → {nq:.2f}"
+            for lb, oq, nq in overrides_log[:5]
+        )
+        comment_full += f"｜業務修改最終單價：{chg}"
+    db.add(_log_approval(form, current_user, "START_NPI", old_status, form.status, comment_full))
     await db.commit()
     await notif.notify_npi_started(db, form)
+    return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
+
+
+# ── 業務撤回 NPI 啟動（NPI_STARTED → RFQ_DONE，重新開窗選機種）──
+@router.post("/{form_id}/revert-npi-start")
+async def revert_npi_start(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    comment: str = Form(""),
+):
+    form = await _get_form_or_404(form_id, db)
+    if form.status != NPIFormStatus.NPI_STARTED:
+        raise HTTPException(status_code=400, detail="目前狀態非 NPI 啟動，無法撤回")
+    if current_user.role not in _SALES_ROLES:
+        raise HTTPException(status_code=403, detail="僅業務可撤回 NPI 啟動")
+    # 清掉 NPI 相關標記，但保留 columns 修改/T1 內容供再次選擇時帶回
+    try:
+        qc = json.loads(form.quote_cost_data) if form.quote_cost_data else {}
+    except Exception:
+        qc = {}
+    for k in ("npi_selected_cols", "npi_selected_drawing_ids",
+              "npi_started_at", "npi_started_by"):
+        qc.pop(k, None)
+    form.quote_cost_data = json.dumps(qc, ensure_ascii=False) if qc else None
+
+    old_status = form.status
+    form.stage  = NPIStage.RFQ
+    form.status = NPIFormStatus.RFQ_DONE
+    form.updated_at = datetime.utcnow()
+    db.add(_log_approval(form, current_user, "REVERT_NPI_START",
+                         old_status, form.status,
+                         comment.strip() or "業務撤回 NPI 啟動，重新選擇機種"))
+    await db.commit()
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
@@ -1342,32 +1819,39 @@ async def submit_bu(
     form_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    selected_invite_id: int = Form(0),
+    selected_invite_id: int = Form(...),
+    erp_req_no:     str  = Form(""),
+    erp_req_data:   str  = Form(""),   # JSON snapshot
+    mould_cost_est: str  = Form(""),
     comment:        str  = Form(""),
+    attach_files:      List[UploadFile] = File(default=[]),
+    attach_categories: List[str] = Form(default=[]),
 ):
     form = await _get_form_or_404(form_id, db)
     if form.status != NPIFormStatus.NPI_STARTED:
         raise HTTPException(status_code=400)
     if current_user.role not in _ENG_ROLES:
         raise HTTPException(status_code=403)
-
-    # 決定選用供應商：明確傳入 > 已報價中唯一一家 > 第一家已報價
-    replied = [i for i in form.invites if i.replied_at]
-    if selected_invite_id:
-        inv = next((i for i in replied if i.id == selected_invite_id), None)
-    elif len(replied) == 1:
-        inv = replied[0]
-    elif replied:
-        inv = replied[0]
-    else:
-        inv = None
-
-    if not inv:
-        raise HTTPException(status_code=400, detail="尚無已報價的供應商，無法送 BU")
+    inv = next((i for i in form.invites if i.id == selected_invite_id), None)
+    if not inv or not inv.replied_at:
+        raise HTTPException(status_code=400, detail="請選擇一家已報價的供應商")
+    if attach_files:
+        await _save_attachments(db, form.id, current_user.id, attach_files, attach_categories)
+        await db.commit()
+        db.expire_all()
+        form = await _get_form_or_404(form_id, db)
+        inv = next((i for i in form.invites if i.id == selected_invite_id), None)
+    # 送審前驗證附件
+    cats = {d.category for d in form.documents}
+    if "模具請購單" not in cats:
+        raise HTTPException(status_code=400, detail="請上傳【模具請購單】")
 
     for i in form.invites:
-        i.is_selected = (i.id == inv.id)
+        i.is_selected = (i.id == selected_invite_id)
     form.selected_quote_supplier_id = inv.supplier_id
+    form.erp_req_no     = erp_req_no or None
+    form.erp_req_data   = erp_req_data or None
+    form.mould_cost_est = float(mould_cost_est) if mould_cost_est else None
 
     old = form.status
     form.status = NPIFormStatus.NPI_PENDING_BU
@@ -1495,24 +1979,6 @@ async def purchase_close(
     return RedirectResponse(url=f"/npi-forms/{form_id}", status_code=303)
 
 
-# ── ERP 請購單即時查詢（必須在 /{form_id} 之前）──
-
-@router.get("/erp-req-lookup")
-async def erp_req_lookup(
-    req_no: str,
-    doc_type: str = "3105",
-    current_user: User = Depends(get_current_user),
-):
-    """依請購單號即時查詢 ERP 明細，預設只撈模治具請購單（doc_type=3105）。"""
-    from app.services.erp_client import erp_query_purchase_requisition
-    if not req_no or not req_no.strip():
-        raise HTTPException(status_code=400, detail="請填寫請購單號")
-    rows = erp_query_purchase_requisition(req_no.strip(), doc_type)
-    if not rows:
-        raise HTTPException(status_code=404, detail=f"ERP 找不到 {doc_type} 類型請購單：{req_no}")
-    return {"ok": True, "req_no": req_no.strip(), "doc_type": doc_type, "rows": rows}
-
-
 # ── 詳細頁（必須放最後，避免 path 衝突）─────
 
 @router.get("/{form_id}", response_class=HTMLResponse)
@@ -1521,6 +1987,8 @@ async def detail_npi(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role not in _NPI_VIEW_ROLES:
+        raise HTTPException(status_code=403, detail="您的角色無權限存取 RFQ / NPI 流程")
     form = await _get_form_or_404(form_id, db)
     # 列可選供應商（派發時用）
     r = await db.execute(select(Supplier).where(Supplier.is_active == True).order_by(Supplier.type, Supplier.name))
@@ -1541,9 +2009,21 @@ async def detail_npi(
         "RETURNED→NPI_PENDING_BU":         ("工程重送BU",  "primary"),
         "RETURNED→QUOTES_COLLECTED":       ("業務重送",    "primary"),
         "ENG_DISPATCH→QUOTING":            ("派發供應商",  "info"),
+        "ENG_DISPATCH→RETURNED":           ("工程退回業務補件", "danger"),
+        "QUOTING→ENG_DISPATCH":            ("重開派發",    "warning"),
+        "QUOTES_COLLECTED→ENG_DISPATCH":   ("業務變更附件 → 重新評估", "warning"),
+        "PENDING_QUOTE_BU→ENG_DISPATCH":   ("業務變更附件 → 重新評估", "warning"),
+        "QUOTE_APPROVED→ENG_DISPATCH":     ("業務變更附件 → 重新評估", "warning"),
+        "RFQ_DONE→ENG_DISPATCH":           ("業務變更附件 → 重新評估", "warning"),
+        "NPI_STARTED→ENG_DISPATCH":        ("業務變更附件 → 重新評估", "warning"),
+        "NPI_PENDING_BU→ENG_DISPATCH":     ("業務變更附件 → 重新評估", "warning"),
+        "NPI_PENDING_PURCHASE→ENG_DISPATCH": ("業務變更附件 → 重新評估", "warning"),
+        "CLOSED→ENG_DISPATCH":             ("結案後業務變更附件 → 重啟流程", "danger"),
+        "QUOTES_COLLECTED→QUOTING":        ("業務退回補件", "danger"),
         "QUOTING→QUOTES_COLLECTED":        ("報價收齊",    "info"),
         "QUOTES_COLLECTED→RFQ_DONE":       ("發送客戶報價","success"),
         "RFQ_DONE→NPI_STARTED":            ("客戶確定開發","warning"),
+        "NPI_STARTED→RFQ_DONE":            ("撤回 NPI 啟動", "secondary"),
         "NPI_STARTED→NPI_PENDING_BU":      ("送 BU 核准",  "warning"),
         "NPI_PENDING_BU→NPI_PENDING_PURCHASE": ("BU 核准",  "success"),
         "NPI_PENDING_BU→RETURNED":         ("BU 退回",     "danger"),

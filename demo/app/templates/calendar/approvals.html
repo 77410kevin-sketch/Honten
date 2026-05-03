@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}待我簽核{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-clipboard-check text-warning me-2"></i>待我簽核（請假）
+  </h4>
+  <a href="/calendar/" class="btn btn-outline-secondary ms-auto btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>返回月曆
+  </a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-warning text-dark fw-semibold">
+    <i class="bi bi-hourglass-split me-1"></i>待簽核
+    <span class="badge bg-light text-dark ms-1">{{ pendings | length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>申請人</th>
+          <th>假別</th>
+          <th>時段</th>
+          <th class="text-end">天數</th>
+          <th>備註</th>
+          <th style="width:280px">動作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ev in pendings %}
+        {% set _days = ((ev.end_at - ev.start_at).total_seconds() / 86400) %}
+        <tr>
+          <td><strong>{{ ev.user.display_name if ev.user else '—' }}</strong>
+            {% if ev.user and ev.user.bu %}<small class="text-muted d-block">{{ ev.user.bu.value }}</small>{% endif %}
+          </td>
+          <td>
+            <span class="badge bg-info text-dark">{{ leave_label.get(ev.leave_type, ev.leave_type or '—') }}</span>
+          </td>
+          <td>
+            {{ ev.start_at.strftime('%Y-%m-%d %H:%M') }}<br>
+            <span class="text-muted">~ {{ ev.end_at.strftime('%Y-%m-%d %H:%M') }}</span>
+          </td>
+          <td class="text-end fw-semibold">{{ '%.1f' % _days }}</td>
+          <td class="small">{{ ev.notes or '—' }}</td>
+          <td>
+            <form method="post" action="/calendar/events/{{ ev.id }}/approve" class="d-inline"
+                  onsubmit="return confirm('核准 {{ ev.user.display_name }} 的請假？');">
+              <button class="btn btn-sm btn-success">
+                <i class="bi bi-check-circle me-1"></i>核准
+              </button>
+            </form>
+            <button class="btn btn-sm btn-outline-danger" data-reject="{{ ev.id }}">
+              <i class="bi bi-x-circle me-1"></i>退回
+            </button>
+            <a href="/calendar/events/{{ ev.id }}" class="btn btn-sm btn-outline-primary">詳細</a>
+            <form method="post" action="/calendar/events/{{ ev.id }}/reject"
+                  class="d-none" id="rejForm-{{ ev.id }}">
+              <input type="hidden" name="reason" id="rejReason-{{ ev.id }}">
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-center text-muted py-4">目前沒有待簽核項目</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if history %}
+<div class="card shadow-sm">
+  <div class="card-header bg-light fw-semibold">
+    <i class="bi bi-clock-history me-1"></i>歷史紀錄（最近 30 筆）
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>申請人</th><th>假別</th><th>時段</th><th>狀態</th><th>處理時間</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for ev in history %}
+        <tr>
+          <td>{{ ev.user.display_name if ev.user else '—' }}</td>
+          <td>{{ leave_label.get(ev.leave_type, ev.leave_type or '—') }}</td>
+          <td class="small">{{ ev.start_at.strftime('%Y-%m-%d') }} ~ {{ ev.end_at.strftime('%m-%d') }}</td>
+          <td>
+            {% set s = ev.status.value %}
+            {% if s == 'APPROVED' %}<span class="badge bg-success">{{ status_label.APPROVED }}</span>
+            {% elif s == 'REJECTED' %}<span class="badge bg-danger">{{ status_label.REJECTED }}</span>
+            {% else %}<span class="badge bg-secondary">{{ status_label.get(s, s) }}</span>{% endif %}
+          </td>
+          <td class="small text-muted">{{ ev.updated_at.strftime('%Y-%m-%d %H:%M') if ev.updated_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+document.querySelectorAll('[data-reject]').forEach(b => {
+  b.addEventListener('click', () => {
+    const id = b.dataset.reject;
+    const reason = prompt('退回原因（可空）：') || '';
+    if (reason === null) return;
+    document.getElementById('rejReason-' + id).value = reason;
+    document.getElementById('rejForm-' + id).submit();
+  });
+});
+</script>
+{% endblock %}

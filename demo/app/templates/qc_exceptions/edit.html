@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% block title %}編輯 {{ form.form_id }}{% endblock %}
+{% block content %}
+{% set _stage_labels = {
+  'IQC':'IQC（進料檢驗）','IPQC':'IPQC（製程檢驗）','OQC':'OQC（出貨檢驗）',
+  'INSPECTION':'品檢','LASER':'雷雕','CNC':'CNC','ASSEMBLY':'組裝','OTHER':'其他'
+} %}
+{% set _doc_labels = {
+  'RECEIVE':'進貨單號','PROCESS':'製程單號','SHIP_DC':'出貨 D/C'
+} %}
+{% set _date_labels = {
+  'RECEIVE':'進貨日期','PRODUCE':'生產日期','SHIP':'出貨日期','COMPLAINT':'客訴日期'
+} %}
+{% set _source_labels = {
+  'SUPPLIER':'廠商','CUSTOMER':'客戶','INTERNAL':'廠內'
+} %}
+
+<div class="container py-4" style="max-width:960px">
+  <h4 class="mb-3">
+    <i class="bi bi-pencil-square text-warning me-2"></i>補件修改 — {{ form.form_id }}
+    <span class="badge bg-secondary ms-2">{{ form.status.value }}</span>
+  </h4>
+
+  <div class="alert alert-warning small">
+    <i class="bi bi-info-circle me-1"></i>
+    本單已由品保退回要求補件。請修正內容 / 補上附件後，按下方<strong>「補件完成 → 重送立即處理」</strong>把單子送回品保。
+  </div>
+
+  <form method="post" action="/qc-exceptions/{{ form.form_id }}/edit"
+        enctype="multipart/form-data">
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">IPC 異常資訊</div>
+      <div class="card-body row g-3">
+        <div class="col-md-4">
+          <label class="form-label">品號 <span class="text-danger">*</span></label>
+          <input name="part_no" class="form-control" required value="{{ form.part_no }}">
+        </div>
+        <div class="col-md-8">
+          <label class="form-label">單號</label>
+          <div class="input-group">
+            <select name="doc_type" class="form-select" style="max-width:140px">
+              {% for v, lbl in _doc_labels.items() %}
+              <option value="{{ v }}"{% if form.doc_type and form.doc_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="receive_doc_no" class="form-control" value="{{ form.receive_doc_no or '' }}">
+          </div>
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">日期</label>
+          <div class="input-group">
+            <select name="event_date_type" class="form-select" style="max-width:120px">
+              {% for v, lbl in _date_labels.items() %}
+              <option value="{{ v }}"{% if form.event_date_type and form.event_date_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input type="date" name="receive_date" class="form-control" value="{{ form.receive_date or '' }}">
+          </div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">工段</label>
+          <select name="stage" class="form-select">
+            {% for st in QCExceptionStage %}
+            <option value="{{ st.value }}"{% if form.stage and form.stage.value == st.value %} selected{% endif %}>
+              {{ _stage_labels.get(st.value, st.value) }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">來源</label>
+          <div class="input-group">
+            <select name="source_type" class="form-select" style="max-width:100px">
+              {% for v, lbl in _source_labels.items() %}
+              <option value="{{ v }}"{% if form.source_type and form.source_type.value == v %} selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <input name="supplier_name" class="form-control" value="{{ form.supplier_name or '' }}">
+          </div>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">數量</label>
+          <input name="receive_qty" type="number" min="0" class="form-control" value="{{ form.receive_qty or '' }}">
+        </div>
+
+        <div class="col-12">
+          {% set _existing_items = (form.defect_items_json | fromjson) if form.defect_items_json else
+                                   ([{'cause': form.defect_cause, 'types': [],
+                                      'sample_qty': form.sample_qty, 'defect_qty': form.defect_qty}] if form.defect_cause else []) %}
+          <label class="form-label">異常原因 <span class="text-danger">*</span>
+            <span class="text-muted small">（可向下新增多列）</span>
+          </label>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-2" id="defectTable">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:40px">#</th>
+                  <th>異常原因</th>
+                  <th style="width:170px">類型</th>
+                  <th style="width:90px" class="text-end">抽樣數</th>
+                  <th style="width:90px" class="text-end">不良數</th>
+                  <th style="width:80px" class="text-end">不良率</th>
+                  <th style="width:200px">異常照片</th>
+                  <th style="width:40px"></th>
+                </tr>
+              </thead>
+              <tbody id="defectRows">
+                {% for it in _existing_items %}
+                <tr class="defect-row">
+                  <td class="text-center df-idx">{{ loop.index }}</td>
+                  <td>
+                    <input name="defect_cause" class="form-control form-control-sm"
+                           value="{{ it.cause }}" required>
+                  </td>
+                  <td>
+                    <input type="hidden" name="defect_types_csv" class="dft-csv"
+                           value="{{ (it.types or []) | join(',') }}">
+                    <div class="form-check form-check-inline">
+                      <input type="checkbox" class="form-check-input dft-cb" data-type="EXTERIOR"
+                             {% if 'EXTERIOR' in (it.types or []) %}checked{% endif %}>
+                      <label class="form-check-label small">外觀</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                      <input type="checkbox" class="form-check-input dft-cb" data-type="DIMENSION"
+                             {% if 'DIMENSION' in (it.types or []) %}checked{% endif %}>
+                      <label class="form-check-label small">尺寸</label>
+                    </div>
+                  </td>
+                  <td>
+                    <input name="sample_qty" type="number" min="0"
+                           class="form-control form-control-sm text-end df-sq"
+                           value="{{ it.sample_qty if it.sample_qty is not none else '' }}">
+                  </td>
+                  <td>
+                    <input name="defect_qty" type="number" min="0"
+                           class="form-control form-control-sm text-end df-dq"
+                           value="{{ it.defect_qty if it.defect_qty is not none else '' }}">
+                  </td>
+                  <td class="text-end small df-rate text-muted">—</td>
+                  <td>
+                    <input type="file" name="attach_files" accept="image/*,.pdf"
+                           capture="environment" class="form-control form-control-sm">
+                    <input type="hidden" name="attach_categories" value="異常照片">
+                  </td>
+                  <td class="text-center">
+                    <button type="button" class="btn btn-sm btn-outline-danger df-remove">×</button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot class="table-light">
+                <tr>
+                  <td colspan="3" class="text-end fw-semibold">合計</td>
+                  <td class="text-end fw-semibold" id="totalSq">0</td>
+                  <td class="text-end fw-semibold" id="totalDq">0</td>
+                  <td class="text-end fw-semibold text-danger" id="totalRate">—</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <button type="button" id="defectAdd" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-plus-circle"></i>新增異常項目
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {# 已上傳附件 + 刪除 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">已上傳附件</div>
+      <div class="card-body">
+        {% for cat, docs in docs_by_cat.items() %}
+        <div class="mb-2">
+          <div class="small fw-semibold text-primary mb-1">{{ cat }}</div>
+          {% for d in docs %}
+          <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+            <a href="/qc-exceptions/doc/preview/{{ d.id }}" target="_blank" class="small">
+              <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-danger del-doc-btn"
+                    data-doc-id="{{ d.id }}" data-name="{{ d.original_name }}">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-muted small">尚未上傳附件</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# 新增附件 #}
+    <div class="card shadow-sm mb-3">
+      <div class="card-header bg-white fw-semibold">補上附件</div>
+      <div class="card-body">
+        <div id="attach-rows">
+          <div class="row g-2 mb-2 attach-row align-items-center">
+            <div class="col-md-3">
+              <select name="attach_categories" class="form-select form-select-sm">
+                {% for c in ATTACH_CATEGORIES %}
+                <option{% if c == '異常照片' %} selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-8">
+              <input type="file" name="attach_files" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-1">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-row">
+                <i class="bi bi-x"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="add-attach" class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-plus"></i>增加一筆
+        </button>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2">
+      <a href="/qc-exceptions/{{ form.form_id }}" class="btn btn-outline-secondary">取消</a>
+      <button name="submit_action" value="save" class="btn btn-secondary">
+        <i class="bi bi-save me-1"></i>儲存（不送出）
+      </button>
+      <button name="submit_action" value="resubmit" class="btn btn-warning fw-semibold">
+        <i class="bi bi-send me-1"></i>補件完成 → 重送立即處理
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.getElementById("add-attach").addEventListener("click", () => {
+  const first = document.querySelector(".attach-row");
+  const clone = first.cloneNode(true);
+  const fInput = clone.querySelector('input[type=file]');
+  if (fInput) fInput.value = "";
+  document.getElementById("attach-rows").appendChild(clone);
+});
+// 異常多列 + 即時不良率
+(function(){
+  const tbody = document.getElementById('defectRows');
+  const addBtn = document.getElementById('defectAdd');
+  const totalSqEl = document.getElementById('totalSq');
+  const totalDqEl = document.getElementById('totalDq');
+  const totalRateEl = document.getElementById('totalRate');
+  if (!tbody) return;
+  function reindex() {
+    tbody.querySelectorAll('.df-idx').forEach((td, i) => td.textContent = i + 1);
+  }
+  function calcRow(row) {
+    const sq = parseInt(row.querySelector('.df-sq').value) || 0;
+    const dq = parseInt(row.querySelector('.df-dq').value) || 0;
+    const rateEl = row.querySelector('.df-rate');
+    if (sq > 0) {
+      const r = (dq / sq * 100).toFixed(1);
+      rateEl.textContent = `${r}%`;
+      rateEl.classList.toggle('text-danger', dq / sq >= 0.05);
+      rateEl.classList.toggle('text-muted', !(dq / sq >= 0.05));
+    } else {
+      rateEl.textContent = '—';
+      rateEl.classList.add('text-muted');
+      rateEl.classList.remove('text-danger');
+    }
+  }
+  function calcTotal() {
+    let totSq = 0, totDq = 0;
+    tbody.querySelectorAll('.defect-row').forEach(row => {
+      totSq += parseInt(row.querySelector('.df-sq').value) || 0;
+      totDq += parseInt(row.querySelector('.df-dq').value) || 0;
+    });
+    totalSqEl.textContent = totSq;
+    totalDqEl.textContent = totDq;
+    totalRateEl.textContent = totSq > 0 ? `${(totDq / totSq * 100).toFixed(2)}%` : '—';
+  }
+  function updateTypesCsv(row) {
+    const types = Array.from(row.querySelectorAll('.dft-cb:checked')).map(c => c.dataset.type);
+    row.querySelector('.dft-csv').value = types.join(',');
+  }
+  function bindRow(row) {
+    row.querySelectorAll('.df-sq, .df-dq').forEach(inp => {
+      inp.addEventListener('input', () => { calcRow(row); calcTotal(); });
+    });
+    row.querySelectorAll('.dft-cb').forEach(cb => {
+      cb.addEventListener('change', () => updateTypesCsv(row));
+    });
+    row.querySelector('.df-remove').addEventListener('click', () => {
+      const rows = tbody.querySelectorAll('.defect-row');
+      if (rows.length > 1) { row.remove(); reindex(); calcTotal(); }
+    });
+    calcRow(row);
+  }
+  tbody.querySelectorAll('.defect-row').forEach(bindRow);
+  calcTotal();
+  addBtn.addEventListener('click', () => {
+    const first = tbody.querySelector('.defect-row');
+    const clone = first.cloneNode(true);
+    clone.querySelectorAll('input').forEach(inp => {
+      if (inp.type === 'checkbox') inp.checked = false;
+      else inp.value = '';
+    });
+    clone.querySelector('.df-rate').textContent = '—';
+    clone.querySelector('.df-rate').classList.remove('text-danger');
+    clone.querySelector('.df-rate').classList.add('text-muted');
+    tbody.appendChild(clone);
+    bindRow(clone);
+    reindex();
+  });
+})();
+
+document.addEventListener("click", async (e) => {
+  if (e.target.closest(".remove-row")) {
+    const rows = document.querySelectorAll(".attach-row");
+    if (rows.length > 1) e.target.closest(".attach-row").remove();
+  }
+  const btn = e.target.closest('.del-doc-btn');
+  if (!btn) return;
+  if (!confirm(`刪除「${btn.dataset.name}」？`)) return;
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    const resp = await fetch(`/qc-exceptions/{{ form.form_id }}/delete-doc/${btn.dataset.docId}`,
+                             { method:'POST', body: fd, redirect:'manual' });
+    if (resp.ok || resp.type === 'opaqueredirect') {
+      btn.closest('.border-bottom').remove();
+    } else {
+      throw new Error('狀態 ' + resp.status);
+    }
+  } catch(err) {
+    alert('刪除失敗：' + err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}

@@ -326,13 +326,26 @@
         <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
           <span><i class="bi bi-truck me-2"></i>供應商派發 / 報價</span>
           {% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
-          <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#dispatchModal">
-            <i class="bi bi-send me-1"></i>派發詢價信
-          </button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#engReturnModal">
+              <i class="bi bi-arrow-return-left me-1"></i>退回業務補件
+            </button>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#dispatchModal">
+              <i class="bi bi-send me-1"></i>派發詢價信
+            </button>
+          </div>
           {% endif %}
         </div>
         <div class="card-body p-0">
           {% if form.invites %}
+          {% if form.status.value in ('QUOTING','QUOTES_COLLECTED','ENG_DISPATCH') and user.role.value in ('engineer','admin') %}
+          <div class="alert alert-info small mb-0 py-2 px-3 rounded-0 border-0">
+            <i class="bi bi-info-circle me-1"></i>
+            每張派發列最右側「操作」欄可單獨
+            <span class="badge bg-info text-white">✉↑ 重發詢價信</span> 或
+            <span class="badge bg-danger">🗑 刪除派發列</span>（橫向捲動表格可看到）
+          </div>
+          {% endif %}
           {# 可否 inline 回填報價（QUOTING 或 BU 退回採購議價）#}
           {% set _can_reply = (form.status.value == 'QUOTING'
                  or (form.status.value == 'RETURNED' and form.reject_to == '採購'))
@@ -372,17 +385,45 @@
                 {% endif %}
               </td>
               {% if _can_reply %}
-              <td>
-                <input form="reply-form-{{ inv.id }}" name="quote_amount" type="number" step="0.01"
-                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                       value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
-                       placeholder="單價">
+              <td class="price-cell" data-inv="{{ inv.id }}">
+                <div class="input-group input-group-sm">
+                  <select class="form-select form-select-sm currency-sel"
+                          style="max-width:60px;flex:0 0 60px;padding:.15rem .25rem">
+                    <option value="NTD" selected>NT$</option>
+                    <option value="USD">US$</option>
+                  </select>
+                  <input type="number" step="0.01"
+                         class="form-control form-control-sm price-display{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}"
+                         placeholder="單價">
+                </div>
+                <input form="reply-form-{{ inv.id }}" type="hidden" name="quote_amount"
+                       class="price-hidden"
+                       value="{{ inv.quote_amount if inv.quote_amount is not none else '' }}">
+                <small class="text-muted convert-hint d-block" style="font-size:10px;line-height:1"></small>
+                <button type="button" class="btn btn-link btn-sm p-0 mt-1 tier-edit-btn"
+                        data-inv-id="{{ inv.id }}"
+                        data-tier-data='{{ inv.tier_data or "" }}'
+                        style="font-size:11px;text-decoration:none">
+                  <i class="bi bi-bar-chart-steps me-1"></i>{% if inv.tier_data %}編輯階梯（{{ inv.tier_data | fromjson | length }}）{% else %}+ 階梯式 MOQ{% endif %}
+                </button>
               </td>
-              <td>
-                <input form="reply-form-{{ inv.id }}" name="tooling_cost" type="number" step="0.01"
-                       class="form-control form-control-sm{% if _saved %} is-saved{% endif %}"
-                       value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
-                       placeholder="模具費">
+              <td class="price-cell" data-inv="{{ inv.id }}">
+                <div class="input-group input-group-sm">
+                  <select class="form-select form-select-sm currency-sel"
+                          style="max-width:60px;flex:0 0 60px;padding:.15rem .25rem">
+                    <option value="NTD" selected>NT$</option>
+                    <option value="USD">US$</option>
+                  </select>
+                  <input type="number" step="0.01"
+                         class="form-control form-control-sm price-display{% if _saved %} is-saved{% endif %}"
+                         value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}"
+                         placeholder="模具費">
+                </div>
+                <input form="reply-form-{{ inv.id }}" type="hidden" name="tooling_cost"
+                       class="price-hidden"
+                       value="{{ inv.tooling_cost if inv.tooling_cost is not none else '' }}">
+                <small class="text-muted convert-hint d-block" style="font-size:10px;line-height:1"></small>
               </td>
               <td>
                 <input form="reply-form-{{ inv.id }}" name="lead_time_days" type="number"
@@ -406,7 +447,22 @@
                 <div class="text-muted small inline-file-name" data-inv="{{ inv.id }}">（可多選）</div>
               </td>
               {% else %}
-              <td class="{% if inv.quote_amount %}fw-bold text-success{% endif %}">{{ inv.quote_amount or '—' }}</td>
+              <td class="{% if inv.quote_amount %}fw-bold text-success{% endif %}">
+                {{ inv.quote_amount or '—' }}
+                {% if inv.tier_data %}
+                  {% set _tiers = inv.tier_data | fromjson %}
+                  {% if _tiers %}
+                  <div class="mt-1" style="font-size:11px;line-height:1.3">
+                    <span class="badge bg-info text-dark"><i class="bi bi-bar-chart-steps"></i> 階梯</span>
+                    <ul class="list-unstyled mb-0 mt-1 ps-1">
+                    {% for t in _tiers %}
+                      <li class="text-muted">≥ <strong>{{ t.qty }}</strong> → <strong class="text-success">{{ t.price }}</strong></li>
+                    {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
+                {% endif %}
+              </td>
               <td class="{% if inv.tooling_cost %}fw-bold text-info{% endif %}">{{ inv.tooling_cost or '—' }}</td>
               <td>{{ inv.lead_time_days or '—' }}</td>
               <td class="text-muted">{{ inv.quote_comment or '—' }}</td>
@@ -422,17 +478,36 @@
                 <i class="bi bi-check-circle-fill text-success"></i>
                 {% endif %}
               </td>
-              <td>
+              <td class="text-nowrap">
                 {% if _can_reply %}
                 {% if _saved %}
-                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-outline-success">
+                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-outline-success mb-1">
                   <i class="bi bi-arrow-repeat"></i> 更新
                 </button>
                 {% else %}
-                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-primary">
+                <button form="reply-form-{{ inv.id }}" type="submit" class="btn btn-sm btn-primary mb-1">
                   <i class="bi bi-check-lg"></i> 儲存
                 </button>
                 {% endif %}
+                {% endif %}
+                {% if user.role.value in ('engineer','admin') and form.status.value in ('QUOTING','QUOTES_COLLECTED','ENG_DISPATCH') %}
+                <div class="btn-group btn-group-sm mt-1" role="group">
+                  {% if form.status.value in ('QUOTING','QUOTES_COLLECTED') %}
+                  <button type="button" class="btn btn-outline-info invite-resend-btn"
+                          data-inv-id="{{ inv.id }}"
+                          data-supplier="{{ inv.supplier.name if inv.supplier else '' }}"
+                          title="重新寄送詢價信給此供應商">
+                    <i class="bi bi-envelope-arrow-up"></i>
+                  </button>
+                  {% endif %}
+                  <button type="button" class="btn btn-outline-danger invite-delete-btn"
+                          data-inv-id="{{ inv.id }}"
+                          data-supplier="{{ inv.supplier.name if inv.supplier else '' }}"
+                          data-process="{{ inv.process_name or '' }}"
+                          title="刪除此派發列（連同已上傳報價附件）">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
                 {% endif %}
               </td>
             </tr>
@@ -446,13 +521,13 @@
                 <th style="min-width:160px">供應商</th>
                 <th style="min-width:90px">派發時間</th>
                 <th style="min-width:110px">回覆時間</th>
-                <th style="min-width:110px">報價金額</th>
-                <th style="min-width:110px">模治具費</th>
+                <th style="min-width:160px">報價金額</th>
+                <th style="min-width:160px">模治具費</th>
                 <th style="min-width:90px">交期(天)</th>
                 <th style="min-width:150px">備註</th>
                 <th style="min-width:180px">報價單附件</th>
                 <th style="min-width:45px">選用</th>
-                <th style="min-width:70px"></th>
+                <th style="min-width:130px">操作</th>
               </tr>
             </thead>
           {% endmacro %}
@@ -567,6 +642,11 @@
           {# 工程 NPI 模式：用 form 包住，讓工程可即時編輯廠內料號 / 途程 #}
           <form method="post" action="/npi-forms/{{ form.form_id }}/save-eng-process" id="engProcForm">
             <div id="quoteSheetView"></div>
+            <div class="text-end mt-2">
+              <button class="btn btn-primary btn-sm">
+                <i class="bi bi-save me-1"></i>儲存廠內料號 / 途程
+              </button>
+            </div>
           </form>
           {% elif _pc_npi_view %}
           {# 採購 NPI 模式：用 form 包住，讓採購可議價後回填各製程單價 / 模治具費 #}
@@ -659,124 +739,183 @@
           if (!data) { target.innerHTML = '<div class="text-muted">業務尚未試算。</div>'; return; }
           // 新 schema：columns + rows
           if (data.columns && data.rows !== undefined) {
-            const cols = data.columns;
-            const rows = data.rows || [];
+            // NPI 階段：若業務有選機種 → 唯讀表只顯示被選的欄
+            // 採購議價視圖（pcView）保留所有欄，避免 bargain_data 的 r{i}_c{j} 索引錯位
+            const allCols = data.columns;
+            const allRows = data.rows || [];
+            const isNpi = {{ 'true' if form.stage.value == 'NPI' else 'false' }};
+            const npiPickedRaw = Array.isArray(data.npi_selected_cols) ? data.npi_selected_cols : null;
+            const filterIdx = (isNpi && !pcView && npiPickedRaw && npiPickedRaw.length)
+              ? npiPickedRaw : null;
+            const cols = filterIdx ? filterIdx.map(i => allCols[i]).filter(c => c != null) : allCols;
+            const rows = filterIdx
+              ? allRows.map(r => ({...r, prices: filterIdx.map(i => (r.prices||[])[i])}))
+              : allRows;
+            const colIdxMap = filterIdx ? filterIdx.slice() : allCols.map((_, i) => i);
             const selIdx = data.selected_col_idx;
             const defect = ((data.defect_rate||0)*100).toFixed(1);
             const oh = ((data.overhead_rate||0)*100).toFixed(1);
             const qa = ((data.qa_ship_rate||0)*100).toFixed(1);
-            let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0" style="min-width:500px">';
-              html += '<thead class="table-light"><tr>';
-              html += '<th style="min-width:90px">項目 / 製程</th>';
-              if (engView || buView || pcView) html += '<th style="min-width:110px">供應商</th>';
-              if (buView || pcView) html += '<th style="width:120px;white-space:nowrap">廠內料號</th>';
-              cols.forEach((c, i) => {
-                const badge = (i === selIdx) ? ' <span class="badge bg-warning text-dark">採用</span>' : '';
-                const full = c.label || ('方案 '+(i+1));
-                const short = full.length > 20 ? full.slice(0,18)+'…' : full;
-                html += `<th class="text-center" style="min-width:90px" title="${full}">${short}${badge}</th>`;
-              });
-              if (engView || buView || pcView) {
-                html += '<th class="text-end" style="width:110px;white-space:nowrap">站別模治具</th>';
+            let html = '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">';
+            html += '<thead class="table-light"><tr>';
+            if (engView) {
+              html += '<th class="text-start" style="width:120px">廠內料號</th>';
+              html += '<th class="text-center" style="width:70px">走途程</th>';
+            }
+            html += '<th class="text-start">項目 / 製程</th>';
+            if (engView || buView || pcView) html += '<th class="text-start">供應商</th>';
+            if (buView || pcView) html += '<th class="text-start" style="width:120px">廠內料號</th>';
+            const npiPicked = Array.isArray(data.npi_selected_cols) ? data.npi_selected_cols : [];
+            cols.forEach((c, i) => {
+              const realIdx = colIdxMap[i];
+              const badge = (realIdx === selIdx) ? ' <span class="badge bg-warning text-dark">採用</span>' : '';
+              const npiBadge = (!isNpi && npiPicked.indexOf(realIdx) >= 0)
+                ? ' <span class="badge bg-warning text-dark"><i class="bi bi-play-circle me-1"></i>NPI</span>'
+                : '';
+              const moqLine = (c.moq != null && c.moq !== '')
+                ? `<div class="small mt-1"><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">MOQ ${c.moq}</span></div>`
+                : '';
+              html += `<th class="text-center">${c.label||('方案 '+(realIdx+1))}${badge}${npiBadge}${moqLine}</th>`;
+            });
+            if (engView) {
+              html += '<th class="text-end" style="width:90px">站別模治具</th>';
+              html += '<th style="width:130px">模具料號</th>';
+            }
+            if (buView || pcView) {
+              html += '<th class="text-end" style="width:140px">站別模治具</th>';
+              html += '<th style="width:130px">模具料號</th>';
+            }
+            html += '</tr></thead><tbody>';
+            rows.forEach((r, rowIdx) => {
+              const procName = r.process || '';
+              const saved = engProcMap[procName] || {};
+              const isSaved = engView && (saved.part_no || saved.tool_part_no || saved.need_routing);
+              html += `<tr class="${isSaved?'eng-saved-row':''}">`;
+              if (engView) {
+                const escName = procName.replace(/"/g,'&quot;');
+                const partNo = (saved.part_no||'').replace(/"/g,'&quot;');
+                const ckd = saved.need_routing ? ' checked' : '';
+                const pnCls = saved.part_no ? 'eng-saved-cell' : 'eng-unsaved-cell';
+                html += `<td class="${pnCls}">
+                   <input type="hidden" name="process_name" form="engProcForm" value="${escName}">
+                   <input type="text" name="part_no" form="engProcForm" class="form-control form-control-sm"
+                          value="${partNo}" placeholder="例:PN-001">
+                 </td>`;
+                const rtCls = saved.need_routing ? 'eng-saved-cell' : '';
+                html += `<td class="text-center ${rtCls}">
+                   <input type="checkbox" name="need_routing" form="engProcForm"
+                          class="form-check-input" value="${escName}"${ckd}>
+                 </td>`;
               }
-              html += '</tr></thead><tbody>';
-
-              rows.forEach((r, rowIdx) => {
-                const procName = r.process || '';
-                const saved = engProcMap[procName] || {};
-                html += `<tr>`;
-                html += `<td style="white-space:nowrap">${procName}</td>`;
-                if (engView || buView || pcView) html += `<td class="small text-muted" style="white-space:normal;word-break:break-word">${procSupplier[procName]||'—'}</td>`;
-                if (buView || pcView) {
-                  const pn = (saved.part_no || '').replace(/"/g,'&quot;');
-                  const badge = pn ? `<span class="badge bg-primary-subtle text-primary">${pn}</span>` : '<span class="text-muted">—</span>';
-                  html += `<td>${badge}</td>`;
-                }
-
-                (r.prices||[]).forEach((p, ci) => {
-                  if (pcView) {
-                    const key = `r${rowIdx}_c${ci}`;
-                    const overrideVal = bargain.prices[key];
-                    const flag = (bargain.flags||{})[key] || '';
-                    const orig = (p!=null)?p:'';
-                    if (p == null) {
-                      html += `<td class="text-center pc-cell-disabled"><div class="small text-muted">原 —</div><div class="small">—</div></td>`;
-                    } else {
-                      const curVal = (overrideVal!=null && overrideVal!=='')?overrideVal:'';
-                      const disabledByFlag = (flag === 'no_bargain' || flag === 'no_room');
-                      html += `<td class="text-end pc-editable" data-key="${key}" data-type="price">
-                        <div class="small text-muted">原 ${p}</div>
-                        <input type="number" step="0.01" name="price_${key}" form="pcBargainForm"
-                               class="form-control form-control-sm text-end"
-                               data-row="${rowIdx}" data-col="${ci}" data-orig="${orig}"
-                               value="${curVal}" placeholder="議價後" ${disabledByFlag?'disabled':''}>
-                        <input type="hidden" form="pcBargainForm" name="flag_${key}" value="${flag}" class="pc-flag-input">
-                        ${flag?renderFlagBadge(flag):''}
-                      </td>`;
-                    }
-                  } else {
-                    if (p == null) {
-                      html += `<td class="text-end">—</td>`;
-                    } else {
-                      const key = `r${rowIdx}_c${ci}`;
-                      const bv = (bargain.prices || {})[key];
-                      const fl = (bargain.flags || {})[key] || '';
-                      const hasOverride = (bv != null && bv !== '' && fl !== 'no_bargain' && fl !== 'no_room');
-                      if (hasOverride) {
-                        html += `<td class="text-end"><div class="small text-muted">原 ${p}</div><div class="fw-semibold text-success">議價 ${bv}</div></td>`;
-                      } else {
-                        html += `<td class="text-end">${p}</td>`;
-                      }
-                    }
-                  }
-                });
-
-                if (engView) {
-                  const t = procTooling[procName];
-                  html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
-                }
-                if (buView) {
-                  const t = procTooling[procName];
-                  const tKey = `p_${procName.replace(/[^A-Za-z0-9]/g,'_')}`;
-                  const tBv = (bargain.tooling || {})[tKey];
-                  const tFl = (bargain.flags || {})[`t_${tKey}`] || '';
-                  const tHasOv = (tBv != null && tBv !== '' && tFl !== 'no_bargain' && tFl !== 'no_room');
-                  if (t != null && t > 0 && tHasOv) {
-                    html += `<td class="text-end"><div class="small text-muted">原 ${t.toFixed(2)}</div><div class="fw-semibold text-success">議價 ${parseFloat(tBv).toFixed(2)}</div></td>`;
-                  } else {
-                    html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
-                  }
-                }
+              html += `<td>${procName}</td>`;
+              if (engView || buView || pcView) html += `<td class="small text-muted">${procSupplier[procName]||'—'}</td>`;
+              if (buView || pcView) {
+                const pn = (saved.part_no || '').replace(/"/g,'&quot;');
+                const badge = pn ? `<span class="badge bg-primary-subtle text-primary">${pn}</span>` : '<span class="text-muted">—</span>';
+                html += `<td>${badge}</td>`;
+              }
+              (r.prices||[]).forEach((p, ci) => {
                 if (pcView) {
-                  const tOrig = procTooling[procName] || 0;
-                  const tKey = `p_${procName.replace(/[^A-Za-z0-9]/g,'_')}`;
-                  const tOverride = bargain.tooling[tKey];
-                  const tFlag = (bargain.flags||{})[`t_${tKey}`] || '';
-                  if (tOrig <= 0) {
+                  const key = `r${rowIdx}_c${ci}`;
+                  const overrideVal = bargain.prices[key];
+                  const flag = (bargain.flags||{})[key] || '';
+                  const orig = (p!=null)?p:'';
+                  if (p == null) {
                     html += `<td class="text-center pc-cell-disabled"><div class="small text-muted">原 —</div><div class="small">—</div></td>`;
                   } else {
-                    const tCur = (tOverride!=null && tOverride!=='')?tOverride:'';
-                    const disabledByFlag = (tFlag === 'no_bargain' || tFlag === 'no_room');
-                    html += `<td class="text-end pc-editable" data-key="t_${tKey}" data-type="tooling">
-                       <div class="small text-muted">原 ${tOrig.toFixed(2)}</div>
-                       <input type="number" step="0.01" name="tooling_${tKey}" form="pcBargainForm"
-                              class="form-control form-control-sm text-end"
-                              value="${tCur}" placeholder="議價後" ${disabledByFlag?'disabled':''}>
-                       <input type="hidden" form="pcBargainForm" name="flag_t_${tKey}" value="${tFlag}" class="pc-flag-input">
-                       ${tFlag?renderFlagBadge(tFlag):''}
-                     </td>`;
+                    const curVal = (overrideVal!=null && overrideVal!=='')?overrideVal:'';
+                    const disabledByFlag = (flag === 'no_bargain' || flag === 'no_room');
+                    html += `<td class="text-end pc-editable" data-key="${key}" data-type="price">
+                      <div class="small text-muted">原 ${p}</div>
+                      <input type="number" step="0.01" name="price_${key}" form="pcBargainForm"
+                             class="form-control form-control-sm text-end"
+                             data-row="${rowIdx}" data-col="${ci}" data-orig="${orig}"
+                             value="${curVal}" placeholder="議價後" ${disabledByFlag?'disabled':''}>
+                      <input type="hidden" form="pcBargainForm" name="flag_${key}" value="${flag}" class="pc-flag-input">
+                      ${flag?renderFlagBadge(flag):''}
+                    </td>`;
+                  }
+                } else {
+                  // 業務 / BU / 一般視圖：若有議價覆寫，原價下方顯示「議價 XX」
+                  if (p == null) {
+                    html += `<td class="text-end">—</td>`;
+                  } else {
+                    const key = `r${rowIdx}_c${ci}`;
+                    const bv = (bargain.prices || {})[key];
+                    const fl = (bargain.flags || {})[key] || '';
+                    const hasOverride = (bv != null && bv !== '' && fl !== 'no_bargain' && fl !== 'no_room');
+                    if (hasOverride) {
+                      html += `<td class="text-end">
+                        <div class="small text-muted">原 ${p}</div>
+                        <div class="fw-semibold text-success">議價 ${bv}</div>
+                      </td>`;
+                    } else {
+                      html += `<td class="text-end">${p}</td>`;
+                    }
                   }
                 }
-                html += '</tr>';
               });
-
-              html += '</tbody><tfoot>';
-              // footer
-              const footLabelSpan = engView ? 2 : ((buView || pcView) ? 3 : 1);
+              if (engView) {
+                const t = procTooling[procName];
+                html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
+                const toolPn = (saved.tool_part_no||'').replace(/"/g,'&quot;');
+                const tpCls = saved.tool_part_no ? 'eng-saved-cell' : 'eng-unsaved-cell';
+                html += `<td class="${tpCls}">
+                   <input type="text" name="tool_part_no" form="engProcForm" class="form-control form-control-sm"
+                          value="${toolPn}" placeholder="例:MOLD-001">
+                 </td>`;
+              }
+              if (buView) {
+                const t = procTooling[procName];
+                const tKey = `p_${procName.replace(/[^A-Za-z0-9]/g,'_')}`;
+                const tBv = (bargain.tooling || {})[tKey];
+                const tFl = (bargain.flags || {})[`t_${tKey}`] || '';
+                const tHasOv = (tBv != null && tBv !== '' && tFl !== 'no_bargain' && tFl !== 'no_room');
+                if (t != null && t > 0 && tHasOv) {
+                  html += `<td class="text-end">
+                    <div class="small text-muted">原 ${t.toFixed(2)}</div>
+                    <div class="fw-semibold text-success">議價 ${parseFloat(tBv).toFixed(2)}</div>
+                  </td>`;
+                } else {
+                  html += `<td class="text-end">${(t!=null && t>0)?t.toFixed(2):'—'}</td>`;
+                }
+                const tpn = (saved.tool_part_no || '').replace(/"/g,'&quot;');
+                const tBadge = tpn ? `<span class="badge bg-info-subtle text-info">${tpn}</span>` : '<span class="text-muted">—</span>';
+                html += `<td>${tBadge}</td>`;
+              }
+              if (pcView) {
+                // 站別模治具 — 採購可議價覆寫（以製程名為鍵）
+                const tOrig = procTooling[procName] || 0;
+                const tKey = `p_${procName.replace(/[^A-Za-z0-9]/g,'_')}`;
+                const tOverride = bargain.tooling[tKey];
+                const tFlag = (bargain.flags||{})[`t_${tKey}`] || '';
+                if (tOrig <= 0) {
+                  html += `<td class="text-center pc-cell-disabled"><div class="small text-muted">原 —</div><div class="small">—</div></td>`;
+                } else {
+                  const tCur = (tOverride!=null && tOverride!=='')?tOverride:'';
+                  const disabledByFlag = (tFlag === 'no_bargain' || tFlag === 'no_room');
+                  html += `<td class="text-end pc-editable" data-key="t_${tKey}" data-type="tooling">
+                     <div class="small text-muted">原 ${tOrig.toFixed(2)}</div>
+                     <input type="number" step="0.01" name="tooling_${tKey}" form="pcBargainForm"
+                            class="form-control form-control-sm text-end"
+                            value="${tCur}" placeholder="議價後" ${disabledByFlag?'disabled':''}>
+                     <input type="hidden" form="pcBargainForm" name="flag_t_${tKey}" value="${tFlag}" class="pc-flag-input">
+                     ${tFlag?renderFlagBadge(tFlag):''}
+                   </td>`;
+                }
+                const tpn = (saved.tool_part_no || '').replace(/"/g,'&quot;');
+                const tBadge = tpn ? `<span class="badge bg-info-subtle text-info">${tpn}</span>` : '<span class="text-muted">—</span>';
+                html += `<td>${tBadge}</td>`;
+              }
+              html += '</tr>';
+            });
+            html += '</tbody><tfoot>';
+            // 小計列 colspan：工程=廠內料號+走途程+製程+供應商=4；BU/採購=製程+供應商+廠內料號=3；一般=1
+            const footLabelSpan = engView ? 4 : ((buView || pcView) ? 3 : 1);
             const fmtRow = (label, key, klass) => {
               let h = `<tr class="${klass||''}"><th class="text-start" colspan="${footLabelSpan}">${label}</th>`;
               cols.forEach(c => h += `<td class="text-end">${c[key]!=null?(typeof c[key]==='number'?c[key].toFixed(2):c[key]):'—'}</td>`);
-              if (engView || buView || pcView) h += '<td></td>';
+              if (engView || buView || pcView) h += '<td></td><td></td>';
               h += '</tr>';
               return h;
             };
@@ -795,7 +934,7 @@
               html += fmtRowPc('成本合計（不含模治具）', cols.map((c,i)=>`pc-cost-${i}`), 'table-light fw-bold');
               // ERP 回 keyin 提醒 — 單一勾選（提醒所有單價已回 keyin 至 ERP）
               const keyinAll = (bargain && (bargain.erp_keyin_all === true || bargain.erp_keyin_all === 'true')) ? 'checked' : '';
-              const totalCells = footLabelSpan + cols.length + 1;
+              const totalCells = footLabelSpan + cols.length + 2;
               html += `<tr class="table-info">
                 <td colspan="${totalCells}">
                   <div class="form-check mb-0">
@@ -1083,9 +1222,10 @@
       </script>
       {% endif %}
 
-      {# 模治具請購單 + ERP 請購單查詢（合併卡片）#}
-      {% if _eng_npi_view or _bu_like_view or user.role.value in ('purchase','admin') %}
+      {# 模治具請購單（工程 NPI 階段）— 彙整有模治具的站別；BU/採購 NPI view 唯讀檢視 #}
+      {% if _eng_npi_view or _bu_like_view %}
       {% set _eng_map = form.eng_process_data | fromjson if form.eng_process_data else {} %}
+      {% set _tool_rows = [] %}
       {% set _ns = namespace(procs=[]) %}
       {% for inv in form.invites %}
         {% if inv.tooling_cost and inv.tooling_cost > 0 and inv.process_name and inv.process_name not in _ns.procs %}
@@ -1094,30 +1234,23 @@
       {% endfor %}
       {% set _mould_docs = form.documents | selectattr('category', 'equalto', '模具請購單') | list %}
       <div class="card shadow-sm mb-3">
-        {# 卡片標頭 #}
         <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-          <span><i class="bi bi-file-earmark-ruled me-2 text-primary"></i>模治具請購單</span>
+          <span><i class="bi bi-file-earmark-ruled me-2"></i>模治具請購單</span>
           {% if form.erp_req_no %}
-          <span class="badge bg-success fs-6 px-3 py-2">
-            <i class="bi bi-check2-circle me-1"></i>已送出 · ERP {{ form.erp_req_no }}
-          </span>
+          <span class="badge bg-success"><i class="bi bi-check2-circle me-1"></i>已送出 · ERP {{ form.erp_req_no }}</span>
           {% endif %}
         </div>
         <div class="card-body small">
-
-          {# ① 模治具明細表 #}
           {% if _ns.procs %}
           <form method="post" action="/npi-forms/{{ form.form_id }}/submit-mould-requisition"
                 enctype="multipart/form-data" id="mouldReqForm">
-            {# ERP 查詢結果 snapshot（JS 填入）#}
-            <input type="hidden" name="erp_req_data" id="erpReqDataInput" value="{{ form.erp_req_data or '' }}">
-            <table class="table table-sm table-bordered align-middle mb-0">
+            <table class="table table-sm table-bordered align-middle">
               <thead class="table-light">
                 <tr>
-                  <th style="width:15%">製程（站別）</th>
-                  <th style="width:18%">模具料號</th>
+                  <th style="width:18%">製程（站別）</th>
+                  <th style="width:22%">模具料號</th>
                   <th>供應商</th>
-                  <th class="text-end" style="width:14%">模治具金額</th>
+                  <th class="text-end" style="width:15%">模治具金額</th>
                 </tr>
               </thead>
               <tbody>
@@ -1139,7 +1272,7 @@
                       {% if _saved.tool_part_no %}
                         <span class="badge bg-primary-subtle text-primary">{{ _saved.tool_part_no }}</span>
                       {% else %}
-                        <span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>未填模具料號</span>
+                        <span class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>未填模具料號</span>
                       {% endif %}
                     </td>
                     <td>{{ _suppliers | join(' / ') or '—' }}</td>
@@ -1152,168 +1285,71 @@
                 </tr>
               </tbody>
             </table>
-
-            <hr class="my-3">
-
-            {# ② ERP 請購單號 + 即時查詢（整合在同一行）#}
-            <div class="row g-2 align-items-end mb-2">
-              <div class="col-md-4">
-                <label class="form-label mb-1 fw-semibold">
-                  ERP 模具請購單號
-                  {% if _eng_npi_view and not form.erp_req_no %}<span class="text-danger">*</span>{% endif %}
-                </label>
-                <input type="text" name="erp_req_no" id="erpReqInput"
-                       class="form-control form-control-sm"
-                       value="{{ form.erp_req_no or '' }}"
-                       placeholder="例：MR-20260419-001"
+            <div class="row g-3 mt-1">
+              <div class="col-md-5">
+                <label class="form-label">ERP 模具請購單號 {% if _eng_npi_view %}<span class="text-danger">*</span>{% endif %}</label>
+                <input type="text" name="erp_req_no" class="form-control form-control-sm"
+                       value="{{ form.erp_req_no or '' }}" placeholder="例：MR-20260419-001"
                        {% if form.erp_req_no or not _eng_npi_view %}readonly{% endif %}>
-              </div>
-              <div class="col-auto">
-                <button type="button" class="btn btn-outline-primary btn-sm"
-                        onclick="lookupErpReqFromInput()">
-                  <i class="bi bi-search me-1"></i>從 ERP 查詢
-                </button>
               </div>
               {% if _pc_npi_view %}
               {% set _bd_po = form.bargain_data | fromjson if form.bargain_data else {} %}
-              <div class="col-md-4">
-                <label class="form-label mb-1 fw-semibold">ERP 模具採購單號</label>
+              <div class="col-md-7">
+                <label class="form-label">ERP 模具採購單號</label>
                 <input type="text" name="erp_po_no" form="pcBargainForm"
                        class="form-control form-control-sm"
                        value="{{ _bd_po.erp_po_no or '' }}"
                        placeholder="例：MP-20260419-001">
+                <div class="form-text small">
+                  <i class="bi bi-info-circle me-1"></i>請於上方「成本表 / 議價」底下的「儲存議價結果」按鈕一併儲存。
+                </div>
+              </div>
+              {% else %}
+              <div class="col-md-7">
+                <label class="form-label">附件（ERP 請購單截圖 / 廠商報價單 PDF）<span class="text-danger">*</span></label>
+                <input type="hidden" name="attach_categories" value="模具請購單">
+                <input type="file" name="attach_files" class="form-control form-control-sm"
+                       {% if form.erp_req_no %}disabled{% endif %}>
+                {% if _mould_docs %}
+                <div class="mt-2 small">
+                  已上傳：
+                  {% for d in _mould_docs %}
+                  <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="me-2">
+                    <i class="bi bi-paperclip"></i>{{ d.original_name | truncate(22, True) }}
+                  </a>
+                  {% endfor %}
+                </div>
+                {% endif %}
               </div>
               {% endif %}
             </div>
-
-            {# ③ ERP 即時查詢結果（展開於卡片內）#}
-            <div id="erpReqResult" style="display:none" class="mb-3">
-              <div class="d-flex align-items-center mb-2 bg-primary-subtle rounded px-2 py-1">
-                <i class="bi bi-table me-2 text-primary"></i>
-                <strong class="text-primary me-2">ERP 請購單明細</strong>
-                <span class="badge bg-success" id="erpReqBadge"></span>
-                <button type="button" class="btn-close btn-close-sm ms-auto"
-                        onclick="document.getElementById('erpReqResult').style.display='none'"></button>
-              </div>
-              <div class="table-responsive">
-                <table class="table table-sm table-bordered mb-0 align-middle">
-                  <thead class="table-primary" id="erpReqHead"><tr></tr></thead>
-                  <tbody id="erpReqBody"></tbody>
-                </table>
-              </div>
-            </div>
-            <div id="erpReqError" class="text-danger small mb-2" style="display:none">
-              <i class="bi bi-exclamation-triangle me-1"></i><span id="erpReqErrorMsg"></span>
-            </div>
-
-            {# ④ 狀態提示 + 送出按鈕 #}
             {% if not form.erp_req_no and _eng_npi_view %}
-            <div class="alert alert-info small mb-2 py-2">
+            <div class="alert alert-info small mt-3 mb-0">
               <i class="bi bi-info-circle me-1"></i>
-              請先於上方「成本表」填妥所有站別的<strong>模具料號</strong>，再填入 ERP 單號與附件後送出。
+              請先於上方「成本表」確認所有有模治具的站別都已填妥<strong>模具料號</strong>，
+              再填入 ERP 單號與附件後送出。
             </div>
-            <div class="text-end">
+            <div class="text-end mt-2">
               <button class="btn btn-success btn-sm">
                 <i class="bi bi-send-check me-1"></i>送出模治具請購單
               </button>
             </div>
             {% elif form.erp_req_no %}
-            <div class="alert alert-success small mb-2 py-2">
-              <i class="bi bi-check-circle me-1"></i>已送出 ERP 請購單 <strong>{{ form.erp_req_no }}</strong>。
+            <div class="alert alert-success small mt-3 mb-0">
+              <i class="bi bi-check-circle me-1"></i>已送出 ERP 請購單 {{ form.erp_req_no }}。
             </div>
-            {# 已儲存的 ERP 明細（留存在工作區）#}
-            {% if form.erp_req_data %}
-            {% set _erp_rows = form.erp_req_data | fromjson if form.erp_req_data else [] %}
-            {% if _erp_rows and _erp_rows is iterable %}
-            <div class="card border-primary-subtle mb-0">
-              <div class="card-header bg-primary-subtle py-2 d-flex justify-content-between align-items-center">
-                <span class="fw-semibold text-primary small">
-                  <i class="bi bi-table me-1"></i>ERP 請購單明細（已確認留存）
-                </span>
-                <span class="badge bg-primary">{{ form.erp_req_no }}</span>
-              </div>
-              <div class="card-body p-0">
-                <div class="table-responsive">
-                  <table class="table table-sm table-bordered mb-0 align-middle">
-                    <thead class="table-primary">
-                      <tr>
-                        {% for k in _erp_rows[0].keys() %}<th class="small">{{ k }}</th>{% endfor %}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% set _erp_total = namespace(v=0) %}
-                      {% for row in _erp_rows %}
-                      <tr>
-                        {% for k, v in row.items() %}
-                        <td class="small {% if k == '金額' %}fw-bold text-end{% elif k in ('單價','請購數量') %}text-end{% endif %}">
-                          {{ v if v is not none else '—' }}
-                        </td>
-                        {% if k == '金額' and v %}{% set _erp_total.v = _erp_total.v + (v | float) %}{% endif %}
-                        {% endfor %}
-                      </tr>
-                      {% endfor %}
-                    </tbody>
-                    <tfoot class="table-warning fw-bold">
-                      <tr>
-                        <td colspan="{{ (_erp_rows[0].keys() | list | length) - 1 }}" class="text-end">模治具請購合計</td>
-                        <td class="text-end">{{ '%.2f' | format(_erp_total.v) }}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </div>
-            </div>
-            {% endif %}
-            {% endif %}
-            {% elif _bu_like_view %}
-            <div class="alert alert-warning small mb-0 py-2">
+            {% else %}
+            <div class="alert alert-warning small mt-3 mb-0">
               <i class="bi bi-hourglass-split me-1"></i>工程尚未送出模治具請購單。
             </div>
             {% endif %}
           </form>
           {% else %}
-          {# 無模治具但仍顯示 ERP 查詢功能 #}
-          <div class="text-muted mb-3"><i class="bi bi-info-circle me-1"></i>目前沒有任何站別有模治具費用，不需請購單。</div>
+          <div class="text-muted"><i class="bi bi-info-circle me-1"></i>目前沒有任何站別有模治具費用，不需請購單。</div>
           {% endif %}
-
-          {# 無 procs 時也顯示 ERP 查詢（admin/採購 always visible）#}
-          {% if not _ns.procs and user.role.value in ('purchase','admin') %}
-          <hr class="my-2">
-          <div class="row g-2 align-items-end">
-            <div class="col-md-4">
-              <label class="form-label mb-1 fw-semibold">ERP 請購單查詢</label>
-              <input type="text" id="erpReqInput" class="form-control form-control-sm"
-                     placeholder="例：260105001" value="{{ form.erp_req_no or '' }}">
-            </div>
-            <div class="col-auto">
-              <button type="button" class="btn btn-outline-primary btn-sm" onclick="lookupErpReqFromInput()">
-                <i class="bi bi-search me-1"></i>從 ERP 查詢
-              </button>
-            </div>
-          </div>
-          <div id="erpReqResult" style="display:none" class="mt-2">
-            <div class="d-flex align-items-center mb-1">
-              <strong class="text-primary me-2 small"><i class="bi bi-table me-1"></i>ERP 明細</strong>
-              <span class="badge bg-success" id="erpReqBadge"></span>
-              <button type="button" class="btn-close btn-close-sm ms-auto"
-                      onclick="document.getElementById('erpReqResult').style.display='none'"></button>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0">
-                <thead class="table-primary" id="erpReqHead"><tr></tr></thead>
-                <tbody id="erpReqBody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div id="erpReqError" class="mt-2 text-danger small" style="display:none">
-            <i class="bi bi-exclamation-triangle me-1"></i><span id="erpReqErrorMsg"></span>
-          </div>
-          {% endif %}{# end: not _ns.procs #}
-
-        </div>{# end card-body #}
-      </div>{# end card #}
-      {% endif %}{# end: eng/bu/purchase/admin #}
+        </div>
+      </div>
+      {% endif %}
 
       {# NPI 模具成本與 ERP 請購單 #}
       {% if (form.erp_req_no or form.mould_cost_est or form.mould_cost_final) and not _eng_npi_view %}
@@ -1321,16 +1357,7 @@
         <div class="card-header bg-white fw-semibold"><i class="bi bi-cash-coin me-2"></i>NPI 模具資訊</div>
         <div class="card-body small row g-3">
           <div class="col-md-4"><strong>選用供應商：</strong>{{ form.selected_quote_supplier.name if form.selected_quote_supplier else '—' }}</div>
-          <div class="col-md-4">
-            <strong>ERP 模具請購單：</strong>
-            {% if form.erp_req_no %}
-              <span class="me-2">{{ form.erp_req_no }}</span>
-              <button type="button" class="btn btn-sm btn-outline-primary py-0"
-                      onclick="lookupErpReq('{{ form.erp_req_no }}')">
-                <i class="bi bi-search me-1"></i>查詢 ERP
-              </button>
-            {% else %}—{% endif %}
-          </div>
+          <div class="col-md-4"><strong>ERP 模具請購單：</strong>{{ form.erp_req_no or '—' }}</div>
           <div class="col-md-4"><strong>工程估算模具成本：</strong>{{ form.mould_cost_est or '—' }}</div>
           <div class="col-md-4"><strong>議價後模具成本：</strong>
             {% if form.mould_cost_final %}
@@ -1341,25 +1368,9 @@
             {% else %}—{% endif %}
           </div>
           <div class="col-12"><strong>採購議價備註：</strong>{{ form.purchase_note or '—' }}</div>
-
-          {# ERP 即時查詢結果區 #}
-          <div class="col-12" id="erpReqResult" style="display:none">
-            <div class="d-flex align-items-center mb-2">
-              <strong class="me-2">ERP 請購單明細</strong>
-              <span class="badge bg-success" id="erpReqBadge"></span>
-              <button type="button" class="btn-close ms-auto" onclick="document.getElementById('erpReqResult').style.display='none'"></button>
-            </div>
-            <div class="table-responsive">
-              <table class="table table-sm table-bordered mb-0" id="erpReqTable">
-                <thead class="table-primary"><tr id="erpReqHead"></tr></thead>
-                <tbody id="erpReqBody"></tbody>
-              </table>
-            </div>
-          </div>
-
           {% if erp_req_rows %}
           <div class="col-12">
-            <strong>ERP 明細（快照）：</strong>
+            <strong>ERP 明細：</strong>
             <table class="table table-sm mt-2">
               <thead class="table-light"><tr>
                 {% for k in erp_req_rows[0].keys() %}<th>{{ k }}</th>{% endfor %}
@@ -1386,7 +1397,15 @@
 
       {# 業務工作區 — NPI 階段：每張圖 T1 試模計畫 + 客戶提醒（BU/採購 NPI view 已整合至客戶/產品卡，此處隱藏） #}
       {% if form.stage.value == 'NPI' and not _bu_like_view %}
-      {% set _drawings = form.documents | selectattr('category', 'equalto', '圖面') | list %}
+      {% set _all_drawings = form.documents | selectattr('category', 'equalto', '圖面') | list %}
+      {# 只顯示「業務在啟動 NPI 時勾選的圖紙」；清單為空時 fallback 顯示全部以維持向下相容 #}
+      {% set _qc_npi = (form.quote_cost_data | fromjson) if form.quote_cost_data else {} %}
+      {% set _npi_dids = _qc_npi.get('npi_selected_drawing_ids') or [] %}
+      {% if _npi_dids %}
+        {% set _drawings = _all_drawings | selectattr('id', 'in', _npi_dids) | list %}
+      {% else %}
+        {% set _drawings = _all_drawings %}
+      {% endif %}
       {% set _t1_plan = {} %}
       {% if form.t1_plan_data %}
         {% set _t1_plan = form.t1_plan_data | fromjson if form.t1_plan_data else {} %}
@@ -1394,49 +1413,84 @@
       <div class="card shadow-sm mb-3">
         <div class="card-header bg-white fw-semibold">
           <i class="bi bi-calendar-check me-2"></i>客戶需求 T1 與樣品提供時間
-          <small class="text-muted fw-normal">（每張圖獨立；儲存後系統會通知工程接手）</small>
+          <small class="text-muted fw-normal">（每張圖獨立；修改後離開欄位即自動儲存並通知工程）</small>
         </div>
         <div class="card-body">
           {% if _drawings %}
-          <form method="post" action="/npi-forms/{{ form.form_id }}/save-t1-plan">
-            <table class="table table-sm align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th style="width:40%">圖面</th>
-                  <th style="width:30%">客戶需求 T1 與樣品提供時間</th>
-                  <th>實際開模 T1 時間</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for d in _drawings %}
-                {% set _row = _t1_plan.get(d.id | string) or _t1_plan.get(d.id) or {} %}
-                <tr>
-                  <td>
-                    <input type="hidden" name="drawing_id" value="{{ d.id }}">
-                    <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="text-decoration-none">
-                      <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
-                    </a>
-                  </td>
-                  <td>
-                    <input type="text" name="t1_date" class="form-control form-control-sm t1-need-input"
-                           value="{{ _row.t1_date or '' }}" placeholder="例：T1 4/25 / 樣品 6/21"
+          <table class="table table-sm align-middle mb-0" id="t1AutosaveTable">
+            <thead class="table-light">
+              <tr>
+                <th style="width:40%">圖面</th>
+                <th style="width:30%">客戶需求 T1 與樣品提供時間</th>
+                <th>實際開模 T1 時間</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in _drawings %}
+              {% set _row = _t1_plan.get(d.id | string) or _t1_plan.get(d.id) or {} %}
+              <tr>
+                <td>
+                  <a href="/npi-forms/doc/preview/{{ d.id }}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-paperclip me-1"></i>{{ d.original_name }}
+                  </a>
+                </td>
+                <td>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="text" class="form-control form-control-sm t1-autosave"
+                           data-drawing-id="{{ d.id }}"
+                           data-original="{{ _row.t1_date or '' }}"
+                           value="{{ _row.t1_date or '' }}"
+                           placeholder="例：T1 4/25 / 樣品 6/21"
                            {% if user.role.value not in ('sales','admin') %}disabled{% endif %}>
-                  </td>
-                  <td class="text-muted">
-                    {{ _row.actual_t1_date or '（採購填寫）' }}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% if user.role.value in ('sales','admin') %}
-            <div class="text-end">
-              <button class="btn btn-primary btn-sm">
-                <i class="bi bi-save me-1"></i>儲存並送工程
-              </button>
-            </div>
-            {% endif %}
-          </form>
+                    <span class="t1-save-status small text-muted" style="min-width:60px"></span>
+                  </div>
+                </td>
+                <td class="text-muted">
+                  {{ _row.actual_t1_date or '（採購填寫）' }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if user.role.value in ('sales','admin') %}
+          <script>
+          (function(){
+            const url = '/npi-forms/{{ form.form_id }}/save-t1-plan';
+            document.querySelectorAll('.t1-autosave').forEach(inp => {
+              const status = inp.parentElement.querySelector('.t1-save-status');
+              const setStatus = (txt, cls) => {
+                if (!status) return;
+                status.className = 't1-save-status small ' + (cls || 'text-muted');
+                status.textContent = txt || '';
+              };
+              const save = async () => {
+                const cur = inp.value.trim();
+                const orig = (inp.dataset.original || '').trim();
+                if (cur === orig) return;
+                setStatus('儲存中…', 'text-muted');
+                try {
+                  const fd = new FormData();
+                  fd.append('drawing_id', inp.dataset.drawingId);
+                  fd.append('t1_date', cur);
+                  const resp = await fetch(url, { method:'POST', body: fd, redirect:'manual' });
+                  if (!resp.ok && resp.type !== 'opaqueredirect') {
+                    throw new Error('狀態 ' + resp.status);
+                  }
+                  inp.dataset.original = cur;
+                  setStatus('✓ 已儲存', 'text-success');
+                  setTimeout(() => setStatus(''), 1500);
+                } catch(err) {
+                  setStatus('✗ 失敗', 'text-danger');
+                }
+              };
+              inp.addEventListener('blur', save);
+              inp.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+              });
+            });
+          })();
+          </script>
+          {% endif %}
           {% else %}
           <div class="text-muted small"><i class="bi bi-info-circle me-1"></i>尚未上傳圖面，無法設定 T1 計畫。</div>
           {% endif %}
@@ -1449,10 +1503,48 @@
     {# ── 右：附件 / 操作 / 簽核紀錄 ── #}
     <div class="col-lg-4">
 
+      {# 該角色在目前狀態是否「應該」看到操作 — 不相關角色直接隱藏整個操作 card #}
+      {% set _r = user.role.value %}
+      {% set _s = form.status.value %}
+      {% set _is_creator = (user.id == form.created_by) %}
+      {% set _role_can_act =
+           _r == 'admin'
+           or (_s == 'DRAFT' and _r == 'sales' and _is_creator)
+           or (_s == 'ENG_DISPATCH' and _r == 'engineer')
+           or (_s == 'QUOTING' and _r in ('engineer','purchase'))
+           or (_s == 'QUOTES_COLLECTED' and _r == 'sales')
+           or (_s == 'PENDING_QUOTE_BU' and _r == 'bu')
+           or (_s == 'QUOTE_APPROVED' and _r == 'sales')
+           or (_s == 'RFQ_DONE' and _r == 'sales')
+           or (_s == 'NPI_STARTED' and _r in ('sales','engineer'))
+           or (_s == 'NPI_PENDING_BU' and _r == 'bu')
+           or (_s == 'NPI_PENDING_PURCHASE' and _r == 'purchase')
+           or (_s == 'RETURNED' and (
+                  (form.reject_to == '業務' and _r == 'sales' and _is_creator)
+               or (form.reject_to == '工程師' and _r == 'engineer')
+               or (form.reject_to == '採購' and _r == 'purchase')
+              ))
+      %}
+
       {# 操作區 #}
       <div class="card shadow-sm mb-3">
         <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>操作</div>
         <div class="card-body">
+
+          {% if not _role_can_act %}
+          <div class="text-muted small text-center py-2">
+            <i class="bi bi-info-circle me-1"></i>
+            目前狀態 <strong>{{ _s }}</strong> 無需您的操作
+          </div>
+          {% else %}
+
+          {# 業務退回補件修改（RETURNED·業務）#}
+          {% if form.status.value == 'RETURNED' and form.reject_to == '業務'
+                and (user.role.value == 'admin' or user.id == form.created_by) %}
+          <a href="/npi-forms/{{ form.form_id }}/edit" class="btn btn-warning w-100 mb-2 fw-semibold">
+            <i class="bi bi-pencil-square me-1"></i>補件修改（編輯內容 / 附件）
+          </a>
+          {% endif %}
 
           {# 業務送審 #}
           {% if form.status.value in ('DRAFT','RETURNED') and (user.role.value == 'admin' or user.id == form.created_by) and (form.status.value != 'RETURNED' or form.reject_to != '工程師') %}
@@ -1462,6 +1554,25 @@
             </button>
             <input type="hidden" name="comment" value="">
           </form>
+          {% endif %}
+
+          {# 工程：QUOTING 階段可重開詢價派發（新增圖紙 / 補派供應商）#}
+          {% if form.status.value == 'QUOTING' and user.role.value in ('engineer','admin') %}
+            {% set _drawing_docs = form.documents | selectattr('category', 'equalto', '圖面') | list %}
+            {% set _invited_dids = form.invites | map(attribute='drawing_doc_id') | select | list %}
+            {% set _new_drawings = _drawing_docs | rejectattr('id', 'in', _invited_dids) | list %}
+            <form method="post" action="/npi-forms/{{ form.form_id }}/reopen-dispatch" class="mb-2"
+                  onsubmit="return confirm('將狀態退回「待工程派發」以加派詢價，已派發的供應商列不變。確認？');">
+              {% if _new_drawings %}
+              <div class="alert alert-warning small mb-1 py-2">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                偵測到 <strong>{{ _new_drawings|length }}</strong> 張新圖紙尚未派發
+              </div>
+              {% endif %}
+              <button class="btn btn-warning w-100">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>重開詢價派發{% if _new_drawings %}（補派新圖紙）{% else %}（追加供應商 / 圖紙）{% endif %}
+              </button>
+            </form>
           {% endif %}
 
           {# 採購/工程宣告報價收齊 #}
@@ -1495,6 +1606,13 @@
               and user.role.value in ('sales','admin') %}
           <button class="btn btn-warning w-100 mb-2" data-bs-toggle="modal" data-bs-target="#submitQuoteBuModal">
             <i class="bi bi-calculator me-1"></i>上線試算 + 送 BU 審核報價
+          </button>
+          {% endif %}
+
+          {# 業務：退回工程/採購調整報價 / 補附件 #}
+          {% if form.status.value == 'QUOTES_COLLECTED' and user.role.value in ('sales','admin') %}
+          <button class="btn btn-outline-danger w-100 mb-2" data-bs-toggle="modal" data-bs-target="#salesReturnModal">
+            <i class="bi bi-arrow-return-left me-1"></i>退回工程 / 採購補件（調整報價）
           </button>
           {% endif %}
 
@@ -1532,21 +1650,27 @@
           </form>
           {% endif %}
 
-          {# 業務：客戶確定 → 進入 NPI #}
+          {# 業務：客戶確定 → 進入 NPI（開窗勾選機種）#}
           {% if form.status.value == 'RFQ_DONE' and user.role.value in ('sales','admin') %}
-          <form method="post" action="/npi-forms/{{ form.form_id }}/start-npi" class="mb-2">
-            <button class="btn btn-warning w-100">
-              <i class="bi bi-play-circle me-1"></i>客戶確定開發（進入 NPI）
-            </button>
-            <input type="hidden" name="comment" value="">
-          </form>
+          <button class="btn btn-warning w-100 mb-2" data-bs-toggle="modal" data-bs-target="#startNpiModal">
+            <i class="bi bi-play-circle me-1"></i>客戶確定開發（進入 NPI）
+          </button>
           {% endif %}
 
-          {# 工程：送 BU 直接送出 #}
+          {# 工程：送 BU #}
           {% if form.status.value == 'NPI_STARTED' and user.role.value in ('engineer','admin') %}
-          <form method="post" action="/npi-forms/{{ form.form_id }}/submit-bu" class="mb-2">
-            <button class="btn btn-primary w-100">
-              <i class="bi bi-send-check me-1"></i>送 BU 核准
+          <button class="btn btn-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#submitBuModal">
+            <i class="bi bi-send-check me-1"></i>選供應商 + 送 BU 核准
+          </button>
+          {% endif %}
+
+          {# 業務：撤回 NPI 啟動（回到 RFQ_DONE，重新開窗選機種）#}
+          {% if form.status.value == 'NPI_STARTED' and user.role.value in ('sales','admin') %}
+          <form method="post" action="/npi-forms/{{ form.form_id }}/revert-npi-start" class="mb-2"
+                onsubmit="return confirm('確定撤回 NPI 啟動？將回到「報價已發送（RFQ_DONE）」狀態，可重新開窗勾選機種。');">
+            <input type="hidden" name="comment" value="">
+            <button class="btn btn-outline-secondary w-100">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>撤回 NPI 啟動（重新選擇機種）
             </button>
           </form>
           {% endif %}
@@ -1594,12 +1718,38 @@
           {% else %}
           <div class="text-muted small text-center">目前狀態 — <strong>{{ form.status.value }}</strong></div>
           {% endif %}
+
+          {% endif %}{# end _role_can_act #}
         </div>
       </div>
 
       {# 附件分類顯示 — 支援圖片縮圖 + PDF 內嵌預覽 modal #}
+      {# 業務在任何階段（含結案）都可變更附件，變更後會跳出「重新評估」流程；工程僅在派發前可變更 #}
+      {% set _can_manage_docs = user.role.value in ('sales','admin') or
+                                (user.role.value == 'engineer' and form.status.value in ('DRAFT','ENG_DISPATCH','RETURNED')) %}
+      <style>
+        .doc-card { position: relative; }
+        .doc-card .doc-actions { position: absolute; top: 2px; right: 2px; display: none; gap: 2px; z-index: 5; }
+        .doc-card:hover .doc-actions { display: flex; }
+        .doc-card .doc-actions .btn { padding: 1px 5px; line-height: 1; }
+      </style>
       <div class="card shadow-sm mb-3">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-paperclip me-2"></i>附件</div>
+        <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2 flex-wrap">
+          <span><i class="bi bi-paperclip me-2"></i>附件</span>
+          {% if _can_manage_docs %}
+          <div class="ms-auto d-flex align-items-center gap-1">
+            <select id="addDocCategory" class="form-select form-select-sm" style="width:auto;font-size:.8rem">
+              {% for cat in ATTACH_CATEGORIES %}
+              <option value="{{ cat }}"{% if cat == '圖面' %} selected{% endif %}>{{ cat }}</option>
+              {% endfor %}
+            </select>
+            <label class="btn btn-sm btn-outline-primary mb-0">
+              <i class="bi bi-plus-lg me-1"></i>新增附件
+              <input type="file" id="addDocFile" class="d-none">
+            </label>
+          </div>
+          {% endif %}
+        </div>
         <div class="card-body">
           {% for cat in ATTACH_CATEGORIES %}
           {% if cat in docs_by_cat %}
@@ -1609,7 +1759,21 @@
               {% for d in docs_by_cat[cat] %}
               {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
               {% set preview_url = '/npi-forms/doc/preview/' ~ d.id %}
-              <div class="border rounded p-1 small" style="min-width:130px; max-width:160px">
+              <div class="border rounded p-1 small doc-card" style="min-width:130px; max-width:160px">
+                {% if _can_manage_docs %}
+                <div class="doc-actions">
+                  <label class="btn btn-sm btn-light border mb-0" title="更換檔案">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <input type="file" class="d-none doc-replace-input" data-doc-id="{{ d.id }}">
+                  </label>
+                  <form method="post" action="/npi-forms/{{ form.form_id }}/delete-doc/{{ d.id }}"
+                        class="d-inline doc-delete-form" data-name="{{ d.original_name }}">
+                    <button type="submit" class="btn btn-sm btn-light border" title="刪除">
+                      <i class="bi bi-trash text-danger"></i>
+                    </button>
+                  </form>
+                </div>
+                {% endif %}
                 {% if ext in ('png','jpg','jpeg','gif','webp') %}
                   <a href="#" class="doc-preview" data-url="{{ preview_url }}" data-name="{{ d.original_name }}" data-type="image">
                     <img src="{{ preview_url }}" class="rounded w-100"
@@ -1701,6 +1865,140 @@
       })();
       </script>
 
+      {# ── 業務變更附件後 → 重新進入工程評估 modal ── #}
+      {% if user.role.value in ('sales','admin') %}
+      <div class="modal fade" id="reopenForEvalModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+          <form class="modal-content" method="post"
+                action="/npi-forms/{{ form.form_id }}/reopen-for-eval">
+            <div class="modal-header bg-warning-subtle">
+              <h5 class="modal-title">
+                <i class="bi bi-arrow-repeat me-2 text-warning"></i>附件已變更 — 重新進入工程評估
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-warning small mb-3">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                偵測到業務 <strong id="reopenChangeAction">變更</strong>了附件，
+                目前案件狀態為 <span class="badge bg-secondary" id="reopenCurrentStatus">—</span>。
+                <br>
+                按下「確認重新評估」會將狀態退回 <strong>「待工程派發」</strong>，由工程師重新評估後再依流程往後跑。
+              </div>
+              <label class="form-label fw-semibold">變更原因 / 補充說明 <span class="text-danger">*</span></label>
+              <textarea name="comment" rows="3" class="form-control" required
+                        placeholder="例：客戶更新規格圖、補上料號表、原圖面有錯需更換…"></textarea>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                先不重評（暫不變更狀態）
+              </button>
+              <button type="submit" class="btn btn-warning">
+                <i class="bi bi-arrow-repeat me-1"></i>確認重新評估
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      {# 附件管理：新增 / 更換 / 刪除 #}
+      <script>
+      (function(){
+        const isSales = {{ 'true' if user.role.value in ('sales','admin') else 'false' }};
+        const reopenModalEl = document.getElementById('reopenForEvalModal');
+        // modal 被關閉（不論是否送出）就 reload，讓使用者看到剛變更的附件
+        if (reopenModalEl) {
+          reopenModalEl.addEventListener('hidden.bs.modal', () => {
+            // 若 form 剛剛被 submit，瀏覽器會自己跑 server redirect；這裡只處理 dismiss 情境
+            if (!reopenModalEl.dataset.submitted) location.reload();
+          });
+          const reopenForm = reopenModalEl.querySelector('form');
+          if (reopenForm) {
+            reopenForm.addEventListener('submit', () => {
+              reopenModalEl.dataset.submitted = '1';
+            });
+          }
+        }
+
+        // 變更後：若需要重新評估 → 跳出 modal；否則直接 reload
+        function handleAfterChange(j, action) {
+          if (isSales && reopenModalEl && j && j.need_reeval) {
+            const actEl = document.getElementById('reopenChangeAction');
+            const stEl  = document.getElementById('reopenCurrentStatus');
+            if (actEl) actEl.textContent = action || '變更';
+            if (stEl)  stEl.textContent  = j.current_status || '—';
+            bootstrap.Modal.getOrCreateInstance(reopenModalEl).show();
+          } else {
+            location.reload();
+          }
+        }
+
+        // 新增附件
+        const addInp = document.getElementById('addDocFile');
+        const catSel = document.getElementById('addDocCategory');
+        if (addInp) {
+          addInp.addEventListener('change', async () => {
+            if (!addInp.files || !addInp.files[0]) return;
+            const fd = new FormData();
+            fd.append('file', addInp.files[0]);
+            fd.append('category', catSel ? catSel.value : '其它');
+            try {
+              const resp = await fetch('/npi-forms/{{ form.form_id }}/add-doc', {
+                method:'POST', body: fd, headers: {'Accept': 'application/json'}
+              });
+              const j = await resp.json().catch(() => ({}));
+              if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+              handleAfterChange(j, '新增');
+            } catch(err) {
+              alert('上傳失敗：' + err.message);
+              addInp.value = '';
+            }
+          });
+        }
+        // 更換附件（hover 工具列）
+        document.addEventListener('change', async (e) => {
+          const inp = e.target.closest('.doc-replace-input');
+          if (!inp || !inp.files || !inp.files[0]) return;
+          const docId = inp.dataset.docId;
+          const fd = new FormData();
+          fd.append('file', inp.files[0]);
+          try {
+            const resp = await fetch(`/npi-forms/{{ form.form_id }}/replace-doc/${docId}`, {
+              method:'POST', body: fd, headers: {'Accept': 'application/json'}
+            });
+            const j = await resp.json().catch(() => ({}));
+            if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+            handleAfterChange(j, '更換');
+          } catch(err) {
+            alert('更換失敗：' + err.message);
+            inp.value = '';
+          }
+        });
+        // 刪除附件 — 改 fetch 才能在 sales 時跳重新評估 modal
+        document.addEventListener('submit', async (e) => {
+          const f = e.target.closest('.doc-delete-form');
+          if (!f) return;
+          e.preventDefault();
+          const name = f.dataset.name || '此附件';
+          if (!confirm(`確定刪除「${name}」？此動作無法復原。`)) return;
+          const btn = f.querySelector('button');
+          if (btn) btn.disabled = true;
+          try {
+            const resp = await fetch(f.action, {
+              method: 'POST', headers: {'Accept': 'application/json'}
+            });
+            const j = await resp.json().catch(() => ({}));
+            if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+            handleAfterChange(j, '刪除');
+          } catch(err) {
+            alert('刪除失敗：' + err.message);
+            if (btn) btn.disabled = false;
+          }
+        });
+      })();
+      </script>
+
       {# 簽核紀錄 #}
       <div class="card shadow-sm">
         <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-data me-2"></i>簽核紀錄</div>
@@ -1734,6 +2032,212 @@
 </div>
 
 {# ───── Modals ───── #}
+
+{# 業務確認進入 NPI — 勾選機種/報價 + 修改最終售價/模治具報價 + 填客戶 T1 #}
+{% if form.status.value == 'RFQ_DONE' and user.role.value in ('sales','admin') %}
+<div class="modal fade" id="startNpiModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/start-npi" id="startNpiForm">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">
+          <i class="bi bi-play-circle me-2 text-warning"></i>客戶確定開發 — 選擇進入 NPI 的機種 / 報價
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small mb-3 py-2">
+          <i class="bi bi-info-circle me-1"></i>
+          請勾選客戶<strong>確定下單</strong>的機種；只有勾選的機種會帶入 NPI 階段。
+          客戶若有議價，可在「最終單價 / 模治具報價」直接修改（利潤自動重算）。
+          每張圖面的<strong>客戶 T1 / 樣品提供時間</strong>一併在此填寫，送出後系統會通知工程接手。
+        </div>
+        {% set _qc = form.quote_cost_data | fromjson if form.quote_cost_data else {} %}
+        {% set _cols = _qc.get('columns') or [] %}
+        {% set _t1_existing = (form.t1_plan_data | fromjson) if form.t1_plan_data else {} %}
+        {% if _cols %}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered align-middle mb-2" style="min-width:1100px">
+            <thead class="table-light">
+              <tr>
+                <th style="width:40px" class="text-center">
+                  <input type="checkbox" id="npiSelAll" class="form-check-input" title="全選">
+                </th>
+                <th>機種 / 圖面</th>
+                <th class="text-end" style="width:75px">MOQ</th>
+                <th class="text-end" style="width:90px">原單價</th>
+                <th class="text-end" style="width:120px">最終單價（可改）</th>
+                <th class="text-end" style="width:90px">原模治具</th>
+                <th class="text-end" style="width:120px">模治具報價（可改）</th>
+                <th style="width:200px">客戶 T1 / 樣品時間</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in _cols %}
+              {# 第 N 欄對應第 N 張圖面（drawings 是依檔名排序的 list） #}
+              {% set _draw = drawings[loop.index0] if loop.index0 < (drawings|length) else None %}
+              {% set _t1row = (_t1_existing.get(_draw.id|string) or _t1_existing.get(_draw.id)) if _draw else {} %}
+              <tr>
+                <td class="text-center">
+                  <input type="checkbox" name="selected_cols" value="{{ loop.index0 }}"
+                         class="form-check-input npi-col-pick" checked>
+                </td>
+                <td class="small">{{ c.label or ('方案 ' ~ loop.index) }}</td>
+                <td class="text-end small">{{ c.moq if c.moq is not none else '—' }}</td>
+                <td class="text-end small text-muted">
+                  {% if c.quote is not none %}{{ '%.2f' | format(c.quote) }}{% else %}—{% endif %}
+                </td>
+                <td>
+                  <input type="number" step="0.01" min="0"
+                         class="form-control form-control-sm text-end fw-semibold npi-quote-input"
+                         data-col="{{ loop.index0 }}" data-field="quote"
+                         value="{{ '%.2f' | format(c.quote) if c.quote is not none else '' }}">
+                </td>
+                <td class="text-end small text-muted">
+                  {% if c.tooling_quote is not none and c.tooling_quote > 0 %}
+                    {{ '%.2f' | format(c.tooling_quote) }}
+                  {% else %}—{% endif %}
+                </td>
+                <td>
+                  <input type="number" step="0.01" min="0"
+                         class="form-control form-control-sm text-end npi-quote-input"
+                         data-col="{{ loop.index0 }}" data-field="tooling_quote"
+                         value="{{ '%.2f' | format(c.tooling_quote) if c.tooling_quote is not none and c.tooling_quote > 0 else '' }}">
+                </td>
+                <td>
+                  {% if _draw %}
+                  <input type="hidden" name="t1_drawing_id" value="{{ _draw.id }}">
+                  <input type="text" name="t1_date" class="form-control form-control-sm"
+                         value="{{ (_t1row or {}).get('t1_date') or '' }}"
+                         placeholder="例：T1 4/25 / 樣品 6/21">
+                  {% else %}
+                  <span class="small text-muted">（非圖面欄，不需 T1）</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="alert alert-danger small">
+          找不到報價試算資料，請先完成業務試算並送 BU 核准。
+        </div>
+        {% endif %}
+        {# ── 客戶確認備註（顯眼放最下） ── #}
+        <div class="card border-warning-subtle mt-3">
+          <div class="card-header bg-warning-subtle py-2 small fw-semibold">
+            <i class="bi bi-pencil-square me-1"></i>客戶確認 / 進 NPI 備註
+            <span class="text-muted fw-normal">（記錄客戶 PO 編號、議價結果、特別需求等，會寫入簽核紀錄供 BU/工程/採購查看）</span>
+          </div>
+          <div class="card-body py-2">
+            <textarea name="comment" rows="3" class="form-control"
+                      placeholder="例：客戶 PO #PO-26042001 確認 IMG_3366 + IMG_3382 兩款，IMG_3366 議價至 6000；T1 排 4/25，樣品 6/21 前出貨；模治具報價分批請款。"></textarea>
+          </div>
+        </div>
+        <input type="hidden" name="quote_overrides" id="quoteOverridesField">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-warning"{% if not _cols %} disabled{% endif %}>
+          <i class="bi bi-play-circle me-1"></i>確認進入 NPI（同時儲存 T1 / 通知工程）
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  const all = document.getElementById('npiSelAll');
+  if (!all) return;
+  // 「全選」狀態與初始勾選同步
+  all.checked = Array.from(document.querySelectorAll('.npi-col-pick')).every(c => c.checked);
+  all.addEventListener('change', () => {
+    document.querySelectorAll('.npi-col-pick').forEach(c => { c.checked = all.checked; });
+  });
+  document.querySelectorAll('.npi-col-pick').forEach(c => {
+    c.addEventListener('change', () => {
+      const list = Array.from(document.querySelectorAll('.npi-col-pick'));
+      all.checked = list.every(x => x.checked);
+      all.indeterminate = !all.checked && list.some(x => x.checked);
+    });
+  });
+  // 送出前把所有可修改的單價/模治具報價序列化成 quote_overrides JSON
+  const formEl = document.getElementById('startNpiForm');
+  if (formEl) {
+    formEl.addEventListener('submit', () => {
+      const overrides = {};
+      document.querySelectorAll('.npi-quote-input').forEach(inp => {
+        const c = inp.dataset.col;
+        const f = inp.dataset.field;
+        if (c == null || !f) return;
+        if (!overrides[c]) overrides[c] = {};
+        const v = inp.value === '' ? null : parseFloat(inp.value);
+        overrides[c][f] = (v != null && !isNaN(v)) ? v : null;
+      });
+      document.getElementById('quoteOverridesField').value = JSON.stringify(overrides);
+    });
+  }
+})();
+</script>
+{% endif %}
+
+{# 業務退回工程/採購補件（QUOTES_COLLECTED → QUOTING） #}
+{% if form.status.value == 'QUOTES_COLLECTED' and user.role.value in ('sales','admin') %}
+<div class="modal fade" id="salesReturnModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/sales-return-to-eng">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-arrow-return-left me-2"></i>退回工程 / 採購補件</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          按下確認後，本單會退回至 <strong>QUOTING（供應商報價中）</strong>，工程 / 採購可調整供應商報價、附件、階梯式 MOQ 等資訊；調整完成後再次按「報價收齊」交回業務試算。
+        </div>
+        <label class="form-label fw-semibold">退回原因 / 需要調整的項目 <span class="text-danger">*</span></label>
+        <textarea name="comment" rows="5" class="form-control" required
+                  placeholder="例：&#10;1. 凌陽 報價請補階梯式 MOQ（500 / 1000 / 5000）&#10;2. 久盛塑膠 模具費需附正式報價單 PDF&#10;3. 髮線製程交期請再確認"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-danger">
+          <i class="bi bi-arrow-return-left me-1"></i>確認退回
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# 工程退回業務補件 #}
+{% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
+<div class="modal fade" id="engReturnModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="/npi-forms/{{ form.form_id }}/eng-return-to-sales">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="bi bi-arrow-return-left me-2"></i>退回業務補件</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          按下確認後，本單會退回給原業務（狀態 → <strong>RETURNED · 退回業務</strong>），業務補件後可重送。
+        </div>
+        <label class="form-label fw-semibold">補件原因 / 缺漏項目 <span class="text-danger">*</span></label>
+        <textarea name="comment" rows="5" class="form-control" required
+                  placeholder="例：&#10;1. 缺少俯視圖 / 截面圖&#10;2. 材質規格未明確（請提供 SUS 等級）&#10;3. 客戶交期未填，請補充"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="submit" class="btn btn-danger">
+          <i class="bi bi-arrow-return-left me-1"></i>確認退回業務
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {# 派發供應商 #}
 {% if form.status.value == 'ENG_DISPATCH' and user.role.value in ('engineer','admin') %}
@@ -1801,12 +2305,24 @@
           <option value="C1100">
         </datalist>
 
+        {# 自動隱藏「已派發過」的圖紙：drawing_doc_id 已在 invites 內 #}
+        {% set _dispatched_dids = form.invites | map(attribute='drawing_doc_id') | select | list %}
+        {% set _pending_drawings = (drawings or []) | rejectattr('id', 'in', _dispatched_dids) | list %}
+
         {# 每張圖一張獨立製程表 — 若無圖則 fallback 到單一共用表 #}
         {% if drawings %}
+          {% if not _pending_drawings %}
+          <div class="alert alert-info small mb-2 py-2">
+            <i class="bi bi-info-circle me-1"></i>本單所有圖紙都已派發過。若需補派，請先在<strong>附件</strong>區上傳新圖紙後再開此視窗。
+          </div>
+          {% else %}
         <div class="small text-muted mb-2">
           <i class="bi bi-info-circle me-1"></i>每張圖紙有獨立的製程排序表。同一製程可指定多家供應商做比價（於該圖紙的表內多新增一列）。
+          {% if _dispatched_dids %}
+          <span class="badge bg-secondary ms-1">已派發 {{ _dispatched_dids|unique|list|length }} 張不再列出</span>
+          {% endif %}
         </div>
-        {% for d in drawings %}
+        {% for d in _pending_drawings %}
         {% set ext = (d.original_name.rsplit('.',1)[-1] | lower) if '.' in d.original_name else '' %}
         <div class="border rounded p-3 mb-3 drawing-block"
              data-drawing-id="{{ d.id }}"
@@ -1834,10 +2350,22 @@
             </div>
             <div class="flex-grow-1">
               <div class="fw-semibold">
-                <span class="badge bg-primary me-1">#{{ loop.index }}</span>{{ d.original_name }}
+                <span class="badge bg-primary me-1">#{{ loop.index }}</span>
+                <span class="drawing-title-name">{{ d.original_name }}</span>
               </div>
               <div class="small text-muted">該圖紙需發案的製程 / 供應商</div>
             </div>
+            <label class="btn btn-sm btn-outline-warning mb-0" title="更換圖檔（保留 doc id，內容換新版）">
+              <i class="bi bi-arrow-repeat me-1"></i>更換圖檔
+              <input type="file" class="d-none replace-doc-input"
+                     data-doc-id="{{ d.id }}"
+                     accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.gif,.webp">
+            </label>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-drawing-btn"
+                    data-doc-id="{{ d.id }}" data-name="{{ d.original_name }}"
+                    title="從本單刪除此圖紙（不可復原）">
+              <i class="bi bi-trash"></i>
+            </button>
             <button type="button" class="btn btn-sm btn-outline-primary add-row-btn">
               <i class="bi bi-plus"></i> 新增製程列
             </button>
@@ -1868,6 +2396,7 @@
           </table>
         </div>
         {% endfor %}
+          {% endif %}
         {% else %}
         {# 無圖面上傳 → 單一共用表 #}
         <div class="row g-2 mb-3">
@@ -1984,6 +2513,68 @@
     const tbody = block.querySelector('.drawing-rows');
     if (tbody && !tbody.querySelector('tr.dispatch-row')) {
       addRowToBlock(block); addRowToBlock(block);
+    }
+  });
+
+  // ── 刪除圖紙（從本單永久移除）──
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('#dispatchModal .remove-drawing-btn');
+    if (!btn) return;
+    const docId = btn.dataset.docId;
+    const name = btn.dataset.name || '此圖紙';
+    if (!confirm(`確定刪除「${name}」？此圖將從本 NPI 單永久移除（不可復原）。`)) return;
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/delete-doc/${docId}`, {
+        method: 'POST', redirect: 'manual'
+      });
+      if (resp.ok || resp.type === 'opaqueredirect') {
+        const block = btn.closest('.drawing-block');
+        if (block) block.remove();
+      } else {
+        throw new Error('狀態 ' + resp.status);
+      }
+    } catch(err) {
+      alert('刪除失敗：' + err.message);
+      btn.disabled = false;
+    }
+  });
+
+  // ── 更換業務上傳的圖檔 ──
+  document.addEventListener('change', async (e) => {
+    const inp = e.target.closest('#dispatchModal .replace-doc-input');
+    if (!inp || !inp.files || !inp.files[0]) return;
+    const docId = inp.dataset.docId;
+    const file  = inp.files[0];
+    const block = inp.closest('.drawing-block');
+    const titleEl = block && block.querySelector('.drawing-title-name');
+    const lbl = inp.closest('label');
+    const oldHTML = lbl ? lbl.innerHTML : '';
+    if (lbl) {
+      lbl.classList.add('disabled');
+      lbl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>上傳中…';
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/replace-doc/${docId}`, {
+        method: 'POST', body: fd
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+      if (titleEl) titleEl.textContent = j.original_name || file.name;
+      // 刷新 thumbnail
+      const thumb = block.querySelector('img');
+      if (thumb) thumb.src = `/npi-forms/doc/preview/${docId}?t=${Date.now()}`;
+      if (lbl) {
+        lbl.innerHTML = '<i class="bi bi-check-circle me-1 text-success"></i>已更換';
+        setTimeout(() => { lbl.innerHTML = oldHTML; lbl.classList.remove('disabled'); }, 1500);
+      }
+    } catch (err) {
+      alert('更換失敗：' + err.message);
+      if (lbl) { lbl.innerHTML = oldHTML; lbl.classList.remove('disabled'); }
+    } finally {
+      inp.value = '';
     }
   });
 
@@ -2203,14 +2794,16 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const t = e.target;
-    // 只處理 reply-form 下的 input（quote_amount / tooling_cost / lead_time_days / quote_comment）
+    if (t.tagName !== 'INPUT' || t.type === 'file' || t.type === 'hidden') return;
     const formId = t.getAttribute('form') || '';
-    if (!formId.startsWith('reply-form-')) return;
-    if (t.tagName !== 'INPUT' || t.type === 'file') return;
+    const isPriceDisplay = t.classList.contains('price-display');
+    if (!formId.startsWith('reply-form-') && !isPriceDisplay) return;
     e.preventDefault();
-    // 收集同一 reply-form 所有可 focus 的 input（排除 file / hidden），按 DOM 順序
-    const all = Array.from(document.querySelectorAll(
-      `input[form="${formId}"]:not([type="file"]):not([type="hidden"])`
+    // 收集同列所有可 focus 的 input（含視覺型 price-display + reply-form 內的其他欄位），按 DOM 順序
+    const tr = t.closest('tr');
+    if (!tr) return;
+    const all = Array.from(tr.querySelectorAll(
+      'input.form-control:not([type="file"]):not([type="hidden"])'
     ));
     const idx = all.indexOf(t);
     if (idx < 0) return;
@@ -2219,10 +2812,118 @@
       if (all[idx + 1].select) all[idx + 1].select();
     } else {
       // 最後一欄（備註）→ 自動開啟該列的檔案選擇視窗
-      const fileInp = document.querySelector(`input[form="${formId}"][type="file"]`);
+      const fileInp = tr.querySelector('input[type="file"]');
       if (fileInp) fileInp.click();
     }
   });
+
+  // ── 工程：刪除單一派發列 ──
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.invite-delete-btn');
+    if (!btn) return;
+    const invId = btn.dataset.invId;
+    const sup   = btn.dataset.supplier || '此供應商';
+    const proc  = btn.dataset.process  || '—';
+    if (!confirm(`確定刪除派發列：${sup} / ${proc}？\n已上傳的報價附件也會一併移除（不可復原）。`)) return;
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/invite/${invId}/delete`, {
+        method: 'POST', redirect: 'manual'
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+      const tr = btn.closest('tr');
+      if (tr) tr.remove();
+    } catch(err) {
+      alert('刪除失敗：' + err.message);
+      btn.disabled = false;
+    }
+  });
+
+  // ── 工程：重發單筆詢價信 ──
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.invite-resend-btn');
+    if (!btn) return;
+    const invId = btn.dataset.invId;
+    const sup   = btn.dataset.supplier || '此供應商';
+    if (!confirm(`重新寄送詢價信給：${sup}？`)) return;
+    btn.disabled = true;
+    const oldHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    try {
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/invite/${invId}/resend`, {
+        method: 'POST'
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+      btn.innerHTML = '<i class="bi bi-check-lg text-success"></i>';
+      setTimeout(() => location.reload(), 600);
+    } catch(err) {
+      alert('重發失敗：' + err.message);
+      btn.innerHTML = oldHTML;
+      btn.disabled = false;
+    }
+  });
+
+  // ── NTD / USD 幣別切換（匯率固定 32）：visible 顯示用、hidden 永遠 NTD 送出 ──
+  const FX_RATE = 32;
+  function recalcPriceCell(td) {
+    const display = td.querySelector('.price-display');
+    const hidden  = td.querySelector('.price-hidden');
+    const sel     = td.querySelector('.currency-sel');
+    const hint    = td.querySelector('.convert-hint');
+    if (!display || !hidden || !sel) return;
+    const dv = parseFloat(display.value);
+    if (isNaN(dv)) {
+      hidden.value = '';
+      if (hint) hint.textContent = '';
+      return;
+    }
+    const ntd = sel.value === 'USD' ? dv * FX_RATE : dv;
+    hidden.value = ntd.toFixed(2);
+    if (hint) {
+      hint.textContent = sel.value === 'USD'
+        ? `≈ NT$ ${Math.round(ntd).toLocaleString('zh-TW')}`
+        : '';
+    }
+  }
+  function changeCurrency(td) {
+    const display = td.querySelector('.price-display');
+    const hidden  = td.querySelector('.price-hidden');
+    const sel     = td.querySelector('.currency-sel');
+    if (!display || !hidden || !sel) return;
+    const ntd = parseFloat(hidden.value);
+    if (!isNaN(ntd) && ntd !== 0) {
+      display.value = sel.value === 'USD'
+        ? (ntd / FX_RATE).toFixed(2)
+        : ntd.toFixed(2);
+    }
+    recalcPriceCell(td);
+  }
+  document.addEventListener('input', (e) => {
+    const td = e.target.closest('.price-cell');
+    if (td && e.target.classList.contains('price-display')) recalcPriceCell(td);
+  });
+  document.addEventListener('change', (e) => {
+    const td = e.target.closest('.price-cell');
+    if (td && e.target.classList.contains('currency-sel')) {
+      changeCurrency(td);
+      // 同列其他 price-cell 跟著切換幣別
+      const tr = td.closest('tr');
+      if (tr) {
+        tr.querySelectorAll('.price-cell').forEach(otherTd => {
+          if (otherTd === td) return;
+          const otherSel = otherTd.querySelector('.currency-sel');
+          if (otherSel && otherSel.value !== e.target.value) {
+            otherSel.value = e.target.value;
+            changeCurrency(otherTd);
+          }
+        });
+      }
+    }
+  });
+  // 初始：把 hidden(NTD) 同步寫一次（以防 display 有值但 hidden 不一致）
+  document.querySelectorAll('.price-cell').forEach(recalcPriceCell);
 
   // ── 儲存後保留捲動位置（submit 前記 scroll，reload 後還原）──
   document.addEventListener('submit', (e) => {
@@ -2256,9 +2957,16 @@
       </div>
       <div class="modal-body">
         <div class="alert alert-info small mb-2">
-          每欄對應一個 <strong>機種</strong>（預設帶入業務上傳的圖面檔名），可 <kbd>+ 欄</kbd> / <kbd>− 欄</kbd> 增減。
-          每列為一個製程，工程/採購已填的供應商單價會自動帶入。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品包運</strong>，
-          利潤由業務填寫，即產出每個機種的「最終報價單價」，全部一起送 BU 審核。
+          每欄對應一個 <strong>機種</strong>（預設帶入業務上傳的圖面檔名），可 <kbd>+ 欄</kbd> / <kbd>− 欄</kbd> 增減；
+          欄位標題可<strong>拖曳左右調整順序</strong>。每欄機種<strong>下方可填本次報價對應的 MOQ 數量</strong>，
+          會與報價一起送 BU 審核。底部自動套用 <strong>不良率</strong> / <strong>管銷</strong> / <strong>品包運</strong>，
+          利潤由業務填寫，即產出每個機種的「最終報價單價」。
+        </div>
+        {# ── 偵測到新料件提示（業務上次試算後又有新圖面） ── #}
+        <div class="alert alert-warning small mb-2 d-none" id="newColsAlert">
+          <i class="bi bi-stars me-1"></i>
+          偵測到 <strong id="newColsAlertCnt">0</strong> 張<strong>新增料件</strong>（圖面），
+          已自動加在右側為新欄。新欄的單價/MOQ 會嘗試從工程派發內容自動帶入，請逐一確認。
         </div>
 
         {# ── 報價附件預覽（左右切換） ── #}
@@ -2530,6 +3238,31 @@
     {% endfor %}
     return m;
   })();
+  // 階梯式 MOQ 對應表：key 同上 → [{qty, price, supplier}, ...]
+  const inviteTiers = (function(){
+    const m = {};
+    {% for inv in form.invites %}
+      {% if inv.tier_data and inv.process_name %}
+      (function(){
+        try {
+          const tiers = {{ inv.tier_data | tojson }} ? JSON.parse({{ inv.tier_data | tojson }}) : null;
+          if (Array.isArray(tiers) && tiers.length) {
+            const k = `{{ inv.drawing_doc_id or 0 }}||{{ inv.process_name }}`;
+            if (!m[k]) m[k] = [];
+            tiers.forEach(t => m[k].push({
+              qty: Number(t.qty) || 0,
+              price: Number(t.price) || 0,
+              supplier: {{ (inv.supplier.name if inv.supplier else '') | tojson }}
+            }));
+          }
+        } catch(_) {}
+      })();
+      {% endif %}
+    {% endfor %}
+    // 各 key 內 MOQ 由小到大
+    Object.keys(m).forEach(k => m[k].sort((a, b) => a.qty - b.qty));
+    return m;
+  })();
   // 模治具費用對應表：按 drawing_id 加總（同圖多家供應商加總後給業務做為預設值，可覆寫）
   const toolingByDrawing = (function(){
     const m = {};
@@ -2540,14 +3273,32 @@
     {% endfor %}
     return m;
   })();
+  // 工程派發詢價數量對應表：按 drawing_id 取最大值（同圖多家供應商可能不同 qty，取最大為 MOQ 預設）
+  const qtyByDrawing = (function(){
+    const m = {};
+    {% for inv in form.invites %}
+      {% if inv.qty %}
+      (function(k, v){ if (m[k] == null || v > m[k]) m[k] = v; })('{{ inv.drawing_doc_id or 0 }}', {{ inv.qty }});
+      {% endif %}
+    {% endfor %}
+    return m;
+  })();
   const productModel = {{ (form.product_model or form.product_name or '') | tojson }};
 
   let nCols;
-  if (initData && initData.columns && initData.columns.length) nCols = initData.columns.length;
-  else if (drawingCols.length) nCols = Math.max(drawingCols.length, 1);
-  else nCols = DEFAULT_COLS;
+  if (initData && initData.columns && initData.columns.length) {
+    // 既有試算欄數 vs 現有圖紙數 取大值 — 新增的料件（新圖紙）自動長出新欄
+    nCols = Math.max(initData.columns.length, drawingCols.length);
+  } else if (drawingCols.length) {
+    nCols = Math.max(drawingCols.length, 1);
+  } else {
+    nCols = DEFAULT_COLS;
+  }
   if (nCols < MIN_COLS) nCols = MIN_COLS;
   if (nCols > MAX_COLS) nCols = MAX_COLS;
+  // 偵測「比上次試算多出的新料件欄數」→ 開啟 modal 時跳出提示
+  const newColsCount = (initData && initData.columns && initData.columns.length)
+    ? Math.max(0, drawingCols.length - initData.columns.length) : 0;
 
   function colDrawingId(i) {
     // 第 i 欄對應的 drawing_id（若該欄是從 drawingCols 來的）
@@ -2558,16 +3309,121 @@
     for (let i = 0; i < nCols; i++) {
       const th = document.createElement('th');
       th.style.minWidth = '140px';
+      th.dataset.col = i;
+      th.draggable = true;
+      th.title = '拖曳此欄標題可左右調整順序';
       // 預設 label：有圖 → 用圖檔名；無圖 → 用機種名/方案
       let defaultLabel;
       if (i < drawingCols.length) defaultLabel = drawingCols[i].label;
       else defaultLabel = productModel ? `${productModel} - 欄 ${i+1}` : `機種 ${i+1}`;
       const lbl = (initData && initData.columns && initData.columns[i] && initData.columns[i].label)
         ? initData.columns[i].label : defaultLabel;
-      th.innerHTML = `<input class="form-control form-control-sm col-label" data-col="${i}"
-                           value="${(lbl+'').replace(/"/g,'&quot;')}" placeholder="${defaultLabel}">`;
+      // MOQ 預設：1) 已存的試算 → 2) 工程派發 qty（按 drawing_id；無對應則用共用 0）
+      let moq = '';
+      if (initData && initData.columns && initData.columns[i] && initData.columns[i].moq != null) {
+        moq = initData.columns[i].moq;
+      } else {
+        const did = colDrawingId(i);
+        const autoQty = (did != null && qtyByDrawing[String(did)] != null)
+          ? qtyByDrawing[String(did)]
+          : (qtyByDrawing['0'] != null ? qtyByDrawing['0'] : null);
+        if (autoQty != null) moq = autoQty;
+      }
+      th.innerHTML = `
+        <div class="d-flex align-items-center gap-1">
+          <span class="text-muted col-drag-handle" style="cursor:grab" title="拖曳此欄調整順序">
+            <i class="bi bi-grip-vertical"></i>
+          </span>
+          <input class="form-control form-control-sm col-label" data-col="${i}" draggable="false"
+                 value="${(lbl+'').replace(/"/g,'&quot;')}" placeholder="${defaultLabel}">
+        </div>
+        <div class="input-group input-group-sm mt-1" title="本次報價對應 MOQ 數量">
+          <span class="input-group-text py-0 px-2 bg-warning-subtle text-warning-emphasis"
+                style="font-size:11px">MOQ</span>
+          <input type="number" min="0" class="form-control form-control-sm col-moq" data-col="${i}"
+                 draggable="false" value="${moq}" placeholder="—"
+                 style="font-size:12px">
+        </div>`;
       labelRow.appendChild(th);
     }
+    attachColDrag();
+  }
+
+  // ── 欄位拖拉重排 ─────────────────────────────────
+  function attachColDrag() {
+    labelRow.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('dragstart', e => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', th.dataset.col);
+        th.classList.add('opacity-50');
+      });
+      th.addEventListener('dragend', () => {
+        th.classList.remove('opacity-50');
+        labelRow.querySelectorAll('th').forEach(x => x.classList.remove('table-active'));
+      });
+      th.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        labelRow.querySelectorAll('th').forEach(x => x.classList.remove('table-active'));
+        th.classList.add('table-active');
+      });
+      th.addEventListener('dragleave', () => th.classList.remove('table-active'));
+      th.addEventListener('drop', e => {
+        e.preventDefault();
+        const src = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        const dst = parseInt(th.dataset.col, 10);
+        if (isNaN(src) || isNaN(dst) || src === dst) return;
+        reorderCol(src, dst);
+      });
+    });
+  }
+
+  function reorderCol(src, dst) {
+    if (src === dst || src < 0 || dst < 0 || src >= nCols || dst >= nCols) return;
+    // 1) 先把現況快照（labels / MOQ / 各欄 input 值 / 每列 prices）
+    const labels = Array.from(labelRow.querySelectorAll('.col-label')).map(el => el.value);
+    const moqs = Array.from(labelRow.querySelectorAll('.col-moq')).map(el => el.value);
+    const profitRates = [];
+    const toolings = [];
+    const toolingProfitRates = [];
+    for (let i = 0; i < nCols; i++) {
+      const p = document.querySelector(`.profit-rate-col[data-col="${i}"]`);
+      profitRates.push(p ? p.value : '');
+      const t = document.querySelector(`.tooling-col[data-col="${i}"]`);
+      toolings.push(t ? t.value : '');
+      const tp = document.querySelector(`.tooling-profit-rate-col[data-col="${i}"]`);
+      toolingProfitRates.push(tp ? tp.value : '');
+    }
+    const rowsData = [];
+    document.querySelectorAll('#procRows .proc-row').forEach(r => {
+      const name = r.querySelector('.p-name').value;
+      const prices = Array.from(r.querySelectorAll('.p-price')).map(inp => inp.value);
+      rowsData.push({name, prices});
+    });
+    // 2) 在每個陣列上把 src 元素搬到 dst 位置
+    const move = arr => { const [it] = arr.splice(src, 1); arr.splice(dst, 0, it); };
+    move(labels);
+    move(moqs);
+    move(profitRates);
+    move(toolings);
+    move(toolingProfitRates);
+    rowsData.forEach(r => move(r.prices));
+    // 3) 蓋掉 initData，讓 rebuildAll() 重建時讀到新的順序
+    if (!initData) initData = {};
+    initData.columns = labels.map((lb, i) => ({
+      label: lb,
+      moq: (moqs[i] === '' || moqs[i] == null) ? null : (parseInt(moqs[i], 10) || 0),
+      profit_rate: (parseFloat(profitRates[i]) || 0) / 100,
+      tooling_cost: parseFloat(toolings[i]) || 0,
+      tooling_profit_rate: (parseFloat(toolingProfitRates[i]) || 0) / 100,
+    }));
+    initData.rows = rowsData.map(r => ({
+      process: r.name,
+      prices: r.prices.map(v => v === '' ? null : (parseFloat(v) || 0))
+    }));
+    // 4) 清空現有列，rebuildAll 會依新順序重建
+    procRows.innerHTML = '';
+    rebuildAll();
   }
   function priceFor(drawingId, processName) {
     // 先查 (drawing, process)；找不到則查 (0=共用, process)
@@ -2578,6 +3434,15 @@
     }
     const ks = `0||${processName}`;
     return invitePrices[ks] != null ? invitePrices[ks] : null;
+  }
+  function tiersFor(drawingId, processName) {
+    if (!processName) return null;
+    if (drawingId != null) {
+      const k = `${drawingId}||${processName}`;
+      if (inviteTiers[k] && inviteTiers[k].length) return inviteTiers[k];
+    }
+    const ks = `0||${processName}`;
+    return (inviteTiers[ks] && inviteTiers[ks].length) ? inviteTiers[ks] : null;
   }
   function buildProcRow(name, prices) {
     const tr = document.createElement('tr');
@@ -2590,7 +3455,20 @@
         const auto = priceFor(colDrawingId(i), name);
         if (auto != null) v = auto;
       }
-      html += `<td><input type="number" step="any" class="form-control form-control-sm p-price" data-col="${i}" value="${v}"></td>`;
+      const tiers = name ? tiersFor(colDrawingId(i), name) : null;
+      let tierSel = '';
+      if (tiers && tiers.length) {
+        const opts = tiers.map(t => `<option value="${t.price}">≥${t.qty} → ${t.price}</option>`).join('');
+        tierSel = `<select class="form-select form-select-sm tier-pick mt-1"
+                            data-col="${i}" style="font-size:11px;padding:.1rem .4rem">
+                     <option value="">— 階梯 ${tiers.length} 段（點選帶入）—</option>
+                     ${opts}
+                   </select>`;
+      }
+      html += `<td>
+        <input type="number" step="any" class="form-control form-control-sm p-price" data-col="${i}" value="${v}">
+        ${tierSel}
+      </td>`;
     }
     tr.innerHTML = html;
     return tr;
@@ -2743,26 +3621,75 @@
   document.addEventListener('input', e => {
     if (e.target.closest('#submitQuoteBuModal')) recalc();
   });
-  // Enter → 同欄下一列（連續輸入單價不觸發送出）
+  // 階梯下拉 → 帶入該欄 p-price 並重算
+  document.addEventListener('change', e => {
+    const sel = e.target;
+    if (!sel.classList.contains('tier-pick')) return;
+    if (!sel.closest('#submitQuoteBuModal')) return;
+    const v = sel.value;
+    if (!v) return;
+    const td = sel.closest('td');
+    const inp = td && td.querySelector('.p-price');
+    if (inp) {
+      inp.value = v;
+      inp.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  });
+  // Enter → 不送出，跳下一格（依輸入類型決定下個 focus 位置）
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     const t = e.target;
-    if (!t.classList.contains('p-price')) return;
     if (!t.closest('#submitQuoteBuModal')) return;
+    // textarea 內 Enter = 換行，放行
+    if (t.tagName === 'TEXTAREA') return;
+    // 按鈕上的 Enter = 點擊，放行
+    if (t.tagName === 'BUTTON') return;
     e.preventDefault();
-    const col = t.dataset.col;
-    const inputs = Array.from(document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`));
-    const idx = inputs.indexOf(t);
-    if (idx < 0) return;
-    if (idx + 1 < inputs.length) {
-      inputs[idx + 1].focus();
-      inputs[idx + 1].select();
-    } else {
-      // 最後一列 → 自動加一列並 focus 新列同欄
-      procRows.appendChild(buildProcRow('', []));
-      const next = document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`);
-      if (next.length) { next[next.length - 1].focus(); }
+    const focusInp = el => { if (el) { el.focus(); if (el.select) el.select(); } };
+
+    // 1) 製程單價 .p-price → 同欄下一列
+    if (t.classList.contains('p-price')) {
+      const col = t.dataset.col;
+      const inputs = Array.from(document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`));
+      const idx = inputs.indexOf(t);
+      if (idx >= 0 && idx + 1 < inputs.length) {
+        focusInp(inputs[idx + 1]);
+      } else if (idx >= 0) {
+        // 最後一列 → 自動加一列並 focus 新列同欄
+        procRows.appendChild(buildProcRow('', []));
+        const next = document.querySelectorAll(`#procRows .p-price[data-col="${col}"]`);
+        focusInp(next[next.length - 1]);
+      }
+      return;
     }
+    // 2) 製程名稱 .p-name → 同列第一個單價
+    if (t.classList.contains('p-name')) {
+      const tr = t.closest('tr');
+      focusInp(tr && tr.querySelector('.p-price'));
+      return;
+    }
+    // 3) 欄標題 .col-label → 同欄 MOQ
+    if (t.classList.contains('col-label')) {
+      focusInp(document.querySelector(`.col-moq[data-col="${t.dataset.col}"]`));
+      return;
+    }
+    // 4) 欄 MOQ .col-moq → 第一列同欄單價
+    if (t.classList.contains('col-moq')) {
+      focusInp(document.querySelector(`#procRows .proc-row .p-price[data-col="${t.dataset.col}"]`));
+      return;
+    }
+    // 5) tfoot 利潤/模治具/模治具利潤 % → 下一欄同類型 input
+    const tfootClasses = ['profit-rate-col', 'tooling-col', 'tooling-profit-rate-col'];
+    const matchedCls = tfootClasses.find(c => t.classList.contains(c));
+    if (matchedCls) {
+      const all = Array.from(document.querySelectorAll(`.${matchedCls}`));
+      const idx = all.indexOf(t);
+      if (idx >= 0 && idx + 1 < all.length) focusInp(all[idx + 1]);
+      else focusInp(all[0]);
+      return;
+    }
+    // 6) 其他（defectRate / overheadRate / qaRate / 任何普通 input）→ blur 觸發 recalc
+    t.blur();
   });
 
   // 送出前序列化 JSON（不再需要選單一欄，所有機種一起送審）
@@ -2774,6 +3701,8 @@
     const columns = [];
     for (let i = 0; i < nCols; i++) {
       const label = document.querySelector(`.col-label[data-col="${i}"]`).value || `方案 ${i+1}`;
+      const moqInp = document.querySelector(`.col-moq[data-col="${i}"]`);
+      const moqVal = moqInp ? parseInt(moqInp.value, 10) : NaN;
       const sub = parseFloat(document.querySelector(`.sum-col[data-col="${i}"]`).textContent)||0;
       const costTotal = parseFloat(document.querySelector(`.cost-col[data-col="${i}"]`).textContent)||0;
       const profitAmt = parseFloat(document.querySelector(`.profit-col[data-col="${i}"]`).textContent)||0;
@@ -2787,7 +3716,9 @@
       const toolingProfit = +(tooling * toolingProfitRate).toFixed(2);
       const toolingQuote = +(tooling + toolingProfit).toFixed(2);
       columns.push({
-        label, subtotal: sub,
+        label,
+        moq: isNaN(moqVal) ? null : moqVal,
+        subtotal: sub,
         defect_amount: +(sub*defect).toFixed(2),
         overhead_amount: +(sub*oh).toFixed(2),
         qa_ship_amount: +(sub*qa).toFixed(2),
@@ -2820,6 +3751,13 @@
   if (initData && initData.defect_rate != null) document.getElementById('defectRate').value = (initData.defect_rate*100).toFixed(1);
   if (initData && initData.overhead_rate != null) document.getElementById('overheadRate').value = (initData.overhead_rate*100).toFixed(1);
   if (initData && initData.qa_ship_rate != null) document.getElementById('qaRate').value = (initData.qa_ship_rate*100).toFixed(1);
+  // 偵測到新料件 → 顯示提示橫幅
+  if (newColsCount > 0) {
+    const a = document.getElementById('newColsAlert');
+    const c = document.getElementById('newColsAlertCnt');
+    if (a) a.classList.remove('d-none');
+    if (c) c.textContent = newColsCount;
+  }
   rebuildAll();
 })();
 </script>
@@ -2866,7 +3804,67 @@
 
 {# 結案按鈕已改為直接送出，不再使用 modal #}
 
-{# submitBuModal 已移除，改為直接送出 #}
+{# 工程選供應商 + 送 BU #}
+{% if form.status.value == 'NPI_STARTED' and user.role.value in ('engineer','admin') %}
+<div class="modal fade" id="submitBuModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form class="modal-content" method="post" enctype="multipart/form-data"
+          action="/npi-forms/{{ form.form_id }}/submit-bu">
+      <div class="modal-header">
+        <h5 class="modal-title">選供應商 + 開 ERP 模具請購單 + 送 BU 核准</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body row g-3">
+        <div class="col-12">
+          <label class="form-label">選用供應商 <span class="text-danger">*</span></label>
+          <select name="selected_invite_id" class="form-select" required>
+            <option value="">— 請選擇 —</option>
+            {% for inv in form.invites %}
+              {% if inv.replied_at %}
+              <option value="{{ inv.id }}">
+                {{ inv.supplier.name if inv.supplier else '' }} / 報價 {{ inv.quote_amount or '—' }} / 交期 {{ inv.lead_time_days or '—' }} 天
+              </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">ERP 模具請購單號</label>
+          <input name="erp_req_no" class="form-control" placeholder="例：MR-20260418-001">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">工程估算模具成本</label>
+          <input name="mould_cost_est" type="number" step="0.01" class="form-control">
+        </div>
+        <div class="col-12">
+          <label class="form-label">ERP 明細 JSON 快照（選填）</label>
+          <textarea name="erp_req_data" rows="3" class="form-control font-monospace small"
+                    placeholder='[{"料號":"M001","品名":"下模","數量":1,"單價":50000}]'></textarea>
+        </div>
+        <div class="col-12">
+          <label class="form-label">模具請購單（必要附件）</label>
+          <input type="hidden" name="attach_categories" value="模具請購單">
+          <div class="d-flex align-items-center gap-2 flex-wrap file-picker-wrap">
+            <label class="btn btn-outline-primary mb-0">
+              <i class="bi bi-paperclip me-1"></i>選擇檔案
+              <input type="file" name="attach_files" class="d-none">
+            </label>
+            <span class="file-picker-name text-muted small">（尚未選擇）</span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label">備註</label>
+          <textarea name="comment" rows="2" class="form-control"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-primary">送 BU 核准</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {# BU 退回 #}
 {% if form.status.value == 'NPI_PENDING_BU' and user.role.value in ('bu','admin') %}
@@ -2949,70 +3947,173 @@
 })();
 </script>
 
+{# 階梯式 MOQ 編輯 modal（單一 modal，所有 invite 共用） #}
+<div class="modal fade" id="tierModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="bi bi-bar-chart-steps me-2"></i>階梯式 MOQ 報價</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info small mb-2 py-2">
+          <i class="bi bi-info-circle me-1"></i>依不同 MOQ 階梯給對應單價（最低 MOQ 那筆會自動同步為主單價）。
+        </div>
+        <table class="table table-sm align-middle mb-2">
+          <thead class="table-light">
+            <tr>
+              <th style="width:40%">MOQ（≥ 數量）</th>
+              <th style="width:40%">單價</th>
+              <th style="width:20%"></th>
+            </tr>
+          </thead>
+          <tbody id="tierRows"></tbody>
+        </table>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="tierAddBtn">
+          <i class="bi bi-plus"></i> 新增階梯
+        </button>
+        <div id="tierMsg" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-primary" id="tierSaveBtn">
+          <i class="bi bi-check-lg me-1"></i>儲存階梯
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
-async function lookupErpReqFromInput() {
-  const input = document.getElementById('erpReqInput');
-  const reqNo = (input?.value || '').trim();
-  if (!reqNo) { alert('請先輸入 ERP 請購單號'); return; }
-  await _doErpLookup(reqNo, event.target.closest('button'));
-}
+(function(){
+  const modalEl = document.getElementById('tierModal');
+  if (!modalEl) return;
+  const rowsEl  = document.getElementById('tierRows');
+  const addBtn  = document.getElementById('tierAddBtn');
+  const saveBtn = document.getElementById('tierSaveBtn');
+  const msgEl   = document.getElementById('tierMsg');
+  let curInvId = null;
 
-async function lookupErpReq(reqNo) {
-  await _doErpLookup(reqNo, event.target.closest('button'));
-}
-
-async function _doErpLookup(reqNo, btn) {
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>查詢中…';
-  document.getElementById('erpReqError').style.display = 'none';
-
-  try {
-    const resp = await fetch(`/npi-forms/erp-req-lookup?req_no=${encodeURIComponent(reqNo)}`);
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(json.detail || '查詢失敗');
-
-    const rows = json.rows;
-    const head = document.getElementById('erpReqHead').querySelector('tr') || document.getElementById('erpReqHead');
-    const headRow = document.getElementById('erpReqHead');
-    const body   = document.getElementById('erpReqBody');
-    const badge  = document.getElementById('erpReqBadge');
-
-    headRow.innerHTML = '<tr>' + Object.keys(rows[0]).map(k => `<th>${k}</th>`).join('') + '</tr>';
-
-    // 計算金額加總
-    const totalAmt = rows.reduce((s, r) => s + (parseFloat(r['金額']) || 0), 0);
-    body.innerHTML = rows.map(row =>
-      '<tr>' + Object.entries(row).map(([k,v]) =>
-        `<td class="${['金額','單價','請購數量'].includes(k) ? 'text-end' : ''} ${k==='金額'?'fw-bold':''}">${v ?? '—'}</td>`
-      ).join('') + '</tr>'
-    ).join('');
-
-    // 加總列
-    const colCount = Object.keys(rows[0]).length;
-    body.innerHTML += `<tr class="table-warning fw-bold">
-      <td colspan="${colCount - 1}" class="text-end">模治具請購合計</td>
-      <td class="text-end">${totalAmt.toFixed(2)}</td>
-    </tr>`;
-
-    badge.textContent = `共 ${rows.length} 筆品項`;
-    document.getElementById('erpReqResult').style.display = '';
-    document.getElementById('erpReqResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-    // 自動存入 hidden input（送出時一起儲存）
-    const hiddenInput = document.getElementById('erpReqDataInput');
-    if (hiddenInput) {
-      hiddenInput.value = JSON.stringify(rows);
-    }
-  } catch(e) {
-    const errDiv = document.getElementById('erpReqError');
-    document.getElementById('erpReqErrorMsg').textContent = e.message;
-    errDiv.style.display = '';
-    document.getElementById('erpReqResult').style.display = 'none';
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
+  function addRow(qty='', price='') {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" class="form-control form-control-sm tier-qty" value="${qty}" min="1" placeholder="例 100"></td>
+      <td><input type="number" step="0.01" class="form-control form-control-sm tier-price" value="${price}" placeholder="單價"></td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger tier-del">
+        <i class="bi bi-x"></i></button></td>`;
+    rowsEl.appendChild(tr);
   }
-}
+
+  rowsEl.addEventListener('click', (e) => {
+    if (e.target.closest('.tier-del')) e.target.closest('tr').remove();
+  });
+  addBtn.addEventListener('click', () => addRow());
+
+  // 開啟 modal：載入指定 invite 的 tier_data
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tier-edit-btn');
+    if (!btn) return;
+    curInvId = btn.dataset.invId;
+    rowsEl.innerHTML = '';
+    msgEl.textContent = '';
+    let tiers = [];
+    try {
+      const raw = btn.dataset.tierData || '';
+      if (raw) tiers = JSON.parse(raw);
+    } catch(_) {}
+    if (!tiers.length) {
+      addRow(); addRow();
+    } else {
+      tiers.forEach(t => addRow(t.qty || '', t.price || ''));
+    }
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const tiers = [];
+    rowsEl.querySelectorAll('tr').forEach(tr => {
+      const q = parseFloat(tr.querySelector('.tier-qty').value);
+      const p = parseFloat(tr.querySelector('.tier-price').value);
+      if (!isNaN(q) && !isNaN(p) && q > 0 && p >= 0) tiers.push({qty: q, price: p});
+    });
+    // 排序：MOQ 由小到大
+    tiers.sort((a, b) => a.qty - b.qty);
+    saveBtn.disabled = true;
+    msgEl.innerHTML = '<span class="text-muted">儲存中…</span>';
+    try {
+      const fd = new FormData();
+      fd.append('tier_data', tiers.length ? JSON.stringify(tiers) : '');
+      const resp = await fetch(`/npi-forms/{{ form.form_id }}/invite/${curInvId}/save-tiers`, {
+        method:'POST', body: fd
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || !j.ok) throw new Error(j.detail || resp.statusText);
+      msgEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>已儲存，重新整理頁面…</span>';
+      setTimeout(() => location.reload(), 600);
+    } catch(err) {
+      msgEl.innerHTML = '<span class="text-danger">' + err.message + '</span>';
+      saveBtn.disabled = false;
+    }
+  });
+})();
+</script>
+
+{# ── 全域：所有 modal 內按 Enter 跳「同列下一格 → 下一列第一格」，不送出 ── #}
+<script>
+(function() {
+  function isFocusable(el) {
+    if (!el || el.disabled) return false;
+    const t = (el.type || '').toLowerCase();
+    if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'reset' || t === 'file') return false;
+    if (el.offsetParent === null) return false;  // 隱藏欄位略過
+    return true;
+  }
+  function focusEl(el) {
+    if (!el) return;
+    el.focus();
+    if (el.select) try { el.select(); } catch(_) {}
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    const modal = t.closest && t.closest('.modal');
+    if (!modal) return;
+    // 業務試算 modal 已有自己的 Enter 跳格邏輯（同欄下一列），不要被覆寫
+    if (modal.id === 'submitQuoteBuModal') return;
+    // textarea 維持換行原行為；按鈕維持點擊原行為
+    if (t.tagName === 'TEXTAREA') return;
+    if (t.tagName === 'BUTTON') return;
+    const tp = (t.type || '').toLowerCase();
+    if (tp === 'submit' || tp === 'button' || tp === 'reset') return;
+
+    e.preventDefault();
+    // 1) 同列下一格
+    const row = t.closest('tr');
+    if (row) {
+      const inRow = Array.from(row.querySelectorAll('input, select')).filter(isFocusable);
+      const idx = inRow.indexOf(t);
+      if (idx >= 0 && idx + 1 < inRow.length) {
+        focusEl(inRow[idx + 1]);
+        return;
+      }
+      // 2) 下一列同欄；找不到再退回下一列第一格
+      const nextRow = row.nextElementSibling;
+      if (nextRow) {
+        const inNext = Array.from(nextRow.querySelectorAll('input, select')).filter(isFocusable);
+        if (inNext.length) {
+          focusEl(inNext[Math.min(idx, inNext.length - 1)] || inNext[0]);
+          return;
+        }
+      }
+    }
+    // 3) 整個 modal 內找下一個可 focus 的欄位
+    const all = Array.from(modal.querySelectorAll('input, select')).filter(isFocusable);
+    const i = all.indexOf(t);
+    if (i >= 0 && i + 1 < all.length) {
+      focusEl(all[i + 1]);
+    } else {
+      t.blur();
+    }
+  });
+})();
 </script>
 {% endblock %}

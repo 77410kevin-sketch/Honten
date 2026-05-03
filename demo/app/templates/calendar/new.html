@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}新增事件{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">
+    <i class="bi bi-calendar-plus text-primary me-2"></i>新增行事曆事件
+  </h4>
+  <a href="/calendar/" class="btn btn-outline-secondary ms-auto btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>返回月曆
+  </a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form method="post" action="/calendar/events/new" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label">事件類型 <span class="text-danger">*</span></label>
+        <select name="event_type" class="form-select" id="evType" required>
+          <option value="ROOM"   {% if preset_type == 'ROOM'   %}selected{% endif %}>會議室預約</option>
+          <option value="CAR"    {% if preset_type == 'CAR'    %}selected{% endif %}>公務車租借</option>
+          <option value="LEAVE"  {% if preset_type == 'LEAVE'  %}selected{% endif %}>請假</option>
+          <option value="OUTING" {% if preset_type == 'OUTING' %}selected{% endif %}>業務外出</option>
+          <option value="ATTENDANCE" {% if preset_type == 'ATTENDANCE' %}selected{% endif %}>出勤</option>
+        </select>
+      </div>
+      <div class="col-md-8">
+        <label class="form-label">標題 <span class="text-danger">*</span></label>
+        <input name="title" class="form-control" required placeholder="例：週會 / 拜訪金士頓 / 特休一日">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">開始時間 <span class="text-danger">*</span></label>
+        <div class="d-flex gap-2">
+          <input type="date" class="form-control" data-dt-date="start_at" required>
+          <select class="form-select" data-dt-time="start_at" required style="max-width:120px"></select>
+        </div>
+        <input type="hidden" name="start_at">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">結束時間 <span class="text-danger">*</span></label>
+        <div class="d-flex gap-2">
+          <input type="date" class="form-control" data-dt-date="end_at" required>
+          <select class="form-select" data-dt-time="end_at" required style="max-width:120px"></select>
+        </div>
+        <input type="hidden" name="end_at">
+      </div>
+
+      <div class="col-md-4">
+        <div class="form-check mt-4">
+          <input type="checkbox" id="allDay" name="all_day" value="1" class="form-check-input">
+          <label class="form-check-label" for="allDay">全天事件</label>
+        </div>
+      </div>
+
+      <div class="col-md-8" id="resGroup">
+        <label class="form-label">資源（會議室／公務車）</label>
+        <select name="resource_id" class="form-select" id="resSel">
+          <option value="">— 不選 —</option>
+          {% for r in resources %}
+          <option value="{{ r.id }}" data-type="{{ r.type.value }}">[{{ r.type.value }}] {{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-8" id="leaveGroup" style="display:none">
+        <label class="form-label">假別 <span class="text-danger">*</span></label>
+        <select name="leave_type" class="form-select" id="leaveSel">
+          <option value="">— 請選擇 —</option>
+          <option value="ANNUAL">特休</option>
+          <option value="SICK">病假</option>
+          <option value="PERSONAL">事假</option>
+        </select>
+        <div class="form-text">
+          <span id="leaveDaysHint" class="text-muted">提示：≤ 3 天由單位主管簽核；> 3 天送總經理簽核</span>
+        </div>
+      </div>
+
+      <div class="col-md-12" id="custGroup" style="display:none">
+        <label class="form-label">客戶／拜訪對象</label>
+        <input name="customer_name" class="form-control" placeholder="例：金士頓、景利">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">備註</label>
+        <textarea name="notes" class="form-control" rows="2"></textarea>
+      </div>
+
+      <div class="col-12 text-end">
+        <button class="btn btn-success">
+          <i class="bi bi-check-circle me-1"></i>送出
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function() {
+  const evType = document.getElementById('evType');
+  const resSel = document.getElementById('resSel');
+  const resGroup = document.getElementById('resGroup');
+  const custGroup = document.getElementById('custGroup');
+
+  const leaveGroup = document.getElementById('leaveGroup');
+  const leaveSel = document.getElementById('leaveSel');
+  const leaveHint = document.getElementById('leaveDaysHint');
+  const titleInput = document.querySelector('input[name="title"]');
+
+  // 30 分鐘時間下拉選項（06:00–22:30）
+  function fillTimeOptions(sel) {
+    const opts = [];
+    for (let h = 6; h <= 22; h++) {
+      for (let m = 0; m < 60; m += 30) {
+        const v = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+        opts.push(`<option value="${v}">${v}</option>`);
+      }
+    }
+    sel.innerHTML = '<option value="">--:--</option>' + opts.join('');
+  }
+  document.querySelectorAll('[data-dt-time]').forEach(fillTimeOptions);
+
+  function combineDT(name) {
+    const d = document.querySelector(`[data-dt-date="${name}"]`).value;
+    const t = document.querySelector(`[data-dt-time="${name}"]`).value;
+    document.querySelector(`input[name="${name}"]`).value = (d && t) ? `${d}T${t}` : '';
+  }
+  document.querySelectorAll('[data-dt-date],[data-dt-time]').forEach(el => {
+    const name = el.dataset.dtDate || el.dataset.dtTime;
+    el.addEventListener('change', () => { combineDT(name); updateLeaveHint(); });
+  });
+  // 表單送出前再合一次保險
+  document.querySelector('form').addEventListener('submit', () => {
+    combineDT('start_at'); combineDT('end_at');
+  });
+  const startInput = document.querySelector('input[name="start_at"]');
+  const endInput   = document.querySelector('input[name="end_at"]');
+
+  function refresh() {
+    const t = evType.value;
+    Array.from(resSel.options).forEach(o => {
+      const rt = o.dataset.type;
+      if (!o.value) { o.hidden = false; return; }
+      if (t === 'ROOM') o.hidden = (rt !== 'ROOM');
+      else if (t === 'CAR') o.hidden = (rt !== 'CAR');
+      else o.hidden = false;
+    });
+    resGroup.style.display = (t === 'ROOM' || t === 'CAR') ? '' : 'none';
+    leaveGroup.style.display = (t === 'LEAVE') ? '' : 'none';
+    custGroup.style.display = (t === 'OUTING') ? '' : 'none';
+    resSel.required = (t === 'ROOM' || t === 'CAR');
+    leaveSel.required = (t === 'LEAVE');
+    if (t !== 'ROOM' && t !== 'CAR') resSel.value = '';
+    if (t !== 'LEAVE') leaveSel.value = '';
+    updateLeaveHint();
+  }
+  function updateLeaveHint() {
+    if (evType.value !== 'LEAVE' || !startInput.value || !endInput.value) return;
+    const s = new Date(startInput.value), e = new Date(endInput.value);
+    if (isNaN(s) || isNaN(e) || e <= s) return;
+    const days = (e - s) / 86400000;
+    const dayStr = days < 1 ? days.toFixed(2) : days.toFixed(1);
+    if (days <= 3) {
+      leaveHint.innerHTML = `天數 <strong>${dayStr}</strong> 天 → 將送 <strong>單位主管</strong> 簽核`;
+      leaveHint.className = 'text-primary';
+    } else {
+      leaveHint.innerHTML = `天數 <strong>${dayStr}</strong> 天 → 將送 <strong>總經理</strong> 簽核`;
+      leaveHint.className = 'text-warning fw-semibold';
+    }
+  }
+  evType.addEventListener('change', refresh);
+  startInput.addEventListener('change', updateLeaveHint);
+  endInput.addEventListener('change', updateLeaveHint);
+  refresh();
+
+  // LEAVE 類型 → 自動帶標題
+  leaveSel.addEventListener('change', () => {
+    if (evType.value === 'LEAVE' && !titleInput.value && leaveSel.value) {
+      const lblMap = {ANNUAL:'特休', SICK:'病假', PERSONAL:'事假'};
+      titleInput.value = lblMap[leaveSel.value] || '';
+    }
+  });
+})();
+</script>
+{% endblock %}

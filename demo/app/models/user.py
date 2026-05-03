@@ -7,7 +7,8 @@ class Role(str, enum.Enum):
     ADMIN     = "admin"
     ENGINEER  = "engineer"
     QC        = "qc"
-    PROD_MGR  = "prod_mgr"
+    PROD_MGR  = "prod_mgr"   # 產線主管（管理產線、可建異常單）
+    PC        = "pc"         # 生管（排程、Sorting/Rework 派工、補貨協調）
     BU        = "bu"
     ENG_MGR   = "eng_mgr"
     PURCHASE  = "purchase"   # 採購
